@@ -1,0 +1,137 @@
+{
+  "architecture": "entity_statistical_roles_recurrent_policy",
+  "checkpoint_updates": 1,
+  "actor_parameters": 4197378,
+  "card_kinds": 10,
+  "role_encoder_weight_change_norm": 0.011516980826854706,
+  "action_scorer_weight_change_norm": 0.12300266325473785,
+  "first_observation_role_presence": {
+    "land_access": 0.9783854484558105,
+    "mana_acceleration": 0.6535935997962952,
+    "board_presence": 0.999103844165802,
+    "repeatable_engine": -0.0,
+    "card_draw": 0.3994996249675751,
+    "card_selection": 0.3994996249675751,
+    "tutor": 0.3994996249675751,
+    "counterspell": -0.0,
+    "spot_removal": -0.0,
+    "sweeper": -0.0,
+    "tempo_interaction": -0.0,
+    "direct_reach": -0.0,
+    "combat_modifier": -0.0,
+    "protection": -0.0,
+    "hand_disruption": -0.0,
+    "recursion_cheating": -0.0,
+    "graveyard_hate": -0.0,
+    "persistent_restriction": -0.0,
+    "survival": -0.0,
+    "deck_synergy": -0.0
+  },
+  "same_public_observation_preserves_statistics_after_training": true,
+  "actual_earlier_pilot_checkpoint_loads_as_learned": true,
+  "integration": {
+    "policy_loss": -7.906413689645606e-09,
+    "critic_loss": 0.054691147186555926,
+    "public_value_loss": 0.05938662883585239,
+    "belief_nll": 0.3864076738401894,
+    "entropy": 0.1865455904459232,
+    "approx_kl": -4.873642254733493e-10,
+    "decisions": 1223,
+    "epochs": 1,
+    "episodes": 4,
+    "collection_seconds": 30.94509419996757,
+    "training_seconds": 23.980997500009835,
+    "generation_seconds": 55.19508460001089,
+    "collected_decisions": 1223,
+    "completed_games": 2.0,
+    "collection_games_per_hour": 232.67015939500826,
+    "collected_decisions_per_second": 39.52161179723543,
+    "training_decision_passes_per_second": 50.998712626507654,
+    "requested_games": 2,
+    "actor_device": "cpu",
+    "learner_device": "cpu"
+  },
+  "forward_benchmark": {
+    "shape": {
+      "entities": 64,
+      "actions": 32,
+      "deck_kinds": 24,
+      "hand_size": 7
+    },
+    "torch": "2.11.0+cu130",
+    "results": [
+      {
+        "device": "cpu",
+        "belief_mode": "learned",
+        "median_ms": 7.28725001681596,
+        "p95_ms": 8.32809996791184,
+        "actor_parameters": 4344387
+      },
+      {
+        "device": "cpu",
+        "belief_mode": "statistical_roles",
+        "median_ms": 4.722799989394844,
+        "p95_ms": 5.302000092342496,
+        "actor_parameters": 4200962
+      },
+      {
+        "device": "cuda",
+        "belief_mode": "learned",
+        "median_ms": 66.96614995598793,
+        "p95_ms": 107.1411999873817,
+        "actor_parameters": 4344387
+      },
+      {
+        "device": "cuda",
+        "belief_mode": "statistical_roles",
+        "median_ms": 20.540000055916607,
+        "p95_ms": 49.1215999936685,
+        "actor_parameters": 4200962
+      }
+    ],
+    "scope": "matched synthetic forward shapes/config, one CPU thread, batch 1, 50 warmed samples; excludes HTTP, Java, training and playing strength"
+  },
+  "learner_device_benchmark": {
+    "episode": "artifacts\\statistical-roles-smoke\\generation_0000\\episodes\\episode_9777ebe8d1a04533a6e9d3fc0093de92.jsonl",
+    "states": 283,
+    "torch_cpu_threads": 1,
+    "results": [
+      {
+        "device": "cpu",
+        "seconds": 6.52034609997645,
+        "decision_passes_per_second": 43.402604042908415,
+        "peak_cuda_mb": null,
+        "metrics": {
+          "policy_loss": 4.243770410231061e-08,
+          "critic_loss": 0.05174065830528799,
+          "public_value_loss": 0.08125242955288307,
+          "belief_nll": 0.6316562317601362,
+          "entropy": 0.20253823923980388,
+          "approx_kl": -2.1061711934767005e-10,
+          "decisions": 283,
+          "epochs": 1,
+          "episodes": 1
+        }
+      },
+      {
+        "device": "cuda",
+        "seconds": 27.04228479997255,
+        "decision_passes_per_second": 10.465092062054138,
+        "peak_cuda_mb": 123.6689453125,
+        "metrics": {
+          "policy_loss": -1.3017125243432951e-08,
+          "critic_loss": 0.051740733294432496,
+          "public_value_loss": 0.08125237874273711,
+          "belief_nll": 0.6316562416591408,
+          "entropy": 0.20253823839733542,
+          "approx_kl": 2.1061711934767005e-10,
+          "decisions": 283,
+          "epochs": 1,
+          "episodes": 1
+        }
+      }
+    ],
+    "scope": "same complete episode, same initial checkpoint, one PPO epoch; includes checkpoint loading/saving, target replay, backward; may include concurrent evaluation load"
+  },
+  "scope": "implementation and timing checks; two smoke games; no playing-strength or generalization conclusion"
+}

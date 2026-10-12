@@ -1,0 +1,108 @@
+{
+  "date": "2026-10-11",
+  "unit_tests": {
+    "passed": 10,
+    "cuda_regression": true
+  },
+  "cpu_smoke": {
+    "device": "cpu",
+    "gpu": null,
+    "torch": "2.11.0+cu130",
+    "actor_parameters_24_cards": 4344387,
+    "forward_median_ms": 8.712249982636422,
+    "forward_p95_ms": 13.434400083497167,
+    "benchmark_shape": {
+      "entities": 64,
+      "actions": 32,
+      "deck_kinds": 24,
+      "hand_size": 7
+    },
+    "expected_hand_count": 6.999998569488525,
+    "ppo": {
+      "policy_loss": -0.00031008757650852203,
+      "critic_loss": 0.8282384928315878,
+      "public_value_loss": 0.8165060840547085,
+      "belief_nll": 0.5096378028392792,
+      "entropy": 0.6915322057902813,
+      "approx_kl": 0.001410994678735733,
+      "decisions": 32,
+      "epochs": 2,
+      "episodes": 2
+    },
+    "scope": "synthetic implementation smoke test; excludes HTTP/Java and measures no playing strength"
+  },
+  "cuda_smoke": {
+    "device": "cuda",
+    "gpu": "NVIDIA GeForce RTX 5070",
+    "torch": "2.11.0+cu130",
+    "actor_parameters_24_cards": 4344387,
+    "forward_median_ms": 48.61419997178018,
+    "forward_p95_ms": 71.05780008714646,
+    "benchmark_shape": {
+      "entities": 64,
+      "actions": 32,
+      "deck_kinds": 24,
+      "hand_size": 7
+    },
+    "expected_hand_count": 6.999998569488525,
+    "ppo": {
+      "policy_loss": -0.011848416179418564,
+      "critic_loss": 0.8282823525369167,
+      "public_value_loss": 0.8163833860307932,
+      "belief_nll": 0.5118084270507097,
+      "entropy": 0.69077243283391,
+      "approx_kl": 0.0021687261760234833,
+      "decisions": 32,
+      "epochs": 2,
+      "episodes": 2
+    },
+    "scope": "synthetic implementation smoke test; excludes HTTP/Java and measures no playing strength"
+  },
+  "xmage_synthetic_game": {
+    "engine_commit": "cb7e9c6fe2dcbe2f650a77dd98a87771e730f22f",
+    "game_log": "XMage smoke game finished: A=true, B=false",
+    "metrics": {
+      "policy_loss": 1.4918844533872002e-08,
+      "critic_loss": 0.10762798599842403,
+      "public_value_loss": 0.10771413034045982,
+      "belief_nll": 0.25173792243003845,
+      "entropy": 0.0394822564683383,
+      "approx_kl": 3.772445871860166e-10,
+      "decisions": 316,
+      "epochs": 1,
+      "episodes": 2
+    },
+    "scope": "actual XMage core with synthetic cards, HTTP inference, per-player recording and CUDA PPO; no real-deck strength evaluation"
+  },
+  "xmage_distribution": {
+    "modules": 35,
+    "full_build": "success",
+    "final_build": "success",
+    "archive": ".mz_engine/Mage.MageZero/target/mage-magezero.zip",
+    "installed": "xmage",
+    "database_sets": 563,
+    "database_card_printings": 87707
+  },
+  "real_card_selfplay": {
+    "deck": "simplegreen mirror",
+    "games_completed": 2,
+    "games_requested": 2,
+    "episodes": 4,
+    "decisions": 1172,
+    "actor_device": "cpu",
+    "learner_device": "cuda",
+    "checkpoint": "artifacts/real-card-selfplay/generation_0000/policy.pt",
+    "metrics": {
+      "policy_loss": 3.970351007388771e-09,
+      "critic_loss": 0.06186139391482853,
+      "public_value_loss": 0.06124479919406838,
+      "belief_nll": 0.41925772025214936,
+      "entropy": 0.22186639223489338,
+      "approx_kl": -2.0342882175901237e-10,
+      "decisions": 1172,
+      "epochs": 1,
+      "episodes": 4
+    },
+    "scope": "packaged real-card integration test, not a playing-strength evaluation"
+  }
+}

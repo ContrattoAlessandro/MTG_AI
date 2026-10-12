@@ -1,0 +1,13 @@
+# CPU statistical-role pilot: evaluation plan
+
+Recorded before the final checkpoint is available, 12 October 2026.
+
+- Starting policy: `artifacts/statistical-roles-smoke/generation_0000/policy.pt`, version `fdcecf3178d04d62aebf59d2f7d6ae47`, one previous smoke update. Freeze it for evaluation.
+- Training: approximate 1,800-second collection-plus-learning budget, CPU actor and learner, one Torch/BLAS thread each, four simplegreen games per generation, two PPO epochs, episodes/minibatch four, TBPTT length 32. Alternate current self-play with historical snapshots.
+- Configuration: `configs/policy-cpu-30min.yml`. Gamma and GAE lambda both one give terminal-return targets across micro-decisions. This differs from the earlier smoke's lambda 0.97; the experiment tests the continued training procedure, not an isolated architecture ablation.
+- Stop between completed generations using measured recent generation durations. Save the final complete checkpoint; do not select a checkpoint using evaluation wins. The requested budget is approximate because game lengths vary.
+- Primary evaluation: 200 fresh games against the frozen starting policy, 100 starting in each seat. Two disjoint seed blocks: 24 recorded games with base seed 20261030, then 176 games with base seed 20261130. No evaluation data enter training.
+- Report wins, losses, draws, errors/truncations, seat-specific results, descriptive Wilson win-rate interval, and a bootstrap interval for score grouped by the two seats sharing a seed. Adjacent same-seed games do not reproduce identical UUID/candidate order or stochastic action streams.
+- Evidence standard: superiority is supported on this matchup if the grouped score interval is wholly above 50% and the evaluation has no material failure bias. An interval crossing 50% is inconclusive; wholly below indicates regression. Do not infer general Magic strength from one deck matchup.
+- Behavior analysis: replay 16 recorded observer trajectories at both checkpoints, rebuilding history from step zero. Select eight sorted files from each observer stream to balance perspectives. This stream-balancing clarification was recorded after the first 24 game outcomes, before computing behavior results. Exclude forced choices. Compare probabilities of legal land plays, available spell casts, passing, attacking, blocking, and keeping different opening-hand land counts. Include the predefined subset of positive-power attacks with no opposing creatures. These describe changes on identical states; they are not optimal-action labels.
+- Learning metrics and training-league wins are diagnostic, not substitutes for held-out win rates. Hand-category probabilities are statistical and do not improve through gradient updates.

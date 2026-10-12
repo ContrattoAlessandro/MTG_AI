@@ -1,5 +1,7 @@
 # MageZero Setup Guide
 
+This is the original MCTS setup guide. The default CLI now uses the entity/belief policy described in [README.md](README.md) and [the new XMage integration guide](docs/xmage-integration.md). To run this legacy guide's pipeline, install `.[legacy]` and prefix its original commands with `legacy-` (for example, `mz legacy-train`). Its old checkpoints and results do not apply to the new architecture.
+
 This guide walks you through installing MageZero and training your first deck-local RL agent.
 
 If you just want to run a trained model against your own deck in XMage, see the Play section at the bottom. This guide assumes you're here to train.

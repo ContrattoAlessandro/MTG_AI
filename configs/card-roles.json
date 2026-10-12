@@ -1,0 +1,23 @@
+{
+  "format_version": 1,
+  "cards": {
+    "Cenote Scout": {"roles": ["board_presence", "card_draw", "card_selection"], "source": ".mz_engine/Mage.Sets/src/mage/cards/c/CenoteScout.java", "notes": "Body with ETB explore: conditional land access into hand and selection of a nonland. This is not an unconditional draw spell."},
+    "Elfhame Wurm": {"roles": ["board_presence"], "source": ".mz_engine/Mage.Sets/src/mage/cards/e/ElfhameWurm.java", "notes": "Vigilance/trample body; intrinsic combat keywords do not count as an independent combat trick."},
+    "Evolving Adaptive": {"roles": ["board_presence"], "source": ".mz_engine/Mage.Sets/src/mage/cards/e/EvolvingAdaptive.java", "notes": "Growing body; its self-growth does not supply an independent pump spell or hidden removal."},
+    "Flourishing Bloom-Kin": {"roles": ["board_presence", "mana_acceleration", "tutor"], "source": ".mz_engine/Mage.Sets/src/mage/cards/f/FlourishingBloomKin.java", "notes": "Body, with conditional Forest search and deployment after being turned face up. Role presence does not imply that route is immediately usable from hand."},
+    "Forest": {"roles": ["land_access"], "source": ".mz_engine/Mage/src/main/java/mage/cards/basiclands/Forest.java", "notes": "Ordinary land access. A normal land drop is not additional mana acceleration."},
+    "Grizzly Bears": {"roles": ["board_presence"], "source": ".mz_engine/Mage.Sets/src/mage/cards/g/GrizzlyBears.java", "notes": "Vanilla creature body."},
+    "Hazard of the Dunes": {"roles": ["board_presence"], "source": ".mz_engine/Mage.Sets/src/mage/cards/h/HazardOfTheDunes.java", "notes": "Body with an on-board self-boost. Do not interpret holding this creature as holding a separate combat trick."},
+    "Hulking Raptor": {"roles": ["board_presence", "mana_acceleration"], "source": ".mz_engine/Mage.Sets/src/mage/cards/h/HulkingRaptor.java", "notes": "Body with recurring precombat mana. Its own ward is not a protection spell for another permanent or a counterspell in hand."},
+    "Ichorspit Basilisk": {"roles": ["board_presence"], "source": ".mz_engine/Mage.Sets/src/mage/cards/i/IchorspitBasilisk.java", "notes": "Deathtouch/toxic body; combat keywords do not constitute a standalone removal or direct burn spell."},
+    "Pugnacious Hammerskull": {"roles": ["board_presence"], "source": ".mz_engine/Mage.Sets/src/mage/cards/p/PugnaciousHammerskull.java", "notes": "Creature presence with an attack condition, not hidden independent interaction."},
+    "Llanowar Elves": {"roles": ["board_presence", "mana_acceleration"], "source": ".mz_engine/Mage.Sets/src/mage/cards/l/LlanowarElves.java", "notes": "Creature plus tap-for-mana capability; summoning sickness can delay mana production."},
+    "Brazen Borrower": {"roles": ["board_presence", "tempo_interaction"], "source": ".mz_engine/Mage.Sets/src/mage/cards/b/BrazenBorrower.java", "notes": "Flash creature and bounce Adventure. Available routes depend on zone; bounce is temporary rather than permanent spot removal."},
+    "Boseiju, Who Endures": {"roles": ["land_access", "spot_removal"], "source": ".mz_engine/Mage.Sets/src/mage/cards/b/BoseijuWhoEndures.java", "notes": "Land plus channel destruction of an opposing artifact, enchantment or nonbasic land; not a creature answer."},
+    "Negate": {"roles": ["counterspell"], "source": ".mz_engine/Mage.Sets/src/mage/cards/n/Negate.java", "notes": "Only noncreature spells. This broad role does not claim an answer to every legal spell."},
+    "Counterspell": {"roles": ["counterspell"], "source": ".mz_engine/Mage.Sets/src/mage/cards/c/Counterspell.java", "notes": "Counters a spell, not an activated ability or land play."},
+    "Growth Spiral": {"roles": ["card_draw", "mana_acceleration"], "source": ".mz_engine/Mage.Sets/src/mage/cards/g/GrowthSpiral.java", "notes": "One-card replacement and conditional additional land deployment; requires an eligible land to accelerate."},
+    "Lightning Bolt": {"roles": ["spot_removal", "direct_reach"], "source": ".mz_engine/Mage.Sets/src/mage/cards/l/LightningBolt.java", "notes": "Three damage to any target, supplying conditional creature removal or direct reach. One physical card is counted once in each role."},
+    "Wrath of God": {"roles": ["sweeper"], "source": ".mz_engine/Mage.Sets/src/mage/cards/w/WrathOfGod.java", "notes": "Mass creature destruction, not an individually targeted removal route."}
+  }
+}

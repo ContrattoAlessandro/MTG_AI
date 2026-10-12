@@ -1,0 +1,10 @@
+model:
+  belief_mode: statistical_roles
+  width: 256
+  entity_layers: 2
+  attention_heads: 4
+training:
+  epochs: 1
+  episodes_per_batch: 4
+  sequence_length: 32
+  belief_coefficient: 0.0

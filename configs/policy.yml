@@ -1,0 +1,30 @@
+# Compact starting point for the detected RTX 5070 (12 GB VRAM).
+# Card IDs/count come from the immutable catalog, never from an arbitrary hash.
+model:
+  belief_mode: statistical_roles
+  # Hand-count prediction from memory as an auxiliary loss; never an actor input.
+  auxiliary_belief: true
+  width: 256
+  entity_layers: 2
+  attention_heads: 4
+  max_hand_size: 64
+  max_entities: 512
+  max_actions: 2048
+  max_events: 1024
+  max_relations: 2048
+  max_deck_kinds: 128
+
+training:
+  learning_rate: 0.0003
+  epochs: 4
+  episodes_per_batch: 4
+  sequence_length: 32
+  gamma: 1.0
+  gae_lambda: 0.97
+  clip_ratio: 0.2
+  value_coefficient: 0.5
+  public_value_coefficient: 0.25
+  belief_coefficient: 0.1
+  entropy_coefficient: 0.01
+  max_grad_norm: 1.0
+  target_kl: 0.02

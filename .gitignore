@@ -19,3 +19,9 @@ FeatureTable.txt
 /db
 *.ser
 /traces
+/.mz_engine/
+/artifacts/
+/rollouts/
+/.research/
+/.pytest_cache/
+*.egg-info/
