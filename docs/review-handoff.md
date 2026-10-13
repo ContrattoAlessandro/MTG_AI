@@ -1,6 +1,6 @@
 # Architecture review follow-ups: handoff (13 October 2026)
 
-An architecture review on 13 October compared the policy with AlphaStar, OpenAI Five, DouZero/DouZero+ and PerfectDou. It produced nine numbered findings plus low-priority items. Findings 1–4 are implemented and verified; the rest remain. Read this file before the [next-session plan](next-session-plan.md) when continuing this work.
+An architecture review on 13 October compared the policy with AlphaStar, OpenAI Five, DouZero/DouZero+ and PerfectDou. It produced nine numbered findings plus low-priority items. Findings 1–4 are implemented and verified; the rest remain. **From 13 October evening, start with [final-run-plan.md](final-run-plan.md)**, which orders all remaining work; this file keeps the history and measurements.
 
 ## State at handoff
 
