@@ -10,7 +10,7 @@ from magezero.policy import runner
 from magezero.policy.checkpoint import load_checkpoint, save_checkpoint
 from magezero.policy.learner import (PPOConfig, generalized_advantages, ppo_update, reference_coefficient,
                                      reference_kl, validate_episode)
-from magezero.policy.schema import collate_observations
+from magezero.policy.schema import ACTION_TYPES, collate_observations
 from magezero.policy.service import TEACHER_VERSION, PolicyService
 from magezero.policy.shaping import potential, shaped_rewards
 from magezero.policy.teacher import CloneConfig, behavior_cloning, teacher_game_config
@@ -92,8 +92,12 @@ def test_ppo_reference_kl_is_zero_for_the_same_policy_and_pulls_towards_the_refe
     assert without["reference_kl_coefficient"] == 0.0
     # A reference with different action preferences: a strong KL term moves the policy towards it.
     reference = copy.deepcopy(model)
-    with torch.no_grad():
-        reference.action_types.weight[1:] += 0.5  # every non-pass candidate, including the attack
+
+    def prefers_attacks(batch, *args, head=reference._head):
+        out = head(batch, *args)
+        out.logits = out.logits + 2.0 * (batch.action_types == ACTION_TYPES.index("attack"))
+        return out
+    reference._head = prefers_attacks
     batch = collate_observations([observation(model.config)], model.config)
     attack = lambda m: m(batch).distribution().probs[0, 1].item()  # noqa: E731
     before = abs(attack(model) - attack(reference))

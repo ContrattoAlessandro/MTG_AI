@@ -9,7 +9,9 @@ import torch
 from .catalog import CardCatalog
 from .model import EntityBeliefPolicy, ModelConfig, PrivilegedCritic
 
-FORMAT_VERSION = 3
+# 4: per-decision event pooling, final entity LayerNorm, pooled entities in the
+# actor context, phase embedding, mean relation messages (2026-10-13 review).
+FORMAT_VERSION = 4
 
 
 def architecture_name(config):
@@ -32,7 +34,7 @@ def save_checkpoint(path, model, critic, catalog, *, optimizer=None, updates=0,
     path.parent.mkdir(parents=True, exist_ok=True)
     version = policy_version or uuid.uuid4().hex
     checkpoint = {
-        "format_version": FORMAT_VERSION if model.config.belief_mode == "statistical_roles" else 2,
+        "format_version": FORMAT_VERSION,
         "architecture": architecture_name(model.config),
         "model_config": model.config.to_dict(),
         "catalog": catalog.to_dict(),
@@ -56,14 +58,14 @@ def save_checkpoint(path, model, critic, catalog, *, optimizer=None, updates=0,
 def load_checkpoint(path, device="cpu"):
     checkpoint = torch.load(path, map_location="cpu", weights_only=True)
     version = checkpoint.get("format_version")
-    expected = {2: "entity_belief_recurrent_policy", 3: "entity_statistical_roles_recurrent_policy"}
-    if version not in expected or checkpoint.get("architecture") != expected[version]:
-        raise ValueError("expected a v2/v3 entity-policy checkpoint; legacy MCTS weights require retraining")
-    raw_config = dict(checkpoint["model_config"])
-    raw_config.setdefault("belief_mode", "learned" if version == 2 else "statistical_roles")
-    config = ModelConfig(**raw_config)
-    if architecture_name(config) != expected[version]:
-        raise ValueError("checkpoint belief mode disagrees with its architecture version")
+    if version in (2, 3):
+        raise ValueError("checkpoint predates the format-4 architecture (event pooling, final entity norm); "
+                         "its weights do not fit the current model: create a new one with mz init")
+    if version != FORMAT_VERSION:
+        raise ValueError("expected a v4 entity-policy checkpoint; legacy MCTS weights require retraining")
+    config = ModelConfig(**checkpoint["model_config"])
+    if checkpoint.get("architecture") != architecture_name(config):
+        raise ValueError("checkpoint belief mode disagrees with its architecture name")
     catalog = CardCatalog.from_dict(checkpoint["catalog"])
     if config.catalog_digest != catalog.digest or config.num_cards != catalog.num_cards:
         raise ValueError("checkpoint card catalog metadata is inconsistent")

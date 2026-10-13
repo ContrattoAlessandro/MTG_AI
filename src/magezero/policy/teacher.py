@@ -26,7 +26,7 @@ import yaml
 from .belief import constrained_hand_belief
 from .checkpoint import load_checkpoint, resolve_device, save_checkpoint
 from .engine import PersistentEngine
-from .learner import _carry, _join, _prepare_chunks, _windows, load_episodes
+from .learner import _carry, _join, _prepare_chunks, _windows, clip_gradients, load_episodes
 from .schema import ACTION_TYPES
 from .service import TEACHER_VERSION
 from .shaping import shaped_rewards
@@ -147,8 +147,7 @@ def _pass(model, critic, prepared, targets, indices, config: CloneConfig, optimi
                             by_type[ACTION_TYPES[kind]][0] += hit
                             by_type[ACTION_TYPES[kind]][1] += 1
         if optimizer is not None:
-            torch.nn.utils.clip_grad_norm_(list(model.parameters()) + list(critic.parameters()),
-                                           config.max_grad_norm, error_if_nonfinite=True)
+            clip_gradients(model, critic, config.max_grad_norm)
             optimizer.step()
     return totals, by_type
 

@@ -33,8 +33,14 @@ class PPOConfig:
     value_coefficient: float = 0.5
     public_value_coefficient: float = 0.25
     belief_coefficient: float = 0.1
+    # Weight of the policy entropy divided by log(number of legal candidates), so
+    # binary choices and 256-option amounts get comparable exploration pressure.
     entropy_coefficient: float = 0.01
+    # Applied to the actor (policy + public value) and the privileged critic
+    # separately, so a large critic gradient cannot shrink policy steps.
     max_grad_norm: float = 1.0
+    # A minibatch whose approximate KL from the behaviour policy exceeds 1.5 x this
+    # ends the update before its optimizer step (as Stable-Baselines3). 0 disables.
     target_kl: float = 0.02
     max_episode_steps: int = 10000
     log_probability_tolerance: float = 0.005
@@ -339,28 +345,27 @@ def ppo_update(model, critic, optimizer, episodes, config: PPOConfig, policy_ver
 
     trains_belief = model.config.belief_mode == "learned" or model.config.auxiliary_belief
     belief_coefficient = config.belief_coefficient if trains_belief else 0.0
-    names = ("policy_loss", "critic_loss", "public_value_loss", "belief_nll", "entropy", "approx_kl",
-             "reference_kl")
-    metrics = {"decisions": 0, "choice_decisions": 0, "epochs": 0, "optimizer_steps": 0,
+    names = ("policy_loss", "critic_loss", "public_value_loss", "belief_nll", "entropy",
+             "normalized_entropy", "approx_kl", "reference_kl")
+    metrics = {"decisions": 0, "choice_decisions": 0, "epochs": 0, "optimizer_steps": 0, "early_stopped": False,
                "belief_mode": model.config.belief_mode, "belief_loss_coefficient": belief_coefficient,
                "auxiliary_belief": model.config.auxiliary_belief,
                "truncated_episodes": sum(bool(e.get("truncated", False)) for e in episodes),
                "gae_lambda": config.gae_lambda, "shaping_coefficient": config.shaping_coefficient,
                "reference_kl_coefficient": beta}
-    total_choices = max(int(choices.sum().item()), 1)
     step_counts = [len(e["steps"]) for e in episodes]
     choice_counts = [sum(int(c.choice.sum().item()) for c in chunks) for chunks in prepared]
     device = choices.device
-    # Accumulate on the device; one host sync per epoch instead of per chunk.
+    # Accumulate on the device; one host sync per minibatch (the KL check).
     sums = {name: torch.zeros((), device=device) for name in names}
     for epoch in range(config.epochs):
-        epoch_kl = torch.zeros((), device=device)
         ordering = torch.randperm(len(episodes)).tolist()
         for start in range(0, len(ordering), config.episodes_per_batch):
             group = ordering[start:start + config.episodes_per_batch]
             step_denominator = sum(step_counts[i] for i in group)
             choice_denominator = max(sum(choice_counts[i] for i in group), 1)
             optimizer.zero_grad(set_to_none=True)
+            group_kl = torch.zeros((), device=device)
             memory, previous = None, group
             for window, members in _windows(group, prepared):
                 memory = _carry(memory, previous, members)
@@ -377,6 +382,8 @@ def ppo_update(model, critic, optimizer, episodes, config: PPOConfig, policy_ver
                 policy = -torch.minimum(ratio * advantage,
                     ratio.clamp(1 - config.clip_ratio, 1 + config.clip_ratio) * advantage) * choice
                 entropy = distribution.entropy() * choice
+                legal = joined.batch.action_mask.sum(-1).clamp(min=2).to(entropy.dtype)
+                normalized_entropy = entropy / legal.log()
                 value = critic(out.context, joined.batch.deck_cards, joined.labels.float())
                 critic_loss = (value - returns).square()
                 public_loss = (out.value - returns).square()
@@ -390,7 +397,8 @@ def ppo_update(model, critic, optimizer, episodes, config: PPOConfig, policy_ver
                                           joined.batch.action_mask) * choice
                 else:
                     anchor = torch.zeros_like(choice)
-                loss = ((policy.sum() - config.entropy_coefficient * entropy.sum() + beta * anchor.sum())
+                loss = ((policy.sum() - config.entropy_coefficient * normalized_entropy.sum()
+                         + beta * anchor.sum())
                         / choice_denominator
                         + (config.value_coefficient * critic_loss.sum()
                            + config.public_value_coefficient * public_loss.sum()
@@ -398,28 +406,51 @@ def ppo_update(model, critic, optimizer, episodes, config: PPOConfig, policy_ver
                 loss.backward()
                 memory, previous = out.memory.detach(), members
                 kl = ((ratio - 1 - log_ratio) * choice).sum().detach()
-                epoch_kl += kl
+                group_kl += kl
                 metrics["decisions"] += len(joined.actions)
                 for name, tensor in (("policy_loss", policy), ("critic_loss", critic_loss),
                         ("public_value_loss", public_loss), ("belief_nll", belief_loss),
-                        ("entropy", entropy), ("reference_kl", anchor)):
+                        ("entropy", entropy), ("normalized_entropy", normalized_entropy),
+                        ("reference_kl", anchor)):
                     sums[name] += tensor.detach().sum()
                 sums["approx_kl"] += kl
             metrics["choice_decisions"] += sum(choice_counts[i] for i in group)
-            parameters = list(model.parameters()) + list(critic.parameters())
-            torch.nn.utils.clip_grad_norm_(parameters, config.max_grad_norm, error_if_nonfinite=True)
+            metrics["epochs"] = epoch + 1
+            # These forward passes used the weights before this step: the KL is what
+            # the previous steps produced. Stop before moving further away.
+            if config.target_kl > 0 and group_kl.item() / choice_denominator > 1.5 * config.target_kl:
+                metrics["early_stopped"] = True
+                break
+            clip_gradients(model, critic, config.max_grad_norm)
             optimizer.step()
             metrics["optimizer_steps"] += 1
-        metrics["epochs"] = epoch + 1
-        if epoch_kl.item() / total_choices > config.target_kl:
+        if metrics["early_stopped"]:
             break
     sums = {name: value.item() for name, value in sums.items()}
-    for name in ("policy_loss", "entropy", "approx_kl", "reference_kl"):
+    for name in ("policy_loss", "entropy", "normalized_entropy", "approx_kl", "reference_kl"):
         metrics[name] = sums[name] / max(metrics["choice_decisions"], 1)
     for name in ("critic_loss", "public_value_loss", "belief_nll"):
         metrics[name] = sums[name] / max(metrics["decisions"], 1)
     metrics["episodes"] = len(episodes)
     return metrics
+
+
+def clip_gradients(model, critic, max_norm: float):
+    """Clip the actor (with its public value head) and the privileged critic separately."""
+    for parameters in (model.parameters(), critic.parameters()):
+        torch.nn.utils.clip_grad_norm_(parameters, max_norm, error_if_nonfinite=True)
+
+
+def check_warm_start(checkpoint: dict, config: PPOConfig):
+    """A cloned checkpoint's value heads estimate returns under the clone's shaping
+    and gamma. When PPO bootstraps from them (gae_lambda < 1) those must match."""
+    clone = checkpoint.get("metrics", {}).get("behavior_cloning")
+    if clone is None or config.gae_lambda == 1:
+        return
+    for key in ("shaping_coefficient", "gamma"):
+        if clone["config"][key] != getattr(config, key):
+            raise ValueError(f"the cloned critic was trained with {key} {clone['config'][key]}, but PPO "
+                             f"uses {getattr(config, key)} with gae_lambda < 1: re-clone or match the configs")
 
 
 def reference_coefficient(config: PPOConfig, updates: int, reference_updates: int) -> float:
@@ -431,6 +462,7 @@ def train_from_files(checkpoint_path, episode_paths, output_path, config=PPOConf
                      reference=None):
     """reference: optional frozen warm-start checkpoint for the KL term."""
     model, critic, catalog, checkpoint = load_checkpoint(checkpoint_path, resolve_device(device))
+    check_warm_start(checkpoint, config)
     anchor, beta = None, 0.0
     if reference is not None and config.reference_kl_coefficient > 0:
         anchor, _, reference_catalog, reference_data = load_checkpoint(reference, resolve_device(device))

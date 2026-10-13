@@ -127,7 +127,7 @@ def test_statistical_service_ppo_and_checkpoint(device, tmp_path):
     path = tmp_path / "policy.pt"
     save_checkpoint(path, model, critic, catalog, optimizer=optimizer, updates=1)
     restored, _, restored_catalog, data = load_checkpoint(path)
-    assert data["format_version"] == 3 and data["updates"] == 1
+    assert data["format_version"] == 4 and data["updates"] == 1
     assert restored_catalog.digest == catalog.digest
     batch = collate_observations([observation(model.config)], model.config)
     model.cpu().eval()
@@ -154,13 +154,17 @@ def test_unknown_roles_missing_catalog_and_legacy_v2_are_explicit(tmp_path):
     model, critic = EntityBeliefPolicy(config, old.tensor()), PrivilegedCritic(config)
     path = tmp_path / "old.pt"
     save_checkpoint(path, model, critic, old)
-    raw = torch.load(path, weights_only=True)
-    raw["model_config"].pop("belief_mode")  # real pilot files predate this field
-    torch.save(raw, path)
     restored, _, _, _ = load_checkpoint(path)
     assert restored.config.belief_mode == "learned" and hasattr(restored, "belief_head")
     batch = collate_observations([observation(config)], config)
     torch.testing.assert_close(restored(batch).logits, model.eval()(batch).logits)
+    # Weights from before the format-4 architecture cannot be loaded into it.
+    for version in (2, 3):
+        raw = torch.load(path, weights_only=True)
+        raw["format_version"] = version
+        torch.save(raw, path)
+        with pytest.raises(ValueError, match="mz init"):
+            load_checkpoint(path)
 
 
 def test_prior_example_large_pool_and_invalid_bounds():

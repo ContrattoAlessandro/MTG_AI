@@ -39,7 +39,7 @@ The teacher is deterministic, so the cloned policy is sharp (low entropy) where 
   --game configs/commander-mirror.yml --config configs/policy-final.yml ... (as in long-run.md)
 ```
 
-`teacher-collect` uses its checkpoint only for the card catalog and limits; it never chooses an action. `selfplay` refuses a positive `reference_kl_coefficient` without `--reference`, and keeps the reference in `run-state.json` across `--resume`. Metrics gain `reference_kl`, `reference_kl_coefficient`, `shaping_coefficient` and `gae_lambda`.
+`teacher-collect` uses its checkpoint only for the card catalog and limits; it never chooses an action. `selfplay` refuses a positive `reference_kl_coefficient` without `--reference`, and keeps the reference in `run-state.json` across `--resume`. PPO from a cloned checkpoint with `gae_lambda < 1` refuses a `shaping_coefficient` or `gamma` different from the ones the clone was trained with (at λ 1 the critic is only a baseline, so the control arm may differ). Metrics gain `reference_kl`, `reference_kl_coefficient`, `shaping_coefficient` and `gae_lambda`.
 
 ## Measured so far
 

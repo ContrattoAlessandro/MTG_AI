@@ -246,18 +246,6 @@ def test_sequence_forward_matches_stepwise_inference(components):
     torch.testing.assert_close(second.memory.events, memory.events, atol=1e-5, rtol=1e-5)
 
 
-def test_grucell_checkpoints_load_into_sequence_memory(components):
-    model, _, _ = components
-    state = model.state_dict()
-    for name in ("weight_ih", "weight_hh", "bias_ih", "bias_hh"):
-        state[f"decision_memory.{name}"] = state.pop(f"decision_memory.{name}_l0")
-    fresh = EntityBeliefPolicy(model.config, model.card_features).eval()
-    fresh.load_state_dict(state)
-    batch = collate_observations([observation(model.config)], model.config)
-    with torch.no_grad():
-        torch.testing.assert_close(fresh(batch).logits, model(batch).logits)
-
-
 def test_forced_decisions_are_excluded_from_policy_statistics(components):
     model, critic, catalog = components
     service = PolicyService(model, catalog, "forced")
