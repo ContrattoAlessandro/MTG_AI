@@ -39,6 +39,24 @@ Tests: 47 pass (`.venv/Scripts/python.exe -m pytest -q`), including 7 new ones i
 
   The warm start clearly helps: both cloned arms beat (a) on both matchups. The λ/shaping/KL change is unresolved: (b) leads on the mirror, (c) on the Kinnan matchup that the final run targets, with overlapping intervals, one seed each, and no score for the clone itself before PPO. Next: score the clone with no PPO, then rerun b vs c with more games or seeds (or longer) before fixing the final config.
 
+### A5 follow-up (13 October, finished 21:23)
+
+256 fresh sampled games per deck vs XMage's AI at skill 3 (`scripts/evaluate.py`, `artifacts/a5/rescore/`), plus a second run of b and c (`b2`, `c2`, evaluated in-run over 256 games). Scores with Wilson 95%:
+
+| Checkpoint | vs AI Winota (mirror) | vs AI Kinnan |
+|---|---|---|
+| clone, no PPO | 0.42 [0.36–0.49] | 0.56 [0.48–0.61] |
+| a (initial, control) | 0.24 [0.19–0.29] | 0.36 [0.29–0.40] |
+| b (clone, new settings) | 0.54 [0.48–0.60] | 0.63 [0.56–0.68] |
+| b2 | 0.51 [0.45–0.57] | 0.59 [0.52–0.64] |
+| c (clone, control) | 0.44 [0.38–0.50] | 0.67 [0.60–0.72] |
+| c2 | 0.50 [0.44–0.56] | 0.62 [0.55–0.67] |
+
+- **Warm start: confirmed.** The clone alone beats 25 generations of PPO from the initial checkpoint on both matchups.
+- **PPO on top of the clone helps a little:** about +0.05 to +0.10 after 25 generations, in all four runs.
+- **New settings vs control: no measurable difference.** Mean of the two runs: mirror 0.52 (b) vs 0.47 (c), Kinnan 0.61 (b) vs 0.64 (c). Opposite signs, and the run-to-run spread (up to 0.06) is as large as the gaps. Mean over both matchups: 0.565 vs 0.555.
+- Decision for the final run: keep `policy-final.yml` (b). It is no worse at this budget, and the decaying KL is there to prevent drift from the clone over thousands of generations, which a 25-generation test cannot show. Revisit λ/shaping if long-run evaluations stall.
+
 The smoke outputs are under the session scratchpad and are throwaway: `teacher-smoke/`, `cloned-smoke.pt`, `ppo-smoke/`.
 
 ### Format-4 architecture (13 October, third session)
