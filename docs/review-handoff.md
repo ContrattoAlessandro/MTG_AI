@@ -1,6 +1,6 @@
 # Architecture review follow-ups: handoff (13 October 2026)
 
-An architecture review on 13 October compared the policy with AlphaStar, OpenAI Five, DouZero/DouZero+ and PerfectDou. It produced nine numbered findings plus low-priority items. Findings 1–4 are implemented and verified; the rest remain. Read this file before the [next-session plan](next-session-plan.md) when continuing this work.
+An architecture review on 13 October compared the policy with AlphaStar, OpenAI Five, DouZero/DouZero+ and PerfectDou. It produced nine numbered findings plus low-priority items. Findings 1–4 are implemented and verified; the rest remain. **From 13 October evening, start with [final-run-plan.md](final-run-plan.md)**, which orders all remaining work; this file keeps the history and measurements.
 
 ## State at handoff
 
@@ -24,6 +24,20 @@ Tests: 47 pass (`.venv/Scripts/python.exe -m pytest -q`), including 7 new ones i
 - Committed as `40e175b` (A1). The `PolicyPlayer` refactor was checked decision by decision: same order, ids and early returns; feature changes are only the intended fix 2.
 - A3 running: `artifacts/teacher/` (log `artifacts/teacher-collect.log`; skill 1, `--ai-think 2`). First batch: 32/32 terminal, ~500 games/h (≈4 h for 2,000), 226 decisions/game, **18 KiB/decision** (≈8 GB total, not 8.5 KB). Label mix: 22% of priority decisions cast/activate, 43% of attack decisions attack. Summary: `python scripts/teacher_stats.py artifacts/teacher`.
 - A4/A5 queued behind it: `scripts/a5-comparison.sh` (log `artifacts/a5-chain.log`) clones to `artifacts/commander-cloned.pt`, then runs arms a, b, c in `artifacts/a5/` at 25 generations × 64 games each, evaluated at the end over 128 games vs XMage's AI (skill 3). Arms a and c use `configs/policy-compare-control.yml`. Rerun the script to resume. Arm (c)'s critic was pre-trained on shaped returns; at λ 1 it is only a baseline.
+
+### A3–A5 results (13 October, finished 17:48)
+
+- Teacher data: 2,000 games (3,987 trajectories, all terminal, 7 game errors), 418,521 decisions, 7.2 GiB. 23% of priority decisions cast/activate; 48% of attack decisions attack.
+- Clone (`artifacts/commander-cloned.pt`, best epoch 9 of 10): held-out accuracy 92.3%, NLL 0.216. By type: pass 98.5%, cast 71.0%, activate 62.7%, attack 96.9%, block 81.6%, target 97.3%, amount 7% (576 decisions); the rest ≥ 99.6%. No all-pass collapse.
+- Comparison, 25 generations × 64 games each, Winota learner, scored over 128 sampled games vs XMage's AI at skill 3 (Wilson 95% in brackets):
+
+| Arm | Start | λ / shaping / KL | vs AI Winota (mirror) | vs AI Kinnan |
+|---|---|---|---|---|
+| a | `commander-initial.pt` | 1 / 0 / 0 | 0.24 [0.18–0.32] | 0.44 [0.35–0.52] |
+| b | clone | 0.95 / 0.5 / 0.05 | **0.61** [0.52–0.69] | 0.56 [0.46–0.63] |
+| c | clone | 1 / 0 / 0 | 0.48 [0.39–0.56] | **0.67** [0.59–0.75] |
+
+  The warm start clearly helps: both cloned arms beat (a) on both matchups. The λ/shaping/KL change is unresolved: (b) leads on the mirror, (c) on the Kinnan matchup that the final run targets, with overlapping intervals, one seed each, and no score for the clone itself before PPO. Next: score the clone with no PPO, then rerun b vs c with more games or seeds (or longer) before fixing the final config.
 
 The smoke outputs are under the session scratchpad and are throwaway: `teacher-smoke/`, `cloned-smoke.pt`, `ppo-smoke/`.
 
