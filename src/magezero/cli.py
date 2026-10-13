@@ -1,15 +1,13 @@
-"""Search-free entity-policy CLI; the original pipeline uses legacy-* commands."""
+"""Command-line interface: the `mz` entry point."""
 import argparse
 import json
-import shutil
 import sys
-import zipfile
 from pathlib import Path
 
 # ─── train ───────────────────────────────────────────────────
 
 def cmd_train(args: argparse.Namespace) -> None:
-    from magezero.policy.learner import PPOConfig, train_from_files
+    from magezero.learner import PPOConfig, train_from_files
     import yaml
     raw = yaml.safe_load(Path(args.config).read_text(encoding="utf-8")) if args.config else {}
     metrics = train_from_files(args.checkpoint, args.episodes, args.output,
@@ -18,7 +16,7 @@ def cmd_train(args: argparse.Namespace) -> None:
 
 
 def cmd_teacher_collect(args: argparse.Namespace) -> None:
-    from magezero.policy.teacher import collect_teacher_games
+    from magezero.teacher import collect_teacher_games
     summary = collect_teacher_games(args.checkpoint, args.game, args.engine_script, args.output, args.games,
                                     batch_games=args.batch_games, engine_threads=args.engine_threads,
                                     ai_skill=args.ai_skill, ai_think=args.ai_think, seats=args.seats,
@@ -28,7 +26,7 @@ def cmd_teacher_collect(args: argparse.Namespace) -> None:
 
 def cmd_clone(args: argparse.Namespace) -> None:
     import yaml
-    from magezero.policy.teacher import CloneConfig, behavior_cloning
+    from magezero.teacher import CloneConfig, behavior_cloning
     raw = yaml.safe_load(Path(args.config).read_text(encoding="utf-8")) if args.config else {}
     metrics = behavior_cloning(args.checkpoint, args.episodes, args.output, CloneConfig(**raw.get("clone", {})),
                                args.device)
@@ -42,9 +40,9 @@ def cmd_clone(args: argparse.Namespace) -> None:
 def cmd_init(args: argparse.Namespace) -> None:
     import torch
     import yaml
-    from magezero.policy.catalog import CardCatalog
-    from magezero.policy.checkpoint import save_checkpoint
-    from magezero.policy.model import EntityBeliefPolicy, ModelConfig, PrivilegedCritic
+    from magezero.catalog import CardCatalog
+    from magezero.checkpoint import save_checkpoint
+    from magezero.model import EntityBeliefPolicy, ModelConfig, PrivilegedCritic
     catalog = CardCatalog.load(args.catalog)
     raw = yaml.safe_load(Path(args.config).read_text(encoding="utf-8")) if args.config else {}
     torch.manual_seed(args.seed)
@@ -57,13 +55,13 @@ def cmd_init(args: argparse.Namespace) -> None:
 
 
 def cmd_serve(args: argparse.Namespace) -> None:
-    from magezero.policy.service import serve
+    from magezero.service import serve
     serve(args.checkpoint, args.host, args.port, args.episodes, args.device, args.max_batch,
           not args.no_belief, args.torch_threads, args.allow_reload)
 
 
 def cmd_selfplay(args: argparse.Namespace) -> None:
-    from magezero.policy.runner import run_selfplay
+    from magezero.runner import run_selfplay
     run_selfplay(args.checkpoint, args.game, args.config, args.engine_script,
                  args.output, args.iterations, args.games, args.device, args.league, args.actor_device,
                  args.minutes * 60 if args.minutes is not None else None,
@@ -81,7 +79,7 @@ def cmd_selfplay(args: argparse.Namespace) -> None:
 def cmd_play_policy(args: argparse.Namespace) -> None:
     """Local XMage server whose "Computer - monte carlo" opponent is the policy."""
     import subprocess
-    from magezero.policy.runner import _await_server, _launch_server, _policy_version, _stop_server
+    from magezero.runner import _await_server, _launch_server, _policy_version, _stop_server
     xmage = Path(args.xmage).resolve()
     config = Path(args.server_config).resolve()
     for path in (xmage / "lib", config):
@@ -105,113 +103,6 @@ def cmd_play_policy(args: argparse.Namespace) -> None:
         pass
     finally:
         _stop_server(service)
-
-
-def cmd_legacy_train(args: argparse.Namespace) -> None:
-    from magezero.util.config import load_all
-    from magezero import runner
-    run_cfg, cur_cfg = load_all(args.run)
-    runner.run_pipeline(run_cfg, cur_cfg, base_game_yml=args.game, resume=args.resume)
-
-
-# ─── batch ───────────────────────────────────────────────────
-
-def cmd_batch(args: argparse.Namespace) -> None:
-    from magezero import runner
-    runner.launch_jvm(args.config)
-
-
-# ─── play ────────────────────────────────────────────────────
-
-def cmd_play(args: argparse.Namespace) -> None:
-    from magezero import runner
-    import subprocess
-    from pathlib import Path
-
-    config = Path(args.config).resolve()
-    if not config.exists():
-        sys.exit(f"config not found: {config}")
-
-    deck = args.deck
-    version = args.version
-    if version is None:
-        version = runner.latest_version(deck)
-    server = None
-    if version is None or not runner.has_checkpoint(deck, version):
-    #if not runner.has_checkpoint(deck, version):
-        print(f"model for {deck} is not found, falling back to offline MCTS")
-        #sys.exit(f"no checkpoint at models/{deck}/ver{version}/model.pt.gz")
-    else:
-        # start inference server
-        print(f"[play] starting inference server for {deck} v{version}")
-        server = runner.start_server(deck, version, runner.PRIMARY_PORT, Path("."))
-
-    try:
-        # launch XMage server
-        script = "xmage\\mz-xmage-play.bat" if sys.platform == "win32" else "xmage/mz-xmage-play.sh"
-        cmd = ["cmd", "/c", script, str(config)] if sys.platform == "win32" else [script, str(config)]
-        subprocess.run(cmd, check=True)
-    finally:
-        if server is not None:
-            runner.stop_server(server)
-
-
-# ─── import ──────────────────────────────────────────────────
-
-def cmd_import(args: argparse.Namespace) -> None:
-    from magezero import runner
-    src = Path(args.file)
-    if not src.exists():
-        sys.exit(f"file not found: {src}")
-
-    suffix = src.suffix.lower()
-    if suffix == ".dck":
-        dst = runner.DECKS_DIR / src.name
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(src, dst)
-        print(f"✓ imported deck → {dst}")
-
-    elif suffix == ".mz":
-        with zipfile.ZipFile(src) as zf:
-            meta = json.loads(zf.read("metadata.json"))
-            deck = meta["deck"]
-            version = meta["version"]
-            dst = Path("models") / deck / f"ver{version}"
-            dst.mkdir(parents=True, exist_ok=True)
-            zf.extract("model.pt.gz", dst)
-        print(f"✓ imported model → {dst}")
-
-    elif suffix == ".txt":
-        dst = Path("xmage/decks") / src.name
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(src, dst)
-        print(f"✓ imported deck → {dst}")
-
-    else:
-        sys.exit(f"unknown file type: {suffix} (expected .dck, .mz, or .txt)")
-
-
-# ─── export ──────────────────────────────────────────────────
-
-def cmd_export(args: argparse.Namespace) -> None:
-    src = Path("models") / args.deck / f"ver{args.version}"
-    if not src.exists():
-        sys.exit(f"model not found: {src}")
-
-    model_file = src / "model.pt.gz"
-    if not model_file.exists():
-        sys.exit(f"missing model.pt.gz in {src}")
-
-    out_dir = Path("exports")
-    out_dir.mkdir(exist_ok=True)
-    out_path = out_dir / f"{args.deck}_v{args.version}.mz"
-
-    metadata = {"deck": args.deck, "version": args.version}
-    with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.write(model_file, "model.pt.gz")
-        zf.writestr("metadata.json", json.dumps(metadata, indent=2))
-
-    print(f"✓ exported → {out_path}")
 
 
 # ─── main ────────────────────────────────────────────────────
@@ -286,7 +177,7 @@ def main() -> None:
 
     p_selfplay = sub.add_parser("selfplay", help="collect and learn using the v2 XMage policy adapter")
     p_selfplay.add_argument("--checkpoint", required=True)
-    p_selfplay.add_argument("--game", default="configs/policy-game.yml")
+    p_selfplay.add_argument("--game", default="configs/commander-mirror.yml")
     p_selfplay.add_argument("--config", default="configs/policy.yml")
     p_selfplay.add_argument("--engine-script", required=True)
     p_selfplay.add_argument("--output", default="artifacts/selfplay")
@@ -323,31 +214,6 @@ def main() -> None:
                             help="evaluate with the most likely action instead of sampling")
     p_selfplay.add_argument("--reference", help="frozen behaviour-cloned checkpoint for the KL term (training.reference_kl_coefficient)")
     p_selfplay.set_defaults(func=cmd_selfplay)
-
-    p_old_train = sub.add_parser("legacy-train", help="original MCTS pipeline (explicit opt-in)")
-    p_old_train.add_argument("--run", default="configs/run.yml")
-    p_old_train.add_argument("--game", default="configs/game.yml")
-    p_old_train.add_argument("--resume", action="store_true")
-    p_old_train.set_defaults(func=cmd_legacy_train)
-
-    p_batch = sub.add_parser("legacy-batch", help="original JVM batch launcher")
-    p_batch.add_argument("--config", default="configs/game.yml")
-    p_batch.set_defaults(func=cmd_batch)
-
-    p_play = sub.add_parser("legacy-play", help="original XMage player launcher")
-    p_play.add_argument("--deck", required=True)
-    p_play.add_argument("--version", type=int, default=None)
-    p_play.add_argument("--config", default="configs/game.yml")
-    p_play.set_defaults(func=cmd_play)
-
-    p_import = sub.add_parser("legacy-import", help="import original .dck or .mz file")
-    p_import.add_argument("file")
-    p_import.set_defaults(func=cmd_import)
-
-    p_export = sub.add_parser("legacy-export", help="export original model as .mz bundle")
-    p_export.add_argument("--deck", required=True)
-    p_export.add_argument("--version", type=int, required=True)
-    p_export.set_defaults(func=cmd_export)
 
     args = parser.parse_args()
     args.func(args)

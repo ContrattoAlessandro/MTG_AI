@@ -28,7 +28,7 @@ training:
   # Bootstrapped advantages: lower variance than lambda 1 across hundreds of
   # decisions per game, once the critic is pre-trained.
   gae_lambda: 0.95
-  # Potential-based shaping (src/magezero/policy/shaping.py): policy-invariant,
+  # Potential-based shaping (src/magezero/shaping.py): policy-invariant,
   # bounded by 0.5 against the +-1 game result. Must equal clone.shaping_coefficient.
   shaping_coefficient: 0.5
   # KL(cloned || policy), AlphaStar-style. Halves about every 700 updates.

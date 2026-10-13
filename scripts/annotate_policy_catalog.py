@@ -12,8 +12,8 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from magezero.policy.catalog import CardCatalog
-from magezero.policy.roles import ROLE_NAMES, validate_roles
+from magezero.catalog import CardCatalog
+from magezero.roles import ROLE_NAMES, validate_roles
 
 
 def annotate_catalog(catalog, annotations):

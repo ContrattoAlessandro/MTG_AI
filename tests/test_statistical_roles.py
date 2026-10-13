@@ -6,15 +6,15 @@ import math
 import pytest
 import torch
 
-from magezero.policy.belief import constrained_hand_belief
-from magezero.policy.catalog import CardCatalog
-from magezero.policy.checkpoint import load_checkpoint, save_checkpoint
-from magezero.policy.learner import PPOConfig, ppo_update
-from magezero.policy.model import EntityBeliefPolicy, ModelConfig, PrivilegedCritic
-from magezero.policy.roles import ROLE_NAMES
-from magezero.policy.schema import collate_observations
-from magezero.policy.service import PolicyService, create_app
-from magezero.policy.statistics import log_choose, role_statistics, statistical_hand_belief
+from magezero.belief import constrained_hand_belief
+from magezero.catalog import CardCatalog
+from magezero.checkpoint import load_checkpoint, save_checkpoint
+from magezero.learner import PPOConfig, ppo_update
+from magezero.model import EntityBeliefPolicy, ModelConfig, PrivilegedCritic
+from magezero.roles import ROLE_NAMES
+from magezero.schema import collate_observations
+from magezero.service import PolicyService, create_app
+from magezero.statistics import log_choose, role_statistics, statistical_hand_belief
 from test_entity_policy import observation
 
 

@@ -35,7 +35,7 @@ For example, four counterspell copies among 40 unknown cards and five unknown ha
 
 ## Role metadata and coverage
 
-The 20 stable role names are defined in `src/magezero/policy/roles.py`. Catalog format v2 adds these names in fixed order plus reviewed role labels on every card. `configs/card-roles.json` records 18 reviewed entries with local XMage source references and notes, covering every card in the 10-kind simplegreen pool and several interaction examples.
+The 20 stable role names are defined in `src/magezero/roles.py`. Catalog format v2 adds these names in fixed order plus reviewed role labels on every card. `configs/card-roles.json` records 18 reviewed entries with local XMage source references and notes, covering every card in the 10-kind simplegreen pool and several interaction examples.
 
 Annotations preserve identities and IDs, but change the catalog digest. Unknown annotations fail explicitly rather than interpreting an unreviewed card as lacking every capability. `scripts/annotate_policy_catalog.py` converts an engine-exported v1 catalog to v2 and refuses to overwrite an existing output.
 

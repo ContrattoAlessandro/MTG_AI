@@ -6,13 +6,13 @@ import math
 import pytest
 import torch
 
-from magezero.policy.belief import constrained_hand_belief
-from magezero.policy.catalog import CardCatalog
-from magezero.policy.checkpoint import load_checkpoint, save_checkpoint
-from magezero.policy.learner import PPOConfig, generalized_advantages, ppo_update, validate_episode
-from magezero.policy.model import EntityBeliefPolicy, ModelConfig, PrivilegedCritic
-from magezero.policy.schema import ENTITY_FEATURES, collate_observations, validate_observation
-from magezero.policy.service import PolicyService, create_app
+from magezero.belief import constrained_hand_belief
+from magezero.catalog import CardCatalog
+from magezero.checkpoint import load_checkpoint, save_checkpoint
+from magezero.learner import PPOConfig, generalized_advantages, ppo_update, validate_episode
+from magezero.model import EntityBeliefPolicy, ModelConfig, PrivilegedCritic
+from magezero.schema import ENTITY_FEATURES, collate_observations, validate_observation
+from magezero.service import PolicyService, create_app
 
 torch.set_num_threads(1)
 
@@ -264,7 +264,7 @@ def test_forced_decisions_are_excluded_from_policy_statistics(components):
 
 
 def test_batched_inference_matches_individual_requests(components):
-    from magezero.policy.service import Session, _Job
+    from magezero.service import Session, _Job
     model, _, catalog = components
     service = PolicyService(model, catalog, "batch")
     observations = [observation(model.config, 0, game_id=f"g{i}") for i in range(3)]

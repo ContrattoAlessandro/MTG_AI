@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from magezero.policy.diagnostics import evaluate_predictions, trace_decision
+from magezero.diagnostics import evaluate_predictions, trace_decision
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--checkpoint", required=True)

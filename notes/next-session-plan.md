@@ -122,7 +122,7 @@ Quick real-game smoke (CPU only, about 30 s):
 
 ## Task C: Gauntlet opponents in training (about ½ day)
 
-`src/magezero/policy/runner.py`, the generation loop around "Alternate latest-policy self-play and historical league games":
+`src/magezero/runner.py`, the generation loop around "Alternate latest-policy self-play and historical league games":
 - Today the opponent is the current policy or a league snapshot. XMage's AI (`type: xmage-ai`, already supported by `PolicyGames`) is used only in `_evaluate`.
 - Add a third generation kind: **learner deck vs a gauntlet deck piloted by XMage's AI**.
   - New `selfplay` options, for example `--gauntlet deck1.dck deck2.dck ...`, `--gauntlet-every N` or a mixing fraction, and `--gauntlet-ai-skill`.

@@ -6,14 +6,14 @@ import json
 import pytest
 import torch
 
-from magezero.policy import runner
-from magezero.policy.checkpoint import load_checkpoint, save_checkpoint
-from magezero.policy.learner import (PPOConfig, generalized_advantages, ppo_update, reference_coefficient,
+from magezero import runner
+from magezero.checkpoint import load_checkpoint, save_checkpoint
+from magezero.learner import (PPOConfig, generalized_advantages, ppo_update, reference_coefficient,
                                      reference_kl, validate_episode)
-from magezero.policy.schema import ACTION_TYPES, collate_observations
-from magezero.policy.service import TEACHER_VERSION, PolicyService
-from magezero.policy.shaping import potential, shaped_rewards
-from magezero.policy.teacher import CloneConfig, behavior_cloning, teacher_game_config
+from magezero.schema import ACTION_TYPES, collate_observations
+from magezero.service import TEACHER_VERSION, PolicyService
+from magezero.shaping import potential, shaped_rewards
+from magezero.teacher import CloneConfig, behavior_cloning, teacher_game_config
 from test_entity_policy import components, observation  # noqa: F401  (fixture)
 from test_long_run import _episode
 
@@ -204,7 +204,7 @@ def test_clone_and_runner_configuration_checks(components, tmp_path):
 
 def test_teacher_games_are_indexed_on_disk_and_loaded_per_trajectory(components, tmp_path):
     """mz clone keeps only offsets and returns in memory; several trajectories may share a file."""
-    from magezero.policy.teacher import _TeacherGames, _split
+    from magezero.teacher import _TeacherGames, _split
     model, critic, catalog = components
     service = PolicyService(model, catalog, "start", tmp_path / "teacher")
     for game in range(3):

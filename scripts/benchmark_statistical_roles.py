@@ -10,10 +10,10 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import torch
-from magezero.policy.catalog import CardCatalog
-from magezero.policy.model import EntityBeliefPolicy, ModelConfig
-from magezero.policy.roles import ROLE_NAMES
-from magezero.policy.schema import collate_observations
+from magezero.catalog import CardCatalog
+from magezero.model import EntityBeliefPolicy, ModelConfig
+from magezero.roles import ROLE_NAMES
+from magezero.schema import collate_observations
 from policy_smoke import observation
 
 

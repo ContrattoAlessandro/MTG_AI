@@ -15,13 +15,13 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import torch
-from magezero.policy.catalog import CardCatalog
-from magezero.policy.checkpoint import load_checkpoint, resolve_device, save_checkpoint
-from magezero.policy.learner import PPOConfig, train_from_files
-from magezero.policy.model import EntityBeliefPolicy, ModelConfig, PrivilegedCritic
-from magezero.policy.schema import ENTITY_FEATURES, collate_observations
-from magezero.policy.service import PolicyService
-from magezero.policy.roles import ROLE_NAMES
+from magezero.catalog import CardCatalog
+from magezero.checkpoint import load_checkpoint, resolve_device, save_checkpoint
+from magezero.learner import PPOConfig, train_from_files
+from magezero.model import EntityBeliefPolicy, ModelConfig, PrivilegedCritic
+from magezero.schema import ENTITY_FEATURES, collate_observations
+from magezero.service import PolicyService
+from magezero.roles import ROLE_NAMES
 
 
 def observation(config, game, step):

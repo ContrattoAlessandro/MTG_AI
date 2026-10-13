@@ -15,7 +15,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from magezero.policy.roles import validate_roles
+from magezero.roles import validate_roles
 
 SETS = ".mz_engine/Mage.Sets/src/mage/cards"
 TOKENS = ".mz_engine/Mage/src/main/java/mage/game/permanent/token"

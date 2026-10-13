@@ -13,8 +13,8 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import torch
-from magezero.policy.checkpoint import load_checkpoint
-from magezero.policy.schema import collate_observations
+from magezero.checkpoint import load_checkpoint
+from magezero.schema import collate_observations
 
 
 def queries(obs, catalog):

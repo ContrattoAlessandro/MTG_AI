@@ -6,8 +6,8 @@ import subprocess
 import sys
 import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from magezero.policy.checkpoint import load_checkpoint
-from magezero.policy.runner import _start_server, _stop_server
+from magezero.checkpoint import load_checkpoint
+from magezero.runner import _start_server, _stop_server
 
 parser=argparse.ArgumentParser()
 parser.add_argument("--checkpoint",required=True)

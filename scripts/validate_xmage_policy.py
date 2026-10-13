@@ -16,8 +16,8 @@ import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
-from magezero.policy.checkpoint import load_checkpoint
-from magezero.policy.learner import PPOConfig, train_from_files
+from magezero.checkpoint import load_checkpoint
+from magezero.learner import PPOConfig, train_from_files
 
 
 def main():

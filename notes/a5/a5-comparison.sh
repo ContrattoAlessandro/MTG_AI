@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# A5 of docs/review-handoff.md: wait for the teacher collection, clone, then three
+# A5 of notes/review-handoff.md: wait for the teacher collection, clone, then three
 # PPO arms at equal budget (25 generations of 64 games), each evaluated at the end
 # against XMage's AI (skill 3, 128 games per deck). Rerunning resumes finished steps.
 #   (a) commander-initial.pt, control settings (lambda 1, no shaping, no KL)
 #   (b) commander-cloned.pt, policy-final.yml (lambda 0.95, shaping 0.5, KL 0.05)
 #   (c) commander-cloned.pt, control settings
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 MZ=.venv/Scripts/mz.exe
 OUT=artifacts/a5
 mkdir -p "$OUT"
@@ -35,7 +35,7 @@ arm() {  # name checkpoint config [extra args]
         --keep-every 5 --min-free-gb 30 "${resume[@]}" "$@" >> "$OUT/$name.log" 2>&1
 }
 
-arm a artifacts/commander-initial.pt configs/policy-compare-control.yml
+arm a artifacts/commander-initial.pt configs/experiments/policy-compare-control.yml
 arm b artifacts/commander-cloned.pt configs/policy-final.yml --reference artifacts/commander-cloned.pt
-arm c artifacts/commander-cloned.pt configs/policy-compare-control.yml
+arm c artifacts/commander-cloned.pt configs/experiments/policy-compare-control.yml
 echo "== done $(date)"

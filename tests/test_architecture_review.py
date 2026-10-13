@@ -5,10 +5,10 @@ import copy
 import pytest
 import torch
 
-from magezero.policy.learner import (PPOConfig, _carry, _join, _prepare_chunks, _windows, check_warm_start,
+from magezero.learner import (PPOConfig, _carry, _join, _prepare_chunks, _windows, check_warm_start,
                                      clip_gradients, ppo_update)
-from magezero.policy.schema import EVENT_TYPES, collate_observations
-from magezero.policy.service import PolicyService
+from magezero.schema import EVENT_TYPES, collate_observations
+from magezero.service import PolicyService
 from test_entity_policy import components, observation  # noqa: F401  (fixture)
 from test_long_run import _episode, _varied_trajectory
 

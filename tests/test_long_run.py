@@ -8,12 +8,12 @@ import pytest
 import torch
 import yaml
 
-from magezero.policy import runner
-from magezero.policy.checkpoint import load_checkpoint, save_checkpoint
-from magezero.policy.learner import (PPOConfig, _carry, _join, _prepare_chunks, _windows,
+from magezero import runner
+from magezero.checkpoint import load_checkpoint, save_checkpoint
+from magezero.learner import (PPOConfig, _carry, _join, _prepare_chunks, _windows,
                                      ppo_update, validate_episode)
-from magezero.policy.schema import collate_observations
-from magezero.policy.service import PolicyService
+from magezero.schema import collate_observations
+from magezero.service import PolicyService
 from test_entity_policy import components, observation  # noqa: F401  (fixture)
 
 torch.set_num_threads(1)

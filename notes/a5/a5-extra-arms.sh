@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Extra A5 arms, run after scripts/a5-comparison.sh finishes (same budget and
+# Extra A5 arms, run after notes/a5/a5-comparison.sh finishes (same budget and
 # evaluation as arms a-c, so all arms are comparable). Rerunning resumes.
 #   (d) commander-cloned.pt, policy-final.yml with learning rate 1e-4 (fine-tuning rate)
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 MZ=.venv/Scripts/mz.exe
 OUT=artifacts/a5
 
@@ -24,5 +24,5 @@ arm() {  # name checkpoint config [extra args]
         --keep-every 5 --min-free-gb 30 "${resume[@]}" "$@" >> "$OUT/$name.log" 2>&1
 }
 
-arm d artifacts/commander-cloned.pt configs/policy-final-lr1e4.yml --reference artifacts/commander-cloned.pt
+arm d artifacts/commander-cloned.pt configs/experiments/policy-final-lr1e4.yml --reference artifacts/commander-cloned.pt
 echo "== done $(date)"

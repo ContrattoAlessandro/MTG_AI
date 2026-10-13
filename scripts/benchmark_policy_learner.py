@@ -6,7 +6,7 @@ import sys
 import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/"src"))
 import torch
-from magezero.policy.learner import PPOConfig, train_from_files
+from magezero.learner import PPOConfig, train_from_files
 parser=argparse.ArgumentParser()
 parser.add_argument("--checkpoint",required=True)
 parser.add_argument("--episodes",required=True)

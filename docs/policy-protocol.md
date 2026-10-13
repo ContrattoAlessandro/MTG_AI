@@ -1,6 +1,6 @@
 # Entity policy protocol, version 2
 
-`src/magezero/policy/schema.py` is the executable specification. JSON requests use finite numbers and exact fields. Entity/action IDs are opaque references; the neural network never embeds their strings. Observations are player-relative: owner/controller/actor `0=self`, `1=opponent`, `2=neutral`.
+`src/magezero/schema.py` is the executable specification. JSON requests use finite numbers and exact fields. Entity/action IDs are opaque references; the neural network never embeds their strings. Observations are player-relative: owner/controller/actor `0=self`, `1=opponent`, `2=neutral`.
 
 ## Endpoints
 
