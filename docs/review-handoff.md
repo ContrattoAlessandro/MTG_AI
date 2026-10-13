@@ -19,6 +19,12 @@ Tests: 47 pass (`.venv/Scripts/python.exe -m pytest -q`), including 7 new ones i
 | 3. Credit assignment (γ = λ = 1, terminal reward only) | `src/magezero/policy/shaping.py`: potential-based shaping from public state. `training.shaping_coefficient`, plus `gae_lambda` 0.95 in `configs/policy-final.yml` | Unit tests (telescoping; baseline-only effect at λ = 1) and a real PPO smoke |
 | 4. No supervised warm start | `TeacherPlayer` (XMage's AI, recorded over the policy's own candidates via the shared `PolicyCandidates`), `POST /record`, `mz teacher-collect`, `mz clone`, a reference-KL term in PPO (`training.reference_kl_coefficient` and `_decay`), `selfplay --reference`. Workflow in `docs/warm-start.md` | A 4-game real teacher collection (712 decisions), cloning, and 2 PPO generations from the clone with the KL term. All games terminal, no errors |
 
+### In progress (13 October, second session)
+
+- Committed as `40e175b` (A1). The `PolicyPlayer` refactor was checked decision by decision: same order, ids and early returns; feature changes are only the intended fix 2.
+- A3 running: `artifacts/teacher/` (log `artifacts/teacher-collect.log`; skill 1, `--ai-think 2`). First batch: 32/32 terminal, ~500 games/h (≈4 h for 2,000), 226 decisions/game, **18 KiB/decision** (≈8 GB total, not 8.5 KB). Label mix: 22% of priority decisions cast/activate, 43% of attack decisions attack. Summary: `python scripts/teacher_stats.py artifacts/teacher`.
+- A4/A5 queued behind it: `scripts/a5-comparison.sh` (log `artifacts/a5-chain.log`) clones to `artifacts/commander-cloned.pt`, then runs arms a, b, c in `artifacts/a5/` at 25 generations × 64 games each, evaluated at the end over 128 games vs XMage's AI (skill 3). Arms a and c use `configs/policy-compare-control.yml`. Rerun the script to resume. Arm (c)'s critic was pre-trained on shaped returns; at λ 1 it is only a baseline.
+
 The smoke outputs are under the session scratchpad and are throwaway: `teacher-smoke/`, `cloned-smoke.pt`, `ppo-smoke/`.
 
 ## Remaining work, in order
