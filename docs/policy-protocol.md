@@ -51,7 +51,7 @@ Card features are a coarse catalog baseline; keyword substring extraction does n
 
 The layouts are part of the checkpoint contract. Vector sizes are constants in both languages (`ENTITY_FEATURES` and friends in `schema.py`, `PolicyEncoder.ENTITY_FEATURES` in Java). A size change makes earlier checkpoints and trajectories fail to load or validate. A change of slot meaning at the same size still loads, but earlier weights would read the new slots with their old meanings, so either change requires a fresh policy and fresh trajectories.
 
-Commander Duel: both commanders are public entities in the command zone (zone 7, kind 2) while they are there. The opponent's commander is part of the known deck list with one copy: its upper bound is 0 while it is public (command zone, battlefield, stack, graveyard, exile) and it becomes a hand candidate if it is returned to hand. Tokens and other card faces have catalog IDs when the catalog was exported with them (see [XMage integration](xmage-integration.md#export-the-immutable-card-catalog)); token copies use the copied card's ID.
+Commander Duel: both commanders are public entities in the command zone (zone 7, kind 2) while they are there. The opponent's commander is part of the known deck list with one copy: its upper bound is 0 while it is public (command zone, battlefield, stack, graveyard, exile) and it becomes a hand candidate if it is returned to hand. Tokens and other card faces have catalog IDs when the catalog was exported with them (see [XMage integration](xmage-integration.md#exporting-the-card-catalog)); token copies use the copied card's ID.
 
 ## Recurrent and training lifecycle
 
