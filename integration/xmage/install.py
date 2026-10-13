@@ -29,6 +29,13 @@ def install(root):
             raise ValueError("source target escaped the explicitly supplied checkout")
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(file, destination)
+    # Classes extending XMage's Mad AI (Mage.Player.AI.MA keeps a non-Maven src/ layout).
+    for file in (source.parent / "src-ma").rglob("*.java"):
+        destination = root / "Mage.Server.Plugins" / "Mage.Player.AI.MA" / "src" / file.relative_to(source.parent / "src-ma")
+        if not destination.resolve().is_relative_to(root):
+            raise ValueError("source target escaped the explicitly supplied checkout")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(file, destination)
     for patch in sorted((source.parent / "patches").glob("*.patch")):
         applied = subprocess.run(["git", "-C", str(root), "apply", "--reverse", "--check", "--ignore-whitespace", str(patch)],
                                  capture_output=True).returncode == 0

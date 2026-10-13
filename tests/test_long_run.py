@@ -210,7 +210,7 @@ class _FakeCollector:
         pass
 
 
-def _fake_train(current, shards, output, training, device):
+def _fake_train(current, shards, output, training, device, reference=None):
     model, critic, catalog, data = load_checkpoint(current)
     save_checkpoint(output, model, critic, catalog, updates=data["updates"] + 1)
     return {"decisions": len(shards)}
@@ -301,7 +301,7 @@ def test_gauntlet_generations_pin_the_learner_deck(components, tmp_path, monkeyp
     monkeypatch.setattr(runner, "_ServicePool", lambda *args: _FakeServices())
     trained = []
     monkeypatch.setattr(runner, "train_from_files",
-                        lambda current, shards, *rest: trained.append(list(shards)) or _fake_train(current, shards, *rest))
+                        lambda current, shards, *rest, **options: trained.append(list(shards)) or _fake_train(current, shards, *rest, **options))
     _mock_results(monkeypatch, iter([0.25, 0.75]))
     _FakeCollector.configs, _FakeCollector.fail_next = [], 0
     output = tmp_path / "run"

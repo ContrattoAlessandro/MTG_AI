@@ -19,14 +19,15 @@ Implemented 12 October 2026. This covers the machinery for an unattended multi-d
 ## Commander Duel: Winota learner, Kinnan gauntlet
 
 ```powershell
-.venv/Scripts/mz.exe selfplay --checkpoint artifacts/commander-initial.pt --game configs/commander-mirror.yml --config configs/policy-final.yml `
+.venv/Scripts/mz.exe selfplay --checkpoint artifacts/commander-cloned.pt --reference artifacts/commander-cloned.pt `
+  --game configs/commander-mirror.yml --config configs/policy-final.yml `
   --engine-script xmage/mz-policy.bat --output artifacts/commander-run --iterations 5000 --games 64 `
   --gauntlet xmage/decks/kinnan.dck --gauntlet-fraction 0.5 --gauntlet-ai-skill 1 `
   --engine-threads 16 --device cuda --eval-every 25 --eval-games 64 --eval-ai-skill 3 --eval-greedy `
   --keep-every 100 --min-free-gb 30
 ```
 
-The numbers (fraction, skills, games) are a starting point to be set from the launch check in [the plan](next-session-plan.md#task-d-launch-check-then-the-final-run).
+`commander-cloned.pt` is the behaviour-cloned warm start; build it first as in [warm-start.md](warm-start.md). The numbers (fraction, skills, games) are a starting point to be set from the launch check in [the plan](next-session-plan.md#task-d-launch-check-then-the-final-run).
 
 ## Caveats
 

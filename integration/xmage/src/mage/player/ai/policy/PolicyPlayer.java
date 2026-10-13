@@ -17,8 +17,11 @@ import mage.players.PlayerImpl;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import static mage.player.ai.policy.PolicyCandidates.describe;
+import static mage.player.ai.policy.PolicyCandidates.ordinal;
+
 /** Direct legal-action player. No MCTS node, rollout, search budget, or value search. */
-public final class PolicyPlayer extends ComputerPlayer {
+public final class PolicyPlayer extends ComputerPlayer implements RecordingPlayer {
     private final String endpoint;
     // Self-play records privileged labels and reports the result; server games
     // against people are inference only.
@@ -81,16 +84,13 @@ public final class PolicyPlayer extends ComputerPlayer {
 
     @Override public PolicyPlayer copy() { return new PolicyPlayer(this); }
 
-    /** The policy service's max_actions. */
-    private static final int MAX_OPTIONS = 2048;
-
     private static String setting(String property, String environment, String fallback) {
         String value = System.getProperty(property);
         if (value == null || value.isEmpty()) value = System.getenv(environment);
         return value == null || value.isEmpty() ? fallback : value;
     }
 
-    public void initializeKnownDeck(Game game, UUID opponent) {
+    @Override public void initializeKnownDeck(Game game, UUID opponent) {
         if (client == null) client = new PolicyClient(endpoint);
         encoder = new PolicyEncoder(getId(), opponent, client, game);
         encodedGame = game.getId();
@@ -111,26 +111,8 @@ public final class PolicyPlayer extends ComputerPlayer {
         initializeKnownDeck(game, opponents.get(0));
     }
 
-    private Map<String, Object> action(String id, String type, UUID source, UUID target, Game game, double argument) {
-        double[] features = new double[16];
-        features[0] = argument / 64.0;
-        MageObject object = source == null ? null : game.getObject(source);
-        boolean concealed = object instanceof Card && ((Card) object).isFaceDown(game);
-        int cardId = object == null || client == null || concealed ? 0 : client.cardIds.getOrDefault(object.getName(), 0);
-        return PolicyEncoder.map("id", id, "type", type,
-            "source", source == null ? null : source.toString(), "target", target == null ? null : target.toString(),
-            "card_id", cardId, "features", features);
-    }
-
-    private Map<String, Object> describe(Map<String, Object> action, String text) {
-        // Candidate semantics supplement card/pointer embeddings. Stable lexical
-        // bins distinguish modes and named choices across changing candidate sets.
-        double[] values = (double[]) action.get("features");
-        for (String word : String.valueOf(text).toLowerCase(Locale.ROOT).split("[^a-z0-9]+")) {
-            if (!word.isEmpty()) values[3 + Math.floorMod(word.hashCode(), 13)] += 1;
-        }
-        for (int i = 3; i < 16; i++) values[i] = Math.tanh(values[i] / 4.0);
-        return action;
+    private Map<String, Object> action(String id, String type, UUID source, UUID target, Game game) {
+        return PolicyCandidates.action(client, id, type, source, target, game);
     }
 
     private int select(Game game, List<Map<String, Object>> actions, Collection<Card> visibleChoices) {
@@ -156,12 +138,11 @@ public final class PolicyPlayer extends ComputerPlayer {
         throw new IllegalStateException("policy returned an action outside the supplied legal set");
     }
 
-    /**
-     * terminal: the game reached a real result. truncated: an error-free game
-     * stopped by the turn limit; it is recorded with result 0 and bootstrapped by
-     * the learner, never scored as a draw. Neither: aborted, trajectory discarded.
-     */
-    public void finish(Game game, boolean terminal, boolean truncated) {
+    private <T> T select(Game game, PolicyCandidates<T> candidates) {
+        return candidates.options.get(select(game, candidates.actions, candidates.visible));
+    }
+
+    @Override public void finish(Game game, boolean terminal, boolean truncated) {
         if (!recording || encoder == null || encoder.decisions() == 0) return;
         if (terminal && truncated) throw new IllegalArgumentException("a game cannot be both terminal and truncated");
         boolean draw = game.getPlayers().values().stream().allMatch(player -> player.hasLost());
@@ -178,50 +159,24 @@ public final class PolicyPlayer extends ComputerPlayer {
         String window = game.getTurnNum() + ":" + game.getTurnStepType() + ":" + game.getStack().size()
             + ":" + game.getBattlefield().getAllPermanents().size() + ":" + getHand().size();
         if (!window.equals(rejectedWindow)) { rejected.clear(); rejectedWindow = window; }
-        List<ActivatedAbility> abilities = new ArrayList<>(getPlayable(game, true));
-        abilities.removeIf(Ability::isManaAbility);
-        abilities.removeIf(ability -> rejected.contains(abilityKey(ability)));
-        abilities.sort(Comparator.comparing((Ability a) -> String.valueOf(a.getSourceId())).thenComparing(Ability::toString));
-        abilities.add(0, new PassAbility());
-        List<Map<String, Object>> choices = new ArrayList<>();
-        for (int i = 0; i < abilities.size(); i++) {
-            ActivatedAbility ability = abilities.get(i);
-            String type = ability instanceof PassAbility ? "pass" : ability instanceof SpellAbility ? "cast" : "activate";
-            Map<String, Object> candidate = action("priority-" + i, type, ability.getSourceId(), null, game, i);
-            ((double[]) candidate.get("features"))[1] = ability.getManaCosts().manaValue() / 16.0;
-            choices.add(describe(candidate, ability.getRule()));
-        }
-        ActivatedAbility chosen = abilities.get(select(game, choices, null));
+        ActivatedAbility chosen = select(game, PolicyCandidates.priority(this, game, client, rejected));
         game.setLastPriority(getId());
-        if (chosen instanceof PassAbility) { pass(game); return false; }
+        if (chosen == null) { pass(game); return false; }
         if (!activateAbility(chosen, game)) {
             // XMage lists some abilities as playable that then fail during payment or
             // choices (the state is rolled back). Like its own AI, treat that as no
             // action, and drop the ability from this priority window's candidates.
-            rejected.add(abilityKey(chosen));
+            rejected.add(PolicyCandidates.abilityKey(chosen));
         }
         return true;
     }
 
-    private static String abilityKey(Ability ability) {
-        return ability.getSourceId() + "|" + ability.getOriginalId();
-    }
-
     @Override protected boolean makeChoice(Outcome outcome, Target target, Ability source, Game game, Cards fromCards) {
         if (target.isChoiceCompleted(target.getAffectedAbilityControllerId(getId()), source, game, fromCards)) return target.isChosen(game);
-        List<UUID> candidates = target.possibleTargets(target.getAffectedAbilityControllerId(getId()), source, game, fromCards)
-                .stream().filter(id -> !target.contains(id)).sorted().collect(Collectors.toList());
-        if (candidates.isEmpty()) return target.isChosen(game);
-        List<Map<String, Object>> choices = new ArrayList<>();
-        // The target prompt (e.g. "put on the bottom of your library") gives the
-        // choice its purpose; the pointer gives the object.
-        String prompt = target.getMessage(game);
-        if (target.isChosen(game)) choices.add(describe(action("stop", "target", source == null ? null : source.getSourceId(), null, game, 0), prompt));
-        for (int i = 0; i < candidates.size(); i++) choices.add(describe(action("target-" + i, "target",
-            source == null ? null : source.getSourceId(), candidates.get(i), game, i + 1), prompt));
-        int selected = select(game, choices, fromCards == null ? null : fromCards.getCards(game));
-        if (target.isChosen(game)) { if (selected == 0) return true; selected--; }
-        UUID chosen = candidates.get(selected);
+        PolicyCandidates<UUID> candidates = PolicyCandidates.target(this, target, source, game, fromCards, client);
+        if (candidates.size() == 0) return target.isChosen(game);
+        UUID chosen = select(game, candidates);
+        if (chosen == null) return true; // stop
         target.addTarget(chosen, source, game);
         if (!target.contains(chosen)) throw new IllegalStateException("engine rejected supplied target");
         getPlayerHistory().targetSequence.add(chosen);
@@ -230,54 +185,21 @@ public final class PolicyPlayer extends ComputerPlayer {
 
     @Override public boolean chooseUse(Outcome outcome, String message, String secondMessage,
             String trueText, String falseText, Ability source, Game game) {
-        UUID reference = source == null ? null : source.getSourceId();
-        int chosen = select(game, Arrays.asList(describe(action("no", "use", reference, null, game, 0), message + " " + falseText),
-                                               describe(action("yes", "use", reference, null, game, 1), message + " " + trueText)), null);
-        getPlayerHistory().useSequence.add(chosen == 1);
-        return chosen == 1;
+        boolean chosen = select(game, PolicyCandidates.use(message, trueText, falseText, source, game, client));
+        getPlayerHistory().useSequence.add(chosen);
+        return chosen;
     }
 
-    /**
-     * Keep describes the current hand; mulligan describes an average redraw of the
-     * own deck (library plus hand, order unused) at the smaller hand size. Slots 1/2
-     * flag the two options; see docs/policy-protocol.md for the layout.
-     */
     @Override public boolean chooseMulligan(Game game) {
-        Map<String, Object> keep = action("keep", "mulligan", null, null, game, 0);
-        Map<String, Object> mulligan = action("mulligan", "mulligan", null, null, game, 1);
-        double[] k = (double[]) keep.get("features"), m = (double[]) mulligan.get("features");
-        k[1] = 1;
-        m[2] = 1;
-        List<Card> hand = new ArrayList<>(getHand().getCards(game));
-        HandSummary.describe(hand, hand.size(), k, game);
-        List<Card> deck = new ArrayList<>(hand);
-        deck.addAll(getLibrary().getCards(game));
-        int redraw = Math.max(0, game.getMulligan().mulliganDownTo(game, getId()));
-        HandSummary.expected(deck, redraw, m, game);
-        boolean onThePlay = getId().equals(game.getStartingPlayerId());
-        for (double[] values : Arrays.asList(k, m)) {
-            values[14] = mulligans / 7.0;
-            values[15] = onThePlay ? 1 : 0;
-        }
-        boolean chosen = select(game, Arrays.asList(keep, mulligan), null) == 1;
+        boolean chosen = select(game, PolicyCandidates.mulligan(this, game, mulligans, client));
         if (chosen) mulligans++;
         return chosen;
     }
 
     @Override public boolean choose(Outcome outcome, Choice choice, Game game) {
-        List<String> options = new ArrayList<>(choice.getKeyChoices().isEmpty() ? choice.getChoices() : choice.getKeyChoices().keySet());
-        if (options.size() > MAX_OPTIONS && choice.getKeyChoices().isEmpty() && client != null) {
-            // "Name a card" lists every card in XMage. Only names in the card pool
-            // can matter in these games, so offer those.
-            options.retainAll(client.cardIds.keySet());
-        }
-        if (options.size() > MAX_OPTIONS) throw new IllegalStateException("choice has " + options.size() + " options, above the candidate limit");
-        Collections.sort(options);
-        if (options.isEmpty()) return false;
-        List<Map<String, Object>> actions = new ArrayList<>();
-        for (int i = 0; i < options.size(); i++) actions.add(describe(action("choice-" + i, "choose", null, null, game, i),
-            choice.getKeyChoices().isEmpty() ? options.get(i) : choice.getKeyChoices().get(options.get(i))));
-        String selected = options.get(select(game, actions, null));
+        PolicyCandidates<String> candidates = PolicyCandidates.choice(choice, client, game);
+        if (candidates.size() == 0) return false;
+        String selected = select(game, candidates);
         if (choice.getKeyChoices().isEmpty()) choice.setChoice(selected); else choice.setChoiceByKey(selected);
         getPlayerHistory().choiceSequence.add(selected);
         return true;
@@ -285,47 +207,22 @@ public final class PolicyPlayer extends ComputerPlayer {
 
     @Override protected int makeChoiceAmount(int min, int max, Game game, Ability source, boolean isManaPay) {
         if (min >= max) return min;
-        // Open-ended ranges ("choose a number", Sanctum Prelate: 0 to 2^31) offer the
-        // smallest 256 values, a legal subset that covers every mana value and life
-        // total in practice. Ranges within the candidate limit are offered whole.
-        if ((long) max - min >= MAX_OPTIONS) max = min + 255;
-        List<Map<String, Object>> actions = new ArrayList<>();
-        for (int i = min; i <= max; i++) actions.add(action("amount-" + i, "amount",
-            source == null ? null : source.getSourceId(), null, game, i));
-        int chosen = min + select(game, actions, null);
+        int chosen = select(game, PolicyCandidates.amount(min, max, source, game, client));
         getPlayerHistory().numSequence.add(chosen - min);
         return chosen;
     }
 
     @Override public Mode chooseMode(Modes modes, Ability source, Game game) {
-        List<Mode> options = modes.getAvailableModes(source, game).stream()
-            .filter(mode -> !modes.getSelectedModes().contains(mode.getId()))
-            .filter(mode -> mode.getTargets().canChoose(source.getControllerId(), source, game)).collect(Collectors.toList());
-        if (modes.getMinModes() <= modes.getSelectedModes().size()) options.add(0, null);
-        if (options.isEmpty()) return null;
-        List<Map<String, Object>> actions = new ArrayList<>();
-        for (int i = 0; i < options.size(); i++) actions.add(describe(action("mode-" + i, "mode", source.getSourceId(), null, game, i),
-            options.get(i) == null ? "stop selecting modes" : options.get(i).getEffects().getText(options.get(i))));
-        return options.get(select(game, actions, null));
+        PolicyCandidates<Mode> candidates = PolicyCandidates.mode(modes, source, game, client);
+        return candidates.size() == 0 ? null : select(game, candidates);
     }
 
     @Override public void selectAttackers(Game game, UUID attackingPlayerId) {
         game.fireEvent(new GameEvent(GameEvent.EventType.DECLARE_ATTACKERS_STEP_PRE, null, null, attackingPlayerId));
         if (game.replaceEvent(GameEvent.getEvent(GameEvent.EventType.DECLARING_ATTACKERS, attackingPlayerId, attackingPlayerId))) return;
-        List<Permanent> attackers = new ArrayList<>(getAvailableAttackers(game));
-        attackers.sort(Comparator.comparing(Permanent::getId));
-        for (Permanent attacker : attackers) {
-            List<UUID> defenders = new ArrayList<>(game.getCombat().getDefenders());
-            Collections.sort(defenders);
-            List<Map<String, Object>> actions = new ArrayList<>();
-            actions.add(action("stay", "attack", attacker.getId(), null, game, 0));
-            for (UUID defender : defenders) {
-                if (getAvailableAttackers(defender, game).contains(attacker)) {
-                    actions.add(action(defender.toString(), "attack", attacker.getId(), defender, game, 1));
-                }
-            }
-            int chosen = select(game, actions, null);
-            if (chosen > 0) declareAttacker(attacker.getId(), UUID.fromString((String) actions.get(chosen).get("id")), game, false);
+        for (Permanent attacker : PolicyCandidates.attackers(this, game)) {
+            UUID defender = select(game, PolicyCandidates.attack(this, attacker, game, client));
+            if (defender != null) declareAttacker(attacker.getId(), defender, game, false);
         }
         game.getPlayers().resetPassed();
     }
@@ -333,35 +230,16 @@ public final class PolicyPlayer extends ComputerPlayer {
     @Override public void selectBlockers(Ability source, Game game, UUID defendingPlayerId) {
         game.fireEvent(new GameEvent(GameEvent.EventType.DECLARE_BLOCKERS_STEP_PRE, null, null, defendingPlayerId));
         if (game.replaceEvent(GameEvent.getEvent(GameEvent.EventType.DECLARING_BLOCKERS, defendingPlayerId, defendingPlayerId))) return;
-        List<Permanent> blockers = new ArrayList<>(getAvailableBlockers(game));
-        blockers.sort(Comparator.comparing(Permanent::getId));
-        for (Permanent blocker : blockers) {
+        for (Permanent blocker : PolicyCandidates.blockers(this, game)) {
             // Sequential per blocker: a creature that can block additional attackers
             // (max blocks > 1, or 0 for any number) chooses again until it stops.
             int limit = blocker.getMaxBlocks();
             Set<UUID> blocked = new HashSet<>();
             while (limit == 0 || blocked.size() < limit) {
-                List<UUID> attackers = game.getBattlefield().getAllPermanents().stream().filter(Permanent::isAttacking)
-                    .filter(p -> !blocked.contains(p.getId()) && blocker.canBlock(p.getId(), game))
-                    .map(Permanent::getId).sorted().collect(Collectors.toList());
-                if (attackers.isEmpty()) break;
-                List<Map<String, Object>> actions = new ArrayList<>();
-                actions.add(action(blocked.isEmpty() ? "none" : "stop", "block", blocker.getId(), null, game, 0));
-                for (UUID attacker : attackers) {
-                    Map<String, Object> candidate = action(attacker.toString(), "block", blocker.getId(), attacker, game, 1);
-                    double[] values = (double[]) candidate.get("features");
-                    CombatGroup group = game.getCombat().findGroup(attacker);
-                    Permanent attacking = game.getPermanent(attacker);
-                    // Menace-style minimums are enforced after declaration: XMage drops
-                    // an AI's blockers that leave an attacker under its minimum.
-                    values[1] = (group == null ? 0 : group.getBlockers().size()) / 4.0;
-                    values[2] = (attacking == null ? 1 : attacking.getMinBlockedBy()) / 4.0;
-                    values[3] = blocked.size() / 4.0;
-                    actions.add(candidate);
-                }
-                int chosen = select(game, actions, null);
-                if (chosen == 0) break;
-                UUID attacker = UUID.fromString((String) actions.get(chosen).get("id"));
+                PolicyCandidates<UUID> candidates = PolicyCandidates.block(blocker, blocked, game, client);
+                if (candidates.size() == 0) break;
+                UUID attacker = select(game, candidates);
+                if (attacker == null) break;
                 declareBlocker(defendingPlayerId, blocker.getId(), attacker, game);
                 CombatGroup group = game.getCombat().findGroup(attacker);
                 if (group == null || !group.getBlockers().contains(blocker.getId())) break; // engine refused
@@ -373,9 +251,7 @@ public final class PolicyPlayer extends ComputerPlayer {
 
     @Override public TriggeredAbility chooseTriggeredAbility(List<TriggeredAbility> abilities, Game game) {
         if (abilities.isEmpty()) return null;
-        List<Map<String, Object>> actions = new ArrayList<>();
-        for (int i = 0; i < abilities.size(); i++) actions.add(describe(action("trigger-" + i, "order", abilities.get(i).getSourceId(), null, game, i), abilities.get(i).getRule()));
-        return abilities.get(select(game, actions, null));
+        return select(game, PolicyCandidates.triggers(abilities, game, client));
     }
 
     @Override public boolean choosePile(Outcome outcome, String message, List<? extends Card> first,
@@ -391,7 +267,7 @@ public final class PolicyPlayer extends ComputerPlayer {
      */
     private Map<String, Object> pile(String id, List<? extends Card> cards, Game game, int index) {
         Card top = cards.stream().max(Comparator.comparingInt(Card::getManaValue).thenComparing(Card::getId)).orElse(null);
-        Map<String, Object> candidate = action(id, "choose", top == null ? null : top.getId(), null, game, index);
+        Map<String, Object> candidate = ordinal(action(id, "choose", top == null ? null : top.getId(), null, game), index);
         double[] values = (double[]) candidate.get("features");
         int lands = 0, creatures = 0, manaValue = 0, power = 0;
         for (Card card : cards) {
@@ -399,13 +275,13 @@ public final class PolicyPlayer extends ComputerPlayer {
             if (card.isCreature(game)) { creatures++; power += Math.max(0, card.getPower().getValue()); }
             manaValue += card.getManaValue();
         }
-        values[2] = cards.size() / 60.0;
-        values[3] = lands / 8.0;
-        values[4] = (cards.size() - lands) / 8.0;
-        values[5] = creatures / 8.0;
-        values[6] = manaValue / 32.0;
-        values[7] = (top == null ? 0 : top.getManaValue()) / 16.0;
-        values[8] = power / 20.0;
+        values[3] = cards.size() / 60.0;
+        values[4] = lands / 8.0;
+        values[5] = (cards.size() - lands) / 8.0;
+        values[6] = creatures / 8.0;
+        values[7] = manaValue / 32.0;
+        values[8] = (top == null ? 0 : top.getManaValue()) / 16.0;
+        values[9] = power / 20.0;
         return candidate;
     }
 
@@ -415,7 +291,7 @@ public final class PolicyPlayer extends ComputerPlayer {
         if (usable.isEmpty()) return null;
         usable.sort(Comparator.comparing(Ability::toString));
         List<Map<String, Object>> actions = new ArrayList<>();
-        for (int i = 0; i < usable.size(); i++) actions.add(describe(action("cast-variant-" + i, "cast", card.getId(), null, game, i), usable.get(i).getRule()));
+        for (int i = 0; i < usable.size(); i++) actions.add(ordinal(describe(action("cast-variant-" + i, "cast", card.getId(), null, game), usable.get(i).getRule()), i));
         return usable.get(select(game, actions, Collections.singletonList(card)));
     }
 
@@ -428,8 +304,8 @@ public final class PolicyPlayer extends ComputerPlayer {
                 .filter(id -> !target.contains(id)).sorted().collect(Collectors.toList());
             if (candidates.isEmpty()) return target.isChosen(game);
             List<Map<String, Object>> actions = new ArrayList<>();
-            if (target.isChosen(game)) actions.add(action("stop", "target", source.getSourceId(), null, game, 0));
-            for (UUID id : candidates) actions.add(action(id.toString(), "target", source.getSourceId(), id, game, 1));
+            if (target.isChosen(game)) actions.add(action("stop", "target", source.getSourceId(), null, game));
+            for (UUID id : candidates) actions.add(action(id.toString(), "target", source.getSourceId(), id, game));
             Map<String, Object> chosen = actions.get(select(game, actions, null));
             if ("stop".equals(chosen.get("id"))) return true;
             int remaining = target.getAmountRemaining();
@@ -453,7 +329,7 @@ public final class PolicyPlayer extends ComputerPlayer {
         List<String> sorted = new ArrayList<>(keys);
         Collections.sort(sorted);
         List<Map<String, Object>> actions = new ArrayList<>();
-        for (int i = 0; i < sorted.size(); i++) actions.add(describe(action("replacement-" + i, "order", null, null, game, i), effects.get(sorted.get(i))));
+        for (int i = 0; i < sorted.size(); i++) actions.add(describe(action("replacement-" + i, "order", null, null, game), effects.get(sorted.get(i))));
         return keys.indexOf(sorted.get(select(game, actions, null)));
     }
 }

@@ -18,6 +18,7 @@ from .checkpoint import load_checkpoint, resolve_device, save_checkpoint
 from .model import PolicyMemory
 from .schema import (SCHEMA_VERSION, ObservationBatch, collate_observations, concat_batches, pad_cat,
                      validate_labels, validate_observation)
+from .shaping import shaped_rewards
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,13 @@ class PPOConfig:
     log_probability_tolerance: float = 0.005
     # Trajectories per forward pass when computing PPO targets (no gradients).
     target_batch_episodes: int = 64
+    # Potential-based shaping scale (policy-invariant; see shaping.py). 0 disables.
+    shaping_coefficient: float = 0.0
+    # KL(reference || policy) weight towards a frozen warm-start (behaviour-cloned)
+    # policy, as AlphaStar regularizes towards its supervised policy. Multiplied by
+    # reference_kl_decay once per PPO update since the reference. 0 disables.
+    reference_kl_coefficient: float = 0.0
+    reference_kl_decay: float = 1.0
 
     def __post_init__(self):
         for key, value in asdict(self).items():
@@ -50,12 +58,15 @@ class PPOConfig:
                 raise ValueError(f"{key} must be an integer")
         if not 0 < self.gamma <= 1 or not 0 <= self.gae_lambda <= 1:
             raise ValueError("invalid return/GAE discounts")
+        if not 0 < self.reference_kl_decay <= 1:
+            raise ValueError("reference_kl_decay must be in (0, 1]")
         if any(getattr(self, key) <= 0 for key in ("learning_rate", "epochs", "episodes_per_batch",
                 "sequence_length", "clip_ratio", "max_grad_norm", "max_episode_steps",
                 "target_batch_episodes")):
             raise ValueError("PPO sizes, optimizer parameters, and clip ratio must be positive")
         if any(getattr(self, key) < 0 for key in ("value_coefficient", "public_value_coefficient",
-                "belief_coefficient", "entropy_coefficient", "target_kl", "log_probability_tolerance")):
+                "belief_coefficient", "entropy_coefficient", "target_kl", "log_probability_tolerance",
+                "shaping_coefficient", "reference_kl_coefficient")):
             raise ValueError("loss coefficients and tolerances cannot be negative")
 
 
@@ -165,6 +176,8 @@ class _Chunk:
     choice: Tensor
     deck_kinds: Tensor
     event_counts: Tensor  # per row, on the CPU: GRU packing needs host lengths
+    # The frozen reference policy's log-probabilities over the candidates (KL term).
+    reference_log_probability: Tensor | None = None
 
 
 def _prepare_chunks(episode, model, length) -> list[_Chunk]:
@@ -196,11 +209,14 @@ def _join(chunks: list[_Chunk]) -> _Chunk:
     """Rows of several trajectories' chunks, episode-major, as one model batch."""
     if len(chunks) == 1:
         return chunks[0]
+    reference = None
+    if chunks[0].reference_log_probability is not None:
+        reference = pad_cat([c.reference_log_probability for c in chunks], float("-inf"))
     return _Chunk(concat_batches([c.batch for c in chunks]), pad_cat([c.labels for c in chunks]),
                   torch.cat([c.actions for c in chunks]),
                   torch.cat([c.behavior_log_probability for c in chunks]),
                   torch.cat([c.choice for c in chunks]), torch.cat([c.deck_kinds for c in chunks]),
-                  torch.cat([c.event_counts for c in chunks]))
+                  torch.cat([c.event_counts for c in chunks]), reference)
 
 
 def _windows(indices, prepared):
@@ -226,8 +242,15 @@ def _carry(memory: PolicyMemory | None, previous: list[int], members: list[int])
     return PolicyMemory(memory.events[keep], memory.decisions[keep])
 
 
+def reference_kl(reference_log_probability: Tensor, logits: Tensor, mask: Tensor) -> Tensor:
+    """KL(reference || policy) per row, summed over the legal candidates only."""
+    log_policy = torch.log_softmax(logits, -1).masked_fill(~mask, 0.0)
+    reference = reference_log_probability.masked_fill(~mask, 0.0)
+    return (reference.exp() * (reference - log_policy)).masked_fill(~mask, 0.0).sum(-1)
+
+
 def ppo_update(model, critic, optimizer, episodes, config: PPOConfig, policy_version: str,
-               *, validated=False):
+               *, validated=False, reference=None, reference_coefficient=None):
     """Rebuild memory from step zero at current weights on every PPO pass.
 
     Trajectories are processed together: window w stacks chunk w (sequence_length
@@ -239,6 +262,11 @@ def ppo_update(model, critic, optimizer, episodes, config: PPOConfig, policy_ver
     Policy loss, entropy and KL average over decisions with alternatives only;
     forced single-action decisions still train the value heads and carry memory.
     Truncated trajectories bootstrap from the critic's value of their last state.
+
+    reference: a frozen policy (the behaviour-cloned warm start). Its candidate
+    distribution is computed once, with its own memory, in the target pass, and the
+    loss adds reference_coefficient (default config.reference_kl_coefficient) times
+    KL(reference || policy), averaged over decisions with alternatives.
     """
     model.eval()  # eval changes dropout/attention behavior, not gradient tracking
     # cuDNN requires training-mode GRU reserve buffers for backward on CUDA.
@@ -251,6 +279,11 @@ def ppo_update(model, critic, optimizer, episodes, config: PPOConfig, policy_ver
         for episode in episodes:
             validate_episode(episode, model.config, policy_version, config.max_episode_steps)
     length = config.sequence_length
+    beta = config.reference_kl_coefficient if reference_coefficient is None else reference_coefficient
+    if reference is None:
+        beta = 0.0
+    elif reference.config.catalog_digest != model.config.catalog_digest:
+        raise ValueError("the reference policy uses a different card catalog")
     prepared = [_prepare_chunks(episode, model, length) for episode in episodes]
     targets = []
     with torch.no_grad():
@@ -258,13 +291,20 @@ def ppo_update(model, critic, optimizer, episodes, config: PPOConfig, policy_ver
         everyone = list(range(len(episodes)))
         for group_start in range(0, len(everyone), config.target_batch_episodes):
             group = everyone[group_start:group_start + config.target_batch_episodes]
-            memory, previous = None, group
+            memory, reference_memory, previous = None, None, group
             for window, members in _windows(group, prepared):
                 memory = _carry(memory, previous, members)
+                reference_memory = _carry(reference_memory, previous, members)
                 joined = _join([prepared[i][window] for i in members])
                 sizes = [len(prepared[i][window].actions) for i in members]
                 out = model.forward_episodes(joined.batch, sizes, memory, joined.event_counts)
                 memory, previous = out.memory, members
+                if beta > 0:
+                    anchor = reference.forward_episodes(joined.batch, sizes, reference_memory, joined.event_counts)
+                    reference_memory = anchor.memory
+                    for i, rows in zip(members, torch.log_softmax(anchor.logits, -1).split(sizes)):
+                        chunk = prepared[i][window]
+                        chunk.reference_log_probability = rows[:, :chunk.batch.action_mask.shape[1]]
                 actual = out.distribution().log_prob(joined.actions)
                 if (actual - joined.behavior_log_probability).abs().max().item() > config.log_probability_tolerance:
                     raise ValueError("behavior policy mismatch: weights, history, candidate ordering, or sampling changed")
@@ -273,8 +313,8 @@ def ppo_update(model, critic, optimizer, episodes, config: PPOConfig, policy_ver
                     values[i].append(value)
         for episode, chunks in zip(episodes, values):
             values_t = torch.cat(chunks)
-            rewards = torch.tensor([s["reward"] for s in episode["steps"]], device=values_t.device,
-                                   dtype=values_t.dtype)
+            rewards = shaped_rewards(episode, config.shaping_coefficient, config.gamma).to(
+                device=values_t.device, dtype=values_t.dtype)
             end = torch.zeros(len(values_t), device=values_t.device, dtype=torch.bool)
             end[-1] = True
             if episode.get("truncated", False):
@@ -299,11 +339,14 @@ def ppo_update(model, critic, optimizer, episodes, config: PPOConfig, policy_ver
 
     trains_belief = model.config.belief_mode == "learned" or model.config.auxiliary_belief
     belief_coefficient = config.belief_coefficient if trains_belief else 0.0
-    names = ("policy_loss", "critic_loss", "public_value_loss", "belief_nll", "entropy", "approx_kl")
+    names = ("policy_loss", "critic_loss", "public_value_loss", "belief_nll", "entropy", "approx_kl",
+             "reference_kl")
     metrics = {"decisions": 0, "choice_decisions": 0, "epochs": 0, "optimizer_steps": 0,
                "belief_mode": model.config.belief_mode, "belief_loss_coefficient": belief_coefficient,
                "auxiliary_belief": model.config.auxiliary_belief,
-               "truncated_episodes": sum(bool(e.get("truncated", False)) for e in episodes)}
+               "truncated_episodes": sum(bool(e.get("truncated", False)) for e in episodes),
+               "gae_lambda": config.gae_lambda, "shaping_coefficient": config.shaping_coefficient,
+               "reference_kl_coefficient": beta}
     total_choices = max(int(choices.sum().item()), 1)
     step_counts = [len(e["steps"]) for e in episodes]
     choice_counts = [sum(int(c.choice.sum().item()) for c in chunks) for chunks in prepared]
@@ -342,7 +385,13 @@ def ppo_update(model, critic, optimizer, episodes, config: PPOConfig, policy_ver
                     belief = constrained_hand_belief(out.auxiliary_count_logits, joined.batch.deck_lower,
                                                      joined.batch.deck_upper, joined.batch.hand_size)
                 belief_loss = belief.nll(joined.labels) / joined.deck_kinds
-                loss = ((policy.sum() - config.entropy_coefficient * entropy.sum()) / choice_denominator
+                if beta > 0:
+                    anchor = reference_kl(joined.reference_log_probability, out.logits,
+                                          joined.batch.action_mask) * choice
+                else:
+                    anchor = torch.zeros_like(choice)
+                loss = ((policy.sum() - config.entropy_coefficient * entropy.sum() + beta * anchor.sum())
+                        / choice_denominator
                         + (config.value_coefficient * critic_loss.sum()
                            + config.public_value_coefficient * public_loss.sum()
                            + belief_coefficient * belief_loss.sum()) / step_denominator)
@@ -353,7 +402,7 @@ def ppo_update(model, critic, optimizer, episodes, config: PPOConfig, policy_ver
                 metrics["decisions"] += len(joined.actions)
                 for name, tensor in (("policy_loss", policy), ("critic_loss", critic_loss),
                         ("public_value_loss", public_loss), ("belief_nll", belief_loss),
-                        ("entropy", entropy)):
+                        ("entropy", entropy), ("reference_kl", anchor)):
                     sums[name] += tensor.detach().sum()
                 sums["approx_kl"] += kl
             metrics["choice_decisions"] += sum(choice_counts[i] for i in group)
@@ -365,7 +414,7 @@ def ppo_update(model, critic, optimizer, episodes, config: PPOConfig, policy_ver
         if epoch_kl.item() / total_choices > config.target_kl:
             break
     sums = {name: value.item() for name, value in sums.items()}
-    for name in ("policy_loss", "entropy", "approx_kl"):
+    for name in ("policy_loss", "entropy", "approx_kl", "reference_kl"):
         metrics[name] = sums[name] / max(metrics["choice_decisions"], 1)
     for name in ("critic_loss", "public_value_loss", "belief_nll"):
         metrics[name] = sums[name] / max(metrics["decisions"], 1)
@@ -373,8 +422,21 @@ def ppo_update(model, critic, optimizer, episodes, config: PPOConfig, policy_ver
     return metrics
 
 
-def train_from_files(checkpoint_path, episode_paths, output_path, config=PPOConfig(), device="auto"):
+def reference_coefficient(config: PPOConfig, updates: int, reference_updates: int) -> float:
+    """The KL weight after `updates - reference_updates` PPO updates of decay."""
+    return config.reference_kl_coefficient * config.reference_kl_decay ** max(0, updates - reference_updates)
+
+
+def train_from_files(checkpoint_path, episode_paths, output_path, config=PPOConfig(), device="auto",
+                     reference=None):
+    """reference: optional frozen warm-start checkpoint for the KL term."""
     model, critic, catalog, checkpoint = load_checkpoint(checkpoint_path, resolve_device(device))
+    anchor, beta = None, 0.0
+    if reference is not None and config.reference_kl_coefficient > 0:
+        anchor, _, reference_catalog, reference_data = load_checkpoint(reference, resolve_device(device))
+        if reference_catalog.digest != catalog.digest:
+            raise ValueError("the reference checkpoint uses a different card catalog")
+        beta = reference_coefficient(config, checkpoint["updates"], reference_data["updates"])
     optimizer = torch.optim.AdamW(list(model.parameters()) + list(critic.parameters()),
                                   lr=config.learning_rate, weight_decay=0.0)
     if checkpoint["optimizer_state_dict"] is not None:
@@ -383,7 +445,7 @@ def train_from_files(checkpoint_path, episode_paths, output_path, config=PPOConf
             group["lr"] = config.learning_rate
     episodes = load_episodes(episode_paths, model.config, checkpoint["policy_version"], config.max_episode_steps)
     metrics = ppo_update(model, critic, optimizer, episodes, config, checkpoint["policy_version"],
-                         validated=True)
+                         validated=True, reference=anchor, reference_coefficient=beta)
     save_checkpoint(output_path, model, critic, catalog, optimizer=optimizer,
                     updates=checkpoint["updates"] + 1, metrics=metrics)
     return metrics

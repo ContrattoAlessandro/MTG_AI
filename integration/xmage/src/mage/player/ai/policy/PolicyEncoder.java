@@ -307,10 +307,9 @@ public final class PolicyEncoder {
     public void recordChoice(Map<String, Object> chosen, Game game) {
         attachHistory(game);
         history.choice((Integer) chosen.get("card_id"), (double[]) chosen.get("features"), game);
-        if ("pass".equals(chosen.get("type"))) {
-            for (mage.watchers.Watcher watcher : game.getState().getWatchers().values()) {
-                if (watcher instanceof PolicyHistory) ((PolicyHistory) watcher).passed(observer, game);
-            }
-        }
+        // Own passes only. Writing them into the opponent policy's history too gave
+        // it pass events from policy opponents but never from XMage's AI or humans,
+        // so self-play and gauntlet/human games would have different histories.
+        if ("pass".equals(chosen.get("type"))) history.passed(observer, game);
     }
 }

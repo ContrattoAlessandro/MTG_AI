@@ -13,8 +13,30 @@ def cmd_train(args: argparse.Namespace) -> None:
     import yaml
     raw = yaml.safe_load(Path(args.config).read_text(encoding="utf-8")) if args.config else {}
     metrics = train_from_files(args.checkpoint, args.episodes, args.output,
-                               PPOConfig(**raw.get("training", {})), args.device)
+                               PPOConfig(**raw.get("training", {})), args.device, reference=args.reference)
     print(json.dumps(metrics, indent=2))
+
+
+def cmd_teacher_collect(args: argparse.Namespace) -> None:
+    from magezero.policy.teacher import collect_teacher_games
+    summary = collect_teacher_games(args.checkpoint, args.game, args.engine_script, args.output, args.games,
+                                    batch_games=args.batch_games, engine_threads=args.engine_threads,
+                                    ai_skill=args.ai_skill, ai_think=args.ai_think, seats=args.seats,
+                                    port=args.port, max_retries=args.max_retries)
+    print(json.dumps({k: v for k, v in summary.items() if k != "batches"}, indent=2))
+
+
+def cmd_clone(args: argparse.Namespace) -> None:
+    import yaml
+    from magezero.policy.teacher import CloneConfig, behavior_cloning
+    raw = yaml.safe_load(Path(args.config).read_text(encoding="utf-8")) if args.config else {}
+    metrics = behavior_cloning(args.checkpoint, args.episodes, args.output, CloneConfig(**raw.get("clone", {})),
+                               args.device)
+    final = metrics["behavior_cloning"]
+    best = final["history"][final["best_epoch"]]
+    print(json.dumps({"output": args.output, "policy_version": metrics["policy_version"],
+                      "best_epoch": final["best_epoch"], "train": best["train"],
+                      "validation": best["validation"]}, indent=2))
 
 
 def cmd_init(args: argparse.Namespace) -> None:
@@ -53,7 +75,7 @@ def cmd_selfplay(args: argparse.Namespace) -> None:
                  max_failure_fraction=args.max_failure_fraction, gauntlet=args.gauntlet or (),
                  gauntlet_fraction=args.gauntlet_fraction, gauntlet_ai_skill=args.gauntlet_ai_skill,
                  gauntlet_ai_think=args.gauntlet_ai_think,
-                 eval_greedy=args.eval_greedy)
+                 eval_greedy=args.eval_greedy, reference=args.reference)
 
 
 def cmd_play_policy(args: argparse.Namespace) -> None:
@@ -211,7 +233,33 @@ def main() -> None:
     p_train.add_argument("--output", required=True)
     p_train.add_argument("--config", default="configs/policy.yml")
     p_train.add_argument("--device", default="auto", help="learner device; auto uses CUDA when present (faster for the batched learner)")
+    p_train.add_argument("--reference", help="frozen behaviour-cloned checkpoint for the KL term (training.reference_kl_coefficient)")
     p_train.set_defaults(func=cmd_train)
+
+    p_teacher = sub.add_parser("teacher-collect",
+                               help="record XMage's AI decisions as behaviour-cloning trajectories")
+    p_teacher.add_argument("--checkpoint", required=True, help="any checkpoint of the run's card catalog (never chooses actions)")
+    p_teacher.add_argument("--game", required=True, help="game YAML with the decks (e.g. configs/commander-mirror.yml)")
+    p_teacher.add_argument("--engine-script", required=True)
+    p_teacher.add_argument("--output", required=True)
+    p_teacher.add_argument("--games", type=int, required=True, help="total games; reruns continue a partial output")
+    p_teacher.add_argument("--batch-games", type=int, default=32)
+    p_teacher.add_argument("--engine-threads", type=int, help="parallel XMage games (1-16)")
+    p_teacher.add_argument("--ai-skill", type=int, default=1, help="XMage AI skill (1-10) of the teachers")
+    p_teacher.add_argument("--ai-think", type=int, default=0, help="cap on the AI's seconds per decision (0 = XMage default)")
+    p_teacher.add_argument("--seats", choices=("both", "a"), default="both",
+                           help="record both decks, or only player_a's deck against a plain XMage AI")
+    p_teacher.add_argument("--port", type=int, default=50060, help="recording service port")
+    p_teacher.add_argument("--max-retries", type=int, default=3)
+    p_teacher.set_defaults(func=cmd_teacher_collect)
+
+    p_clone = sub.add_parser("clone", help="behaviour-clone a checkpoint on teacher trajectories (warm start)")
+    p_clone.add_argument("--checkpoint", required=True)
+    p_clone.add_argument("--episodes", nargs="+", required=True, help="teacher trajectory files or directories")
+    p_clone.add_argument("--output", required=True)
+    p_clone.add_argument("--config", default="configs/policy-final.yml", help="YAML with a clone: section")
+    p_clone.add_argument("--device", default="auto")
+    p_clone.set_defaults(func=cmd_clone)
 
     p_serve = sub.add_parser("serve", help="serve recurrent legal-action inference without search")
     p_serve.add_argument("--checkpoint", required=True)
@@ -273,6 +321,7 @@ def main() -> None:
                             help="cap on the gauntlet AI's search seconds per decision (0 = XMage default, 3 s per skill)")
     p_selfplay.add_argument("--eval-greedy", action="store_true",
                             help="evaluate with the most likely action instead of sampling")
+    p_selfplay.add_argument("--reference", help="frozen behaviour-cloned checkpoint for the KL term (training.reference_kl_coefficient)")
     p_selfplay.set_defaults(func=cmd_selfplay)
 
     p_old_train = sub.add_parser("legacy-train", help="original MCTS pipeline (explicit opt-in)")

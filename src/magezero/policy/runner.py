@@ -296,7 +296,7 @@ def run_selfplay(checkpoint, game_config, policy_config, engine_script, output,
                  actor_shards=1, resume=False, eval_every=0, eval_games=64, eval_ai_skill=6,
                  eval_anchors=(), keep_episodes=False, keep_every=50, min_free_gb=20.0,
                  max_retries=3, max_failure_fraction=0.25, gauntlet=(), gauntlet_fraction=0.5,
-                 gauntlet_ai_skill=3, gauntlet_ai_think=0, eval_greedy=False):
+                 gauntlet_ai_skill=3, gauntlet_ai_think=0, eval_greedy=False, reference=None):
     """Run collect/learn generations until `iterations` generations exist in `output`.
 
     Long-run safety: a failed or hung engine batch restarts the engine and services
@@ -309,6 +309,9 @@ def run_selfplay(checkpoint, game_config, policy_config, engine_script, output,
     learner's deck (player_a) against one of the `gauntlet` decks piloted by
     XMage's AI, rotating through them by generation. The rest are mirror/league
     games. Only the learner's side is recorded in gauntlet games.
+
+    reference: the frozen behaviour-cloned checkpoint for the PPO KL term
+    (training.reference_kl_coefficient); kept in the run state across resumes.
     """
     script = Path(engine_script).resolve()
     if not script.is_file():
@@ -359,7 +362,14 @@ def run_selfplay(checkpoint, game_config, policy_config, engine_script, output,
             raise ValueError(f"{root} has generations but no run state; choose a fresh output directory")
         state = {"format_version": 1, "initial_checkpoint": str(Path(checkpoint).resolve()),
                  "current": str(Path(checkpoint).resolve()), "next_generation": 0, "durations": [],
-                 "best": None, "league": str(Path(league_path).resolve() if league_path else root / "league.json")}
+                 "best": None, "league": str(Path(league_path).resolve() if league_path else root / "league.json"),
+                 "reference": str(Path(reference).resolve()) if reference else None}
+    if reference and state.get("reference") != str(Path(reference).resolve()):
+        raise ValueError("--reference differs from the reference this run started with")
+    if training.reference_kl_coefficient > 0 and not state.get("reference"):
+        raise ValueError("training.reference_kl_coefficient > 0 needs --reference (the behaviour-cloned checkpoint)")
+    if state.get("reference") and not Path(state["reference"]).is_file():
+        raise ValueError(f"reference checkpoint is missing: {state['reference']}")
     league_file = Path(state["league"])
     league = League.load(league_file) if league_file.exists() else League()
     _, _, initial_catalog, _ = load_checkpoint(state["initial_checkpoint"])
@@ -473,7 +483,8 @@ def run_selfplay(checkpoint, game_config, policy_config, engine_script, output,
             next_checkpoint = folder / "policy.pt"
             collection_seconds = time.perf_counter() - collection_started
             training_started = time.perf_counter()
-            metrics = train_from_files(current, shards, next_checkpoint, training, device)
+            metrics = train_from_files(current, shards, next_checkpoint, training, device,
+                                       reference=state.get("reference"))
             training_seconds = time.perf_counter() - training_started
             records = [json.loads(shard.read_text(encoding="utf-8")) for shard in shards]
             decisions = sum(len(record["steps"]) for record in records)

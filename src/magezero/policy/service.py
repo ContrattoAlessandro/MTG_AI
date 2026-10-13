@@ -35,6 +35,12 @@ class Session:
     sampled: bool = True
     accessed: float = field(default_factory=time.monotonic)
     inflight: "_Job | None" = None
+    # Decisions made by XMage's AI and posted to /record (behaviour-cloning data).
+    teacher: bool = False
+
+
+# Episodes of teacher sessions carry this policy_version instead of a checkpoint's.
+TEACHER_VERSION = "xmage-teacher"
 
 
 @dataclass
@@ -147,6 +153,8 @@ class PolicyService:
                 session = Session(sampled=payload["sample"])
             else:
                 session = self.sessions[key]
+                if session.teacher:
+                    raise ValueError("this session records teacher decisions; it cannot request policy actions")
             session.accessed = now
             pending = session.inflight
             if pending is not None:
@@ -168,6 +176,51 @@ class PolicyService:
                 self.sessions[key] = session
                 self.queue.put(pending)
         return pending.wait()
+
+    def record(self, payload: dict) -> dict:
+        """Store a decision XMage's AI made among the observation's candidates; no inference.
+
+        Same session rules as /act (step zero, contiguous steps, no replayed events,
+        idempotent retries); /finish then writes the episode with TEACHER_VERSION.
+        """
+        if not isinstance(payload, dict) or set(payload) != {"observation", "action_id"}:
+            raise ValueError("/record requires observation and action_id")
+        if self.output_dir is None:
+            raise ValueError("teacher recording needs an episode directory (serve --episodes)")
+        obs = validate_observation(payload["observation"], self.model.config)
+        if payload["action_id"] not in {action["id"] for action in obs["actions"]}:
+            raise ValueError("recorded teacher action is not one of the observation's candidates")
+        key = (obs["game_id"], obs["player_id"])
+        digest = fingerprint(payload)
+        with self.lock:
+            if key in self.completed:
+                raise ValueError("this game/player session is already finished; game IDs must be unique")
+            session = self.sessions.get(key)
+            if session is None:
+                if obs["step"] != 0:
+                    raise ValueError("new or expired sessions must begin at step zero")
+                if len(self.sessions) >= self.max_sessions:
+                    raise ValueError("active session limit reached; finish or abort completed games")
+                session = Session(teacher=True)
+            elif not session.teacher:
+                raise ValueError("this session plays the policy; it cannot record teacher decisions")
+            session.accessed = time.monotonic()
+            if obs["step"] == session.step:
+                if digest != session.fingerprint:
+                    raise ValueError("retry changed the recorded decision")
+                return session.response
+            if obs["step"] != session.step + 1 or obs["step"] >= self.max_steps:
+                raise ValueError("player steps must be contiguous and within the configured limit")
+            if obs["events"] and obs["events"][0]["seq"] <= session.event_cursor:
+                raise ValueError("history contains an event already recorded")
+            session.records.append({"payload_json": canonical_json({"observation": obs}),
+                                    "action_id": payload["action_id"], "log_probability": 0.0})
+            session.step, session.fingerprint = obs["step"], digest
+            session.response = {"schema_version": SCHEMA_VERSION, "recorded_step": obs["step"]}
+            if obs["events"]:
+                session.event_cursor = obs["events"][-1]["seq"]
+            self.sessions[key] = session
+            return session.response
 
     def _worker(self):
         while True:
@@ -326,7 +379,8 @@ class PolicyService:
                     steps.append({"observation": observation, "action_id": record["action_id"],
                                   "log_probability": record["log_probability"], "labels": label,
                                   "reward": payload["result"] if i == len(session.records) - 1 else 0})
-                episode = {"schema_version": SCHEMA_VERSION, "policy_version": self.policy_version,
+                version = TEACHER_VERSION if session.teacher else self.policy_version
+                episode = {"schema_version": SCHEMA_VERSION, "policy_version": version,
                            "steps": steps, "terminal": payload["terminal"], "truncated": truncated}
                 self.output_dir.mkdir(parents=True, exist_ok=True)
                 path = self.output_dir / f"episode_{uuid.uuid4().hex}.jsonl"
@@ -375,6 +429,10 @@ def create_app(service: PolicyService, allow_reload=False) -> Flask:
     @app.post("/act")
     def act():
         return jsonify(service.act(request.get_json()))
+
+    @app.post("/record")
+    def record():
+        return jsonify(service.record(request.get_json()))
 
     @app.post("/finish")
     def finish():

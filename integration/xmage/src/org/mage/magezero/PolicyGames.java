@@ -9,6 +9,7 @@ import mage.game.match.*;
 import mage.game.mulligan.Mulligan;
 import mage.game.mulligan.MulliganType;
 import mage.player.ai.policy.PolicyPlayer;
+import mage.player.ai.policy.RecordingPlayer;
 import mage.players.Player;
 import mage.util.RandomUtil;
 import org.yaml.snakeyaml.Yaml;
@@ -34,6 +35,8 @@ import java.util.concurrent.*;
 public final class PolicyGames {
     static final String TAG = "MZ-POLICY";
     static final String XMAGE_AI = "xmage-ai";
+    // XMage's AI playing while its decisions are recorded for behaviour cloning.
+    static final String TEACHER = "xmage-teacher";
     static final String COMMANDER = "commander";
     private static final ScheduledExecutorService WATCHDOG = Executors.newSingleThreadScheduledExecutor(runnable -> {
         Thread thread = new Thread(runnable, "policy-game-watchdog");
@@ -92,8 +95,10 @@ public final class PolicyGames {
         Config.load(configPath);
         Map<String, Object> raw = rawConfig(configPath);
         String typeA = Config.INSTANCE.playerA.type, typeB = Config.INSTANCE.playerB.type;
-        if (!"policy".equals(typeA) || !("policy".equals(typeB) || XMAGE_AI.equals(typeB))) {
-            throw new IllegalArgumentException("player_a must be type: policy and player_b policy or " + XMAGE_AI);
+        if (!("policy".equals(typeA) || TEACHER.equals(typeA))
+                || !("policy".equals(typeB) || XMAGE_AI.equals(typeB) || TEACHER.equals(typeB))) {
+            throw new IllegalArgumentException("player_a must be type policy or " + TEACHER
+                + ", player_b policy, " + XMAGE_AI + " or " + TEACHER);
         }
         if (!"normal".equals(Config.INSTANCE.gameMode) && !COMMANDER.equals(Config.INSTANCE.gameMode)) {
             throw new IllegalArgumentException("policy games support game_mode normal (two-player constructed) or "
@@ -140,7 +145,7 @@ public final class PolicyGames {
             final int port = ports.get(i % ports.size());
             final int opponentPort = opponentPorts.get(i % opponentPorts.size());
             final boolean swap = alternate && i % 2 == 1;
-            games.add(workers.submit(() -> play(a, b, gameNumber, port, opponentPort, typeB, swap, keepDeck, sample, aiSkill, aiThink, turnSeconds)));
+            games.add(workers.submit(() -> play(a, b, gameNumber, port, opponentPort, typeA, typeB, swap, keepDeck, sample, aiSkill, aiThink, turnSeconds)));
         }
         workers.shutdown();
         int[] counts = new int[Outcome.values().length];
@@ -206,6 +211,15 @@ public final class PolicyGames {
         return player;
     }
 
+    /** The AI above, recording its decisions through the policy service at `endpoint`. */
+    private static Player teacher(String name, int skill, int thinkSeconds, String endpoint) throws ReflectiveOperationException {
+        Class<?> type = Class.forName("mage.player.ai.TeacherPlayer");
+        Player player = (Player) type.getConstructor(String.class, RangeOfInfluence.class, int.class, String.class)
+            .newInstance(name, RangeOfInfluence.ONE, skill, endpoint);
+        if (thinkSeconds > 0) type.getMethod("setMaxThinkTimeSecs", int.class).invoke(player, thinkSeconds);
+        return player;
+    }
+
     /** Two-player game for the configured mode; the Commander classes load by name, like xmageAi. */
     private static Game newGame() throws ReflectiveOperationException {
         Mulligan mulligan = MulliganType.GAME_DEFAULT.getMulligan(0);
@@ -228,7 +242,7 @@ public final class PolicyGames {
     }
 
     private static Outcome play(DeckCardLists listA, DeckCardLists listB, int index, int port, int opponentPort,
-                                String opponentType, boolean swap, boolean keepDeck, boolean sample, int aiSkill,
+                                String learnerType, String opponentType, boolean swap, boolean keepDeck, boolean sample, int aiSkill,
                                 int aiThink, int turnSeconds) throws Exception {
         RandomUtil.setSeed(ThreadLocalRandom.current().nextLong());
         Thread self = Thread.currentThread();
@@ -258,9 +272,12 @@ public final class PolicyGames {
         Match match = newMatch();
         String host = "http://" + Config.INSTANCE.server.host + ":";
         // The learner controller always uses `port`; swapping moves it to seat B.
-        Player learner = new PolicyPlayer(swap ? "PlayerB" : "PlayerA", RangeOfInfluence.ONE, host + port, sample);
+        String learnerName = swap ? "PlayerB" : "PlayerA";
+        Player learner = TEACHER.equals(learnerType) ? teacher(learnerName, aiSkill, aiThink, host + port)
+            : new PolicyPlayer(learnerName, RangeOfInfluence.ONE, host + port, sample);
         String opponentName = swap ? "PlayerA" : "PlayerB";
         Player opponent = XMAGE_AI.equals(opponentType) ? xmageAi(opponentName, aiSkill, aiThink)
+            : TEACHER.equals(opponentType) ? teacher(opponentName, aiSkill, aiThink, host + opponentPort)
             : new PolicyPlayer(opponentName, RangeOfInfluence.ONE, host + opponentPort, sample);
         Player a = swap ? opponent : learner, b = swap ? learner : opponent;
         Outcome outcome = Outcome.ERROR;
@@ -269,8 +286,8 @@ public final class PolicyGames {
             boolean exchange = swap && keepDeck;
             load(game, match, a, Deck.load(exchange ? listB : listA, false, false, new HashMap<>()));
             load(game, match, b, Deck.load(exchange ? listA : listB, false, false, new HashMap<>()));
-            if (a instanceof PolicyPlayer) ((PolicyPlayer) a).initializeKnownDeck(game, b.getId());
-            if (b instanceof PolicyPlayer) ((PolicyPlayer) b).initializeKnownDeck(game, a.getId());
+            if (a instanceof RecordingPlayer) ((RecordingPlayer) a).initializeKnownDeck(game, b.getId());
+            if (b instanceof RecordingPlayer) ((RecordingPlayer) b).initializeKnownDeck(game, a.getId());
             GameOptions options = new GameOptions();
             options.testMode = true;
             options.stopOnTurn = Config.INSTANCE.training.maxTurns;
@@ -307,9 +324,9 @@ public final class PolicyGames {
             System.err.println("policy game " + index + " ended after " + game.getTotalErrorsCount() + " rules-engine error(s)");
         }
         for (Player player : Arrays.asList(a, b)) {
-            if (!(player instanceof PolicyPlayer)) continue;
+            if (!(player instanceof RecordingPlayer)) continue;
             try {
-                ((PolicyPlayer) player).finish(game, outcome == Outcome.TERMINAL, outcome == Outcome.TRUNCATED);
+                ((RecordingPlayer) player).finish(game, outcome == Outcome.TERMINAL, outcome == Outcome.TRUNCATED);
             } catch (RuntimeException error) {
                 // A failed /finish discards this trajectory; it must not fail the batch.
                 System.err.println("policy game " + index + " finish failed: " + error);
@@ -327,7 +344,7 @@ public final class PolicyGames {
                 game.getState().getWatcher(mage.watchers.common.CommanderInfoWatcher.class, commander);
             if (watcher != null) commanderDamage = Math.max(commanderDamage, watcher.getDamageToPlayer().getOrDefault(player.getId(), 0));
         }
-        return player.getName() + (player instanceof PolicyPlayer ? " (policy)" : "") + " "
+        return player.getName() + (player instanceof PolicyPlayer ? " (policy)" : player instanceof RecordingPlayer ? " (teacher)" : "") + " "
             + (player.hasWon() ? "won" : player.hasLost() ? "lost" : "-") + " life " + player.getLife()
             + " poison " + player.getCountersCount(mage.counters.CounterType.POISON)
             + " commander damage " + commanderDamage + " library " + player.getLibrary().size();

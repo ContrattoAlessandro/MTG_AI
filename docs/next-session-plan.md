@@ -1,6 +1,6 @@
 # Next session: single-deck Commander Duel agent
 
-Written 12 October 2026 as a handoff. Read this file first, then `docs/architecture.md`, `docs/long-run.md`, `docs/policy-protocol.md` and `docs/xmage-integration.md`.
+Written 12 October 2026 as a handoff. **Update 13 October:** an architecture review changed the plan; start with [review-handoff.md](review-handoff.md), which lists what is done (uncommitted) and what remains. Then read this file, then `docs/architecture.md`, `docs/long-run.md`, `docs/policy-protocol.md` and `docs/xmage-integration.md`.
 
 ## Goal
 
@@ -57,8 +57,9 @@ All received (above).
 
 ```bash
 ROOT=/c/Users/alexa/Desktop/MTG_AI; OUT="$TEMP/claude/mzjava"; rm -rf "$OUT"; mkdir -p "$OUT"
-cd "$ROOT" && javac -nowarn -encoding UTF-8 -cp "xmage/lib/*" -d "$OUT" $(find integration/xmage/src -name '*.java')
+cd "$ROOT" && javac -nowarn -encoding UTF-8 -cp "xmage/lib/*" -d "$OUT" $(find integration/xmage/src integration/xmage/src-ma -name '*.java')
 (cd "$OUT" && jar uf "$ROOT/xmage/lib/mage-player-ai-1.4.58.jar" mage/player/ai/policy/*.class \
+           && jar uf "$ROOT/xmage/lib/mage-player-ai-ma-1.4.58.jar" mage/player/ai/TeacherPlayer*.class \
            && jar uf "$ROOT/xmage/lib/mage-magezero-1.4.58.jar" org/mage/magezero/*.class)
 python integration/xmage/install.py .mz_engine
 ```

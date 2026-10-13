@@ -23,10 +23,10 @@ AI=.mz_engine/Mage.Server.Plugins/Mage.Player.AI/src/main/java/mage/player/ai
 MA=.mz_engine/Mage.Server.Plugins/Mage.Player.AI.MA/src/mage/player/ai
 MO=.mz_engine/Mage/src/main/java/mage/abilities/mana/ManaOptions.java
 PI=.mz_engine/Mage/src/main/java/mage/players/PlayerImpl.java
-javac -nowarn -encoding UTF-8 -cp "xmage/lib/*" -d "$OUT" $(find integration/xmage/src -name '*.java') $AI/ComputerPlayer.java $MA/ComputerPlayer6.java $MO $PI
+javac -nowarn -encoding UTF-8 -cp "xmage/lib/*" -d "$OUT" $(find integration/xmage/src integration/xmage/src-ma -name '*.java') $AI/ComputerPlayer.java $MA/ComputerPlayer6.java $MO $PI
 cd "$OUT"
 jar uf "$ROOT/xmage/lib/mage-player-ai-1.4.58.jar" mage/player/ai/policy/*.class mage/player/ai/ComputerPlayer.class 'mage/player/ai/ComputerPlayer$PickedCard.class'
-jar uf "$ROOT/xmage/lib/mage-player-ai-ma-1.4.58.jar" mage/player/ai/ComputerPlayer6*.class
+jar uf "$ROOT/xmage/lib/mage-player-ai-ma-1.4.58.jar" mage/player/ai/ComputerPlayer6*.class mage/player/ai/TeacherPlayer*.class
 jar uf "$ROOT/xmage/lib/mage-1.4.58.jar" mage/abilities/mana/ManaOptions*.class mage/players/PlayerImpl*.class
 jar uf "$ROOT/xmage/lib/mage-magezero-1.4.58.jar" org/mage/magezero/*.class
 ```

@@ -1,7 +1,10 @@
-# Locked configuration for the final run. Learning settings are the only ones that
-# showed learning (configs/policy-cpu-30min.yml, docs/cpu-training-2026-10-12.md):
-# GAE lambda 1.0, auxiliary belief off, two epochs, learning rate 0.0003. Untested
-# alternatives (lambda 0.97, auxiliary belief) stay in configs/policy.yml.
+# Configuration for the final run. The earlier learning evidence
+# (configs/policy-cpu-30min.yml, docs/cpu-training-2026-10-12.md) used GAE lambda
+# 1.0 from a random start with an untrained critic. This run starts from a
+# behaviour-cloned warm start whose value heads were pre-trained on the teacher
+# games (mz clone, the clone: section below), so it bootstraps (lambda 0.95) with
+# potential-based shaping and a KL term towards the cloned policy. These three are
+# new and untested at scale: compare against lambda 1.0 / shaping 0 / KL 0 early.
 model:
   belief_mode: statistical_roles
   auxiliary_belief: false
@@ -27,8 +30,15 @@ training:
   # Trajectories per no-gradient forward pass when computing PPO targets.
   target_batch_episodes: 64
   gamma: 1.0
-  # Full terminal-return credit across the many micro-decisions in a game.
-  gae_lambda: 1.0
+  # Bootstrapped advantages: lower variance than lambda 1 across hundreds of
+  # decisions per game, once the critic is pre-trained.
+  gae_lambda: 0.95
+  # Potential-based shaping (src/magezero/policy/shaping.py): policy-invariant,
+  # bounded by 0.5 against the +-1 game result. Must equal clone.shaping_coefficient.
+  shaping_coefficient: 0.5
+  # KL(cloned || policy), AlphaStar-style. Halves about every 700 updates.
+  reference_kl_coefficient: 0.05
+  reference_kl_decay: 0.999
   clip_ratio: 0.2
   value_coefficient: 0.5
   public_value_coefficient: 0.25
@@ -36,3 +46,15 @@ training:
   entropy_coefficient: 0.01
   max_grad_norm: 1.0
   target_kl: 0.02
+
+# mz clone: behaviour cloning on mz teacher-collect trajectories.
+clone:
+  learning_rate: 0.0003
+  epochs: 10
+  episodes_per_batch: 16
+  sequence_length: 32
+  value_coefficient: 0.5
+  public_value_coefficient: 0.25
+  validation_fraction: 0.1
+  shaping_coefficient: 0.5
+  gamma: 1.0
