@@ -1,5 +1,5 @@
-# Compact starting point for the detected RTX 5070 (12 GB VRAM).
-# Card IDs/count come from the immutable catalog, never from an arbitrary hash.
+# Default model and PPO settings (statistical-role belief), sized for a 12 GB GPU.
+# Card IDs and their count come from the immutable catalog, never from a hash.
 model:
   belief_mode: statistical_roles
   # Hand-count prediction from memory as an auxiliary loss; never an actor input.

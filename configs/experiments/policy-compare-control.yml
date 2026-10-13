@@ -1,4 +1,4 @@
-# A5 comparison control (docs/review-handoff.md): policy-final.yml with the
+# A5 comparison control (notes/review-handoff.md): policy-final.yml with the
 # pre-review credit assignment, lambda 1.0, no shaping, no KL. Arm (a) runs it from
 # commander-initial.pt; arm (c) from commander-cloned.pt, to separate the warm start
 # from the lambda/shaping/KL change. Arm (b) is policy-final.yml itself.

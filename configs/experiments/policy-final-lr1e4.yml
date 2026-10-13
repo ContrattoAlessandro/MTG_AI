@@ -1,5 +1,5 @@
 # A5 arm (d): policy-final.yml with a fine-tuning learning rate (1e-4 instead of
-# 3e-4) from commander-cloned.pt. Run by scripts/a5-extra-arms.sh after the A5 chain.
+# 3e-4) from commander-cloned.pt. Run by notes/a5/a5-extra-arms.sh after the A5 chain.
 model:
   belief_mode: statistical_roles
   auxiliary_belief: false

@@ -1,6 +1,6 @@
 # Statistical hand belief and semantic card roles
 
-Research and design recommendation, 12 October 2026. This document proposes an experiment; it does not change the running policy or existing checkpoints.
+Research note and design recommendation (12 October 2026) that led to the default `statistical_roles` belief mode; [Statistical roles](statistical-roles-implementation.md) describes what was implemented.
 
 ## Recommendation
 

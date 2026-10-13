@@ -1,7 +1,7 @@
-import sys
-from pathlib import Path
+"""The persistent engine protocol, against a fake engine process."""
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+import sys
+
 import pytest
 
 from magezero.engine import PersistentEngine

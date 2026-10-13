@@ -20,15 +20,15 @@ Training continued from the one-update statistical-role smoke checkpoint, `artif
 
 The budget controller stopped between complete generations using recent measured durations. It did not interrupt an update or relabel partial games as draws. Historical opponents' observer trajectories were excluded from training. Current-policy self-play supplied both observers; historical matches supplied only the learner's observer.
 
-Configuration: [`policy-cpu-30min.yml`](../configs/policy-cpu-30min.yml), two PPO epochs, episodes/minibatch four, TBPTT length 32, learning rate 0.0003, gamma one, and GAE lambda one. Lambda one supplies full terminal-return credit across the many micro-decisions. It differs from the earlier smoke's lambda 0.97, so this experiment evaluates the continued training procedure rather than isolating the architecture change.
+Configuration: [`policy-cpu-30min.yml`](../../configs/experiments/policy-cpu-30min.yml), two PPO epochs, episodes/minibatch four, TBPTT length 32, learning rate 0.0003, gamma one, and GAE lambda one. Lambda one supplies full terminal-return credit across the many micro-decisions. It differs from the earlier smoke's lambda 0.97, so this experiment evaluates the continued training procedure rather than isolating the architecture change.
 
 Statistical hand/category probabilities have no trainable prediction head and zero belief-loss weight. The policy learned how to use its observations, history and probability features. A changing hand NLL across different games would not constitute belief-head learning.
 
-The final checkpoint is [`policy.pt`](../artifacts/statistical-cpu-30min-20261012/generation_0023/policy.pt), with 25 lifetime updates including its initial smoke update. The original starting checkpoint remains available.
+The final checkpoint is `policy.pt` (`artifacts/statistical-cpu-30min-20261012/generation_0023/policy.pt`), with 25 lifetime updates including its initial smoke update. The original starting checkpoint remains available.
 
 ## Held-out playing strength
 
-The [evaluation plan](cpu-30min-evaluation-plan.md) specified 200 games against the frozen starting policy, balanced across starting seats. Neither the model nor the final-checkpoint selection used evaluation outcomes. The agent sampled from its policy during evaluation, as in self-play.
+The [evaluation plan](../cpu-30min-evaluation-plan.md) specified 200 games against the frozen starting policy, balanced across starting seats. Neither the model nor the final-checkpoint selection used evaluation outcomes. The agent sampled from its policy during evaluation, as in self-play.
 
 Two disjoint seed blocks completed: 24 recorded games at base seed 20261030 (14–10) and 176 additional games at base seed 20261130 (135–41). Different outcomes between the small first block and larger second block illustrate why the first result alone was insufficient.
 
@@ -77,10 +77,10 @@ Before claiming broader strength, evaluate additional fixed opponents and severa
 ## Artifacts and reproducibility
 
 - [Aggregate measurements and provenance](cpu-training-2026-10-12.json)
-- [Training configuration](../configs/policy-cpu-30min.yml)
-- [Evaluation plan](cpu-30min-evaluation-plan.md)
-- [Arena block 1 results](../artifacts/statistical-cpu-30min-eval-recorded/results.json)
-- [Arena block 2 results](../artifacts/statistical-cpu-30min-eval-main/results.json)
-- [Same-history behavior measurements](../artifacts/statistical-cpu-30min-20261012/heldout-behavior.json)
+- [Training configuration](../../configs/experiments/policy-cpu-30min.yml)
+- [Evaluation plan](../cpu-30min-evaluation-plan.md)
+- Arena block 1 results (`artifacts/statistical-cpu-30min-eval-recorded/results.json`)
+- Arena block 2 results (`artifacts/statistical-cpu-30min-eval-main/results.json`)
+- Same-history behavior measurements (`artifacts/statistical-cpu-30min-20261012/heldout-behavior.json`)
 
 The implementation/evaluation test suite passed **22 checks**. CPU training and both arena jobs exited successfully and their local policy servers were closed. No background training remains.

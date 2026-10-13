@@ -97,6 +97,8 @@ def evaluate_predictions(checkpoint, paths, device: str = "cpu") -> dict:
 
 
 def _vector_info(tensor) -> dict:
+    if isinstance(tensor, tuple):  # recurrent modules return (outputs, final hidden state)
+        tensor = tensor[0]
     value = tensor.detach().float().cpu()
     return {"shape": list(value.shape), "first_values": value.reshape(-1)[:8].tolist(), "norm": float(value.norm()),
             "minimum": float(value.min()), "maximum": float(value.max())}  # fmt: skip

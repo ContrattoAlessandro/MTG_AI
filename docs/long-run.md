@@ -1,77 +1,71 @@
-# Running a long training job
+# Long training runs
 
-Implemented 12 October 2026. This covers the machinery for an unattended multi-day `mz selfplay` run: the batched learner, crash recovery, disk retention, truncated games, and periodic evaluation. It does not cover deck-pool coverage (role annotations for every card). Mana payment stays with XMage's auto-tapper by decision of 12 October 2026. Those still have to be settled before a final run.
+`mz selfplay` runs synchronous generations: collect games with a frozen checkpoint, run one PPO update on them, repeat. It is built for unattended multi-day runs: it resumes after interruptions, restarts a failed engine, bounds disk use and evaluates periodically. This document describes those mechanisms and the run folder they produce. The learning algorithm itself is in [Architecture](architecture.md#learning-and-collection).
 
-## What changed
+## Mechanisms
 
 | Area | Behaviour |
 |---|---|
-| Learner | `forward_episodes` runs chunk *w* of every trajectory in a minibatch as one forward pass. `episodes_per_batch` is now the GPU batch width as well as the optimizer minibatch. Targets are computed `target_batch_episodes` (default 64) trajectories at a time. Files read by `train_from_files` are validated once, not twice. |
-| Engine (Java) | A failing game no longer fails its batch. Each game has a wall-clock watchdog (`training.max_minutes`). The batch reply is `RESULT terminal requested truncated errors timeouts`. Games that XMage ended after swallowing a rules error are counted as errors, never as truncations. |
-| Truncated games | Error-free games that hit `training.max_turns` are recorded with `truncated: true` and bootstrapped by the learner (see [architecture](architecture.md#learning-and-collection)). |
-| Recovery | A failed or hung batch (`engine.run` timeout, derived from games/threads/max_minutes) kills the JVM, restarts the policy services, discards that attempt's episodes, and replays the generation, up to `--max-retries` times. `run-state.json` is written atomically after every generation; `--resume` continues from it and moves any half-finished generation folder aside as `generation_NNNN.incomplete-*`. |
-| Failure guard | The run stops (resumable) if more than `--max-failure-fraction` (default 25%) of a generation's games error or time out, since training on the survivors would bias the data. |
-| Disk | Episodes are deleted after training unless `--keep-episodes`. The checkpoint a generation trained from is deleted unless it is every `--keep-every`-th one. League snapshots are stored as optimizer-free copies in `snapshots/` (about 1/3 the size). The run stops cleanly below `--min-free-gb`. |
-| Seats | Odd games swap the two controllers between seats, so the learner plays both decks against historical opponents and benchmarks. The starting player alternates independently. With `server.learner_keeps_deck: true` (set in `configs/commander-mirror.yml`, and always in gauntlet games) the deck moves with the learner, so a single-deck learner never plays another deck. |
-| Gauntlet (13 Oct) | `--gauntlet DECK ...` adds a third kind of game: a `--gauntlet-fraction` share of every generation (default 0.5) puts the learner's deck (player_a) against a gauntlet deck piloted by XMage's AI (`--gauntlet-ai-skill`, default 3; `--gauntlet-ai-think` caps its seconds per decision). Decks rotate by generation. Each generation runs the mirror/league batch, then the gauntlet batch, and trains on both in one PPO update; only the learner's side of a gauntlet game is recorded. Trajectories go to `episodes/selfplay` and `episodes/gauntlet`; league win rates use only the self-play ones. `metrics.json` has `games_by_kind` with each batch's engine counts and the learner's results. |
-| Evaluation | Every `--eval-every` generations (and after the last one), the learner plays `--eval-games` games against XMage's built-in AI (`ComputerPlayer7`, `--eval-ai-skill`, 0 disables it) and against each `--eval-anchor` checkpoint. These games are never recorded for training. With a gauntlet, each gauntlet deck is also evaluated against XMage's AI (`xmage-ai:<deck>`), and `--eval-greedy` evaluates with the most likely action instead of sampling. Results go to `evaluations.jsonl` and the generation's `metrics.json`. The best checkpoint by mean score over the XMage-AI benchmarks (or the mean anchor score) is copied to `best.pt` without optimizer state. Score = (wins + ½·(draws + truncated)) / scored games; errors are reported, never scored. |
+| Learner | `forward_episodes` runs chunk *w* of every trajectory in a minibatch as one forward pass, so `episodes_per_batch` is both the GPU batch width and the optimizer minibatch. PPO targets are computed `target_batch_episodes` (default 64) trajectories at a time. |
+| Engine | A failing game does not fail its batch. Each game has a wall-clock watchdog (`training.max_minutes`) and each turn a separate one (`training.max_turn_seconds`). The batch reply counts terminal, requested, truncated, error and timeout games. Games that XMage ended after swallowing a rules error count as errors, never as truncations. |
+| Truncated games | Error-free games that reach `training.max_turns` are recorded with `truncated: true` and bootstrapped by the learner instead of being scored as draws. |
+| Recovery | A failed or hung batch (the timeout is derived from games, threads and `max_minutes`) kills the JVM, restarts the policy services, discards that attempt's trajectories, and replays the generation, up to `--max-retries` times. `run-state.json` is written atomically after every generation. `--resume` continues from it and moves a half-finished generation folder aside as `generation_NNNN.incomplete-*`. |
+| Failure guard | The run stops (resumably) when more than `--max-failure-fraction` (default 25%) of a generation's games error or time out, since training on the survivors would bias the data. |
+| Disk | Trajectories are deleted after training unless `--keep-episodes`. The checkpoint a generation trained from is deleted unless it is a `--keep-every` milestone. League snapshots and `best.pt` are separate optimizer-free copies (about 1/3 the size). The run stops cleanly below `--min-free-gb`. |
+| Seats | Odd games swap the two controllers between seats, so against historical opponents and benchmarks the learner plays both decks of an asymmetric matchup. The starting player alternates independently. With `server.learner_keeps_deck: true` (set in `configs/commander-mirror.yml`, and always in gauntlet games) the deck moves with the learner, so a single-deck learner never plays another deck. |
+| League | Odd generations play a historical snapshot (one is added every `--snapshot-every` generations) sampled by prioritized fictitious self-play; even generations play the current policy. |
+| Gauntlet | `--gauntlet DECK ...` adds games in which the learner's deck (player_a) faces a gauntlet deck piloted by XMage's AI (`--gauntlet-ai-skill`; `--gauntlet-ai-think` caps its seconds per decision). They make up a `--gauntlet-fraction` share of every generation (default 0.5), and the decks rotate by generation. Each generation plays the mirror/league batch, then the gauntlet batch, and trains on both in one PPO update. Only the learner's side of a gauntlet game is recorded. League win rates use only the self-play games. |
+| Evaluation | Every `--eval-every` generations, and after the last one, the learner plays `--eval-games` games against XMage's AI (`ComputerPlayer7`, `--eval-ai-skill`; 0 disables it), against XMage's AI with each gauntlet deck, and against each `--eval-anchor` checkpoint. These games are never recorded. `--eval-greedy` plays the most likely action instead of sampling. The score is (wins + ½ · (draws + truncated)) / scored games; errors are reported but never scored. The checkpoint with the best mean score against XMage's AI (or, without it, the best mean anchor score) is copied to `best.pt`. |
+| Throughput | The engine JVM and the policy services persist across generations; services swap checkpoints through `/reload`. `--engine-threads` (up to 16) sets concurrent games, and `--actor-shards N` runs N service processes per checkpoint. |
 
-## Commander Duel: Winota learner, Kinnan gauntlet
+## The run folder
 
-```powershell
-.venv/Scripts/mz.exe selfplay --checkpoint artifacts/commander-cloned.pt --reference artifacts/commander-cloned.pt `
-  --game configs/commander-mirror.yml --config configs/policy-final.yml `
-  --engine-script xmage/mz-policy.bat --output artifacts/commander-run --iterations 5000 --games 64 `
-  --gauntlet xmage/decks/kinnan.dck --gauntlet-fraction 0.5 --gauntlet-ai-skill 1 `
-  --engine-threads 16 --device cuda --eval-every 25 --eval-games 64 --eval-ai-skill 3 --eval-greedy `
-  --keep-every 100 --min-free-gb 30
+| File | Contents |
+|---|---|
+| `run-state.json` | Next generation, current checkpoint, best evaluation, league and reference paths (used by `--resume`) |
+| `run-summary.json` | Progress, best result and restarts, for a quick look |
+| `generation_NNNN/metrics.json` | PPO losses, entropy, KL and reference KL, game outcomes (`games`, `games_by_kind`, `failure_fraction`, `truncation_fraction`), timings and throughput, service statistics, and the evaluation report when one ran |
+| `generation_NNNN/policy.pt` | The checkpoint trained in this generation (pruned unless kept) |
+| `generation_NNNN/*.yml` | The exact game batches played |
+| `evaluations.jsonl` | One line per evaluation: generation, checkpoint, score and per-benchmark report with Wilson intervals |
+| `best.pt` | The best evaluated checkpoint, without optimizer state |
+| `snapshots/`, `league.json` | League snapshots and the learner's record against each |
+| `engine.log`, `actor-*.log`, `opponent-*.log` | Engine and policy-service logs |
+
+## The Commander run
+
+The Winota learner with a Kinnan gauntlet, starting from the behaviour-cloned warm start ([Warm start](warm-start.md)):
+
+```bash
+mz selfplay --checkpoint artifacts/commander-cloned.pt --reference artifacts/commander-cloned.pt \
+    --game configs/commander-mirror.yml --config configs/policy-final.yml --engine-script $ENGINE \
+    --output artifacts/commander-run --iterations 1000 --games 64 \
+    --gauntlet xmage/decks/kinnan.dck --gauntlet-fraction 0.5 --gauntlet-ai-skill 1 \
+    --engine-threads 16 --device cuda --eval-every 25 --eval-games 64 --eval-ai-skill 3 --eval-greedy \
+    --keep-every 100 --min-free-gb 30
 ```
 
-`commander-cloned.pt` is the behaviour-cloned warm start; build it first as in [warm-start.md](warm-start.md). The numbers (fraction, skills, games) are a starting point to be set from the launch check in [the plan](next-session-plan.md#task-d-launch-check-then-the-final-run).
+After an interruption, rerun the same command with `--resume`. The gauntlet fraction, AI skills and game counts are starting points to be tuned from a short launch check: watch games per hour, `failure_fraction` and `truncation_fraction` (both should stay below a few percent), and the share of time spent in the learner.
 
 ## Caveats
 
-- XMage's AI searches simulated copies of the game. It is the usual opponent XMage players face, but it is not guaranteed to respect hidden information, so it is a practical yardstick, not a fair-information baseline.
-- Evaluation samples from the policy, as in training; it is not greedy play.
-- `best.pt` is selected on evaluation results, so its score is optimistically biased. Confirm a final choice with a fresh, larger evaluation.
-- The truncation bootstrap gives the final recorded decision zero advantage, because no following observation is recorded. Keep `max_turns` high enough that truncation stays rare, and watch `truncation_fraction`.
-- Resuming deletes nothing that reached a checkpoint. A partial generation's logs are kept and its episodes are deleted.
+- XMage's AI searches simulated copies of the game. It is the opponent XMage players usually face, but it is not guaranteed to respect hidden information, so it is a practical yardstick rather than a fair-information baseline.
+- Without `--eval-greedy`, evaluation samples from the policy as in training.
+- `best.pt` is selected on evaluation results, so its score is optimistically biased. Confirm the final choice with a fresh, larger evaluation.
+- The truncation bootstrap gives the final recorded decision zero advantage, because no following observation exists. Keep `max_turns` high enough that truncation stays rare.
+- Resuming deletes nothing that reached a checkpoint. A partial generation's logs are kept and its trajectories are deleted.
 
-## Measured learner throughput
+## Learner throughput
 
-64 real simplegreen trajectories from the 30-minute run (14,139 decisions), one PPO epoch, sequence length 32, behaviour-probability check disabled because the episodes come from several checkpoints. The script is in the session scratchpad; raw numbers below.
+Measured on 64 real `simplegreen` trajectories (14,139 decisions), one PPO epoch, sequence length 32, decisions per second:
 
-| Device | episodes_per_batch 4 | 16 | 32 |
+| Device | `episodes_per_batch` 4 | 16 | 32 |
 |---|---:|---:|---:|
-| CPU, 4 threads | 271 /s | 263 /s | 246 /s |
-| RTX 5070 (**shared with another training job**) | 396 /s | 566 /s | 607 /s |
+| CPU, 4 threads | 271 | 263 | 246 |
+| RTX 5070, shared with another training job | 396 | 566 | 607 |
 
-For comparison, the earlier per-episode learner measured 56 /s CPU (30-minute run, 1 thread) and 360–450 /s CUDA. The CUDA numbers here were measured while another training process used the same GPU, and repeated timings of the same forward pass varied by about 40%. Re-measure on an idle GPU before sizing the run. In the 64-episode CUDA update, Python-side validation (2.3 s, now done once instead of twice) and collation (5.3 s) took about 8 s of 22 s. The statistics module's per-call input checks add host synchronisations inside each forward pass. Collation and those checks are the next optimisation targets if the learner remains the bottleneck.
-
-### Learner changes after this measurement (12 October 2026, evening)
-
-- The model's forward pass no longer re-validates count bounds (`statistics.py` `_validate`, `torch.all`, `.item()`). `validate_observation` already enforces them, and the role matrix is checked when the model is built. Diagnostics still validate.
-- `forward_episodes` takes each row's event count as a CPU tensor kept from collation, so GRU packing no longer copies lengths from the GPU.
-- Collation was re-profiled on 64 real trajectories (13,351 decisions): 1.2 s on CPU, about 3% of a 42 s one-epoch CPU update. The update is compute-bound: backward 44%, the transformer encoder and linear layers 39%. The 5.3 s figure above predates these changes and included per-window joins on a contended GPU.
-- bf16 autocast was not added. It would put the behaviour-probability check and the first PPO ratios at bf16 precision, so measure it on an idle GPU before adopting it.
-
-None of these were timed on the GPU, because another job was using it.
+The GPU figures were taken while another process used the same GPU, and repeated timings varied by about 40%; re-measure on an idle GPU when sizing a run. A CPU profile of the one-epoch update attributes 44% of the time to the backward pass and 39% to the Transformer encoder and linear layers; collation takes about 3%. `scripts/benchmark_policy_learner.py` compares devices on one recorded episode.
 
 ## Validation
 
-- 39 pytest checks pass. New: multi-episode forward vs separate sequences (uneven lengths, eventless trajectories, carried memory), target batching invariance, truncated recording/bootstrapping/validation, service outcome counters, Wilson interval and selection metric, and a runner test with a simulated engine crash, retry, refused non-resume, resume over a half-finished generation, pruning, snapshots, `best.pt` and metrics.
-- Engine tests cover the new reply format, the legacy reply format, batch hang timeout and idempotent `kill()`.
-- Real end-to-end check (`artifacts/e2e-long-run-check`): the patched XMage distribution with the simplegreen mirror, 3 generations × 8 games, `max_turns: 10` to force truncations, evaluation against XMage's AI and the initial checkpoint each generation. All 24 training games were recorded as truncated and trained. Evaluation games against XMage's AI completed and were scored. There were zero engine errors, and pruning, snapshots, `best.pt` and `run-state.json` were written as specified. This validates the plumbing, not playing strength.
-
-## Example
-
-```powershell
-.venv/Scripts/mz.exe selfplay --checkpoint artifacts/initial.pt --game configs/policy-game.yml --config configs/policy.yml `
-  --engine-script xmage/mz-policy.bat --output artifacts/final-run --iterations 5000 --games 64 `
-  --engine-threads 16 --actor-shards 2 --device cuda `
-  --eval-every 25 --eval-games 128 --eval-ai-skill 6 --eval-anchor artifacts/initial.pt `
-  --keep-every 100 --min-free-gb 30
-# after any interruption, the same command plus --resume
-```
-
-The Java classes were rebuilt with `javac` against `xmage/lib/*` and patched into `xmage/lib/mage-magezero-1.4.58.jar` and `mage-player-ai-1.4.58.jar`. The originals are in `artifacts/jar-backup-20261012/`. Sources are synced into `.mz_engine` with `integration/xmage/install.py`; a full Maven rebuild produces the same classes.
+The test suite runs the runner against a simulated engine: a crash and retry, a refused run without `--resume`, resuming over a half-finished generation, pruning, snapshots, `best.pt`, gauntlet batches and evaluation configurations. Engine tests cover the reply formats, a hung batch timing out, and repeated `kill()`. An end-to-end check on the real distribution (the `simplegreen` mirror, 3 generations of 8 games, `max_turns: 10` to force truncations, evaluation every generation against XMage's AI and the initial checkpoint) recorded and trained all 24 truncated games, scored the evaluations, had zero engine errors, and wrote pruning, snapshots, `best.pt` and `run-state.json` as specified. This validates the machinery, not playing strength.

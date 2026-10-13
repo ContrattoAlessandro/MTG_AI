@@ -1,50 +1,129 @@
-# MageZero: entity, history, and opponent-belief policy
+# MageZero: a search-free recurrent policy for Magic: The Gathering
 
-This local redesign replaces the default MCTS training path with a direct recurrent policy for two-player constructed Magic. It uses attention over visible entities, persistent history, a statistical known-deck hand prior, 20 overlapping card-role presence probabilities, legal-action scoring, and PPO with a training-only privileged critic. The default has no learned belief head or hand-count dynamic programming.
+MageZero trains an agent to play two-player Magic: The Gathering inside the [XMage](https://github.com/magefree/mage) rules engine. The agent chooses directly among the legal actions at every decision, with no game-tree search. It reads a player-relative observation of the game and remembers the game's history, and it estimates the opponent's hidden hand from the publicly known deck list.
 
-The design draws on AlphaStar, DouZero/DouZero+, PerfectDou, and search-free imperfect-information learning. Read the [architecture and primary-source research](docs/architecture.md), [protocol](docs/policy-protocol.md), and [XMage integration](docs/xmage-integration.md). This is an implemented experimental architecture; no MTG playing-strength improvement or ideal architecture is claimed.
+The target setting is a Commander Duel: the learner pilots **Winota, Joiner of Forces** against **Kinnan, Bonder Prodigy**, with XMage's own AI as the gauntlet opponent and benchmark. The method is general: any two-player constructed or Commander Duel matchup whose cards the catalog covers can be trained.
 
-The [30-minute measured pilot](docs/pilot-2026-10-12.md) completed 20 games and five updates. Belief prediction improved modestly, but stronger play was not demonstrated. The [actual decision-to-training example](docs/flow-example.md) traces every model stage and its losses. A matched learner test found CPU faster than CUDA for the current serial implementation; see the report before starting a larger GPU run.
+This repository is a redesign of [WillWroble/MageZero](https://github.com/WillWroble/MageZero), which trained MCTS-guided networks on sparse hashed features. That pipeline is not part of this code base; it remains available upstream and in this repository's git history.
 
-Those pilot artifacts describe the earlier learned-belief model. The [statistical-role implementation and validation](docs/statistical-roles-implementation.md) describes the current default, its reviewed card annotations, a two-game integration check, and matched forward benchmarks. V2 learned-belief checkpoints remain loadable without converting their weights or trajectories.
+## Method
 
-The subsequent [30-minute CPU training evaluation](docs/cpu-training-2026-10-12.md) completed 96 games and beat its frozen starting policy **149–51 in 200 fresh games**. It learned more active casting and combat on simplegreen; mulligan preferences stayed nearly 50/50. This establishes improvement against that starting policy on one matchup, not general Magic strength or superiority over trained upstream MageZero.
+| Component | Summary | Details |
+|---|---|---|
+| Observation | Visible entities (cards, permanents, players, stack objects, hidden-zone counts) with directed relations; public globals; the events since the player's previous decision; the legal candidate actions; the opponent's announced deck with public count bounds. | [Protocol](docs/policy-protocol.md) |
+| Actor | Card embeddings plus static card semantics → relation messages → Transformer over entities with a pooling token. New events are pooled per decision into an event GRU, and a decision GRU carries the memory. Every legal candidate is scored against the actor context, with pointers to its source and target entities. | [Architecture](docs/architecture.md) |
+| Hidden hand | A closed-form without-replacement (hypergeometric) prior over the opponent's hand from public bounds, plus the probability of holding each of 20 reviewed, overlapping card roles. A learned constrained hand-count model is available as an alternative mode. | [Statistical roles](docs/statistical-roles-implementation.md) |
+| Learning | Recurrent PPO on one player's complete trajectories with GAE, a public value head, and a privileged critic that sees the true hand during training only. Optional potential-based reward shaping. | [Architecture](docs/architecture.md#learning-and-collection) |
+| Warm start | Behaviour cloning from XMage's AI recorded over the policy's own candidate lists, then PPO with a decaying KL penalty towards the cloned policy (as in AlphaStar). | [Warm start](docs/warm-start.md) |
+| Training runs | Resumable self-play generations with a historical league, a gauntlet piloted by XMage's AI, crash recovery, disk retention and periodic evaluation with best-checkpoint selection. | [Long runs](docs/long-run.md) |
+| Engine adapter | Java classes and small engine patches for the pinned XMage fork: the policy player, observation encoder, history watcher, teacher recorder, batch game runner and catalog exporter. | [XMage integration](docs/xmage-integration.md) |
 
-## Local setup and smoke test
+## Repository layout
 
-Python 3.10+ is required. On this computer a workspace-local `.venv` reuses the installed CUDA PyTorch and contains the package/HTTP server. For a fresh environment, install a PyTorch build appropriate for your device before running the GPU learner.
-
-```powershell
-python -m venv .venv --system-site-packages
-.venv/Scripts/python.exe -m pip install -e '.[test]'
-
-# Model, collection, PPO, checkpoint reload, and a synthetic inference benchmark.
-.venv/Scripts/python.exe scripts/policy_smoke.py --output artifacts/smoke-new --device cpu
-
-# Unit/regression checks, including CUDA when available.
-.venv/Scripts/python.exe -m pytest tests -q
+```text
+src/magezero/          Python package (the `mz` command)
+  schema.py              observation schema, validation and tensor collation
+  catalog.py, roles.py   immutable card catalog and the 20 card roles
+  statistics.py          hypergeometric hand prior and role presence
+  belief.py              learned constrained hand-count belief (alternative mode)
+  model.py               actor (EntityBeliefPolicy) and privileged critic
+  checkpoint.py          checkpoint format and loading
+  service.py             HTTP inference and recording service used by XMage
+  service_client.py      service subprocesses, reload and result counters
+  engine.py              persistent XMage engine process and batch configurations
+  shaping.py             potential-based reward shaping
+  learner.py             recurrent PPO
+  teacher.py             teacher-game collection and behaviour cloning
+  league.py, runner.py   historical opponents and resumable self-play runs
+  diagnostics.py         hand-prediction evaluation and decision traces
+  cli.py                 command-line interface
+integration/xmage/     Java adapter, engine patches, launchers and the human-play server config
+configs/               model, training and game configurations (see configs/README.md)
+decks-src/             the Winota and Kinnan deck lists
+scripts/               catalog annotation, smoke tests, benchmarks and reports (see scripts/README.md)
+tests/                 pytest suite (no XMage needed)
+docs/                  design and reference documentation
+notes/                 development log: session notes, plans and reports of earlier pilots
 ```
 
-Use a fresh artifact directory for each smoke run. All 19 regression checks passed on this computer, including statistical probabilities and CPU/CUDA PPO. The complete 35-module XMage distribution built and is installed in `xmage/`. The statistical-role model completed two real `simplegreen` games, producing four trajectories and 1,223 decisions; CPU PPO saved an updated checkpoint.
+## Installation
 
-## Real-deck training
+Python 3.10 or newer. Install PyTorch for your platform first ([pytorch.org](https://pytorch.org/get-started/locally/)), then the package:
 
-The old XMage release binary is incompatible with the new protocol. This workspace already contains the rebuilt adapter and a working small real-card experiment. For another computer or deck pool, [install the pinned source adapter](docs/xmage-integration.md), export a fixed catalog, and edit `configs/policy-game.yml`.
-
-```powershell
-# The bundled annotations cover simplegreen plus a few reviewed example cards.
-# Other deck pools must first receive complete reviewed annotations.
-.venv/Scripts/python.exe scripts/annotate_policy_catalog.py --catalog artifacts/real-card-catalog.json --annotations configs/card-roles.json --output artifacts/cards-with-roles.json
-.venv/Scripts/mz.exe init --catalog artifacts/cards-with-roles.json --output artifacts/initial.pt
-.venv/Scripts/mz.exe selfplay --checkpoint artifacts/initial.pt --game configs/real-card-smoke.yml --engine-script xmage/mz-policy.bat --output artifacts/run-001 --iterations 1 --games 32 --actor-device cpu --device cpu
+```bash
+python -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+pip install -e ".[test]"         # add ",analysis" for the plotting/report scripts, or use ".[dev]"
+pytest                           # unit and regression tests; CUDA tests are skipped without a GPU
+python scripts/policy_smoke.py --output artifacts/smoke --device cpu
 ```
 
-Single-observation inference and the current serial learner measured faster on CPU on this machine, so CLI actors and learners default to CPU. CUDA remains available explicitly. The default has width 256, two attention layers, and roughly 4.2 million actor parameters for a small deck pool. Matched synthetic CPU forward medians were 7.29 ms for learned belief versus 4.72 ms for statistical roles; these exclude engine/HTTP overhead and say nothing about win rate.
+The smoke script builds a synthetic catalog and checkpoint, plays two in-process games through the inference service, runs a PPO update, reloads the result and times a forward pass. It needs no XMage installation.
 
-`mz serve` runs direct inference; `mz train` updates a checkpoint from fresh complete player trajectories. Old sparse-feature datasets and MCTS checkpoints require new collection and training. Hidden opponent hands are excluded from actor inputs. True counts train the privileged critic and supply diagnostic targets. Belief supervision applies only to explicitly selected learned-belief models.
+Playing real games requires the XMage adapter: a JDK and Maven, a checkout of the pinned engine fork in `.mz_engine/`, the adapter installed with `integration/xmage/install.py`, and the built distribution extracted to `xmage/`. [XMage integration](docs/xmage-integration.md) gives the steps. Below, `ENGINE` stands for the launcher in that distribution: `xmage/mz-policy.sh`, or `xmage/mz-policy.bat` on Windows.
 
-The [integration limits](docs/xmage-integration.md#coverage-and-remaining-limits) matter for complex card pools: generated/stolen cards, complete visibility tracking, grouped combat, specialized callbacks, and timeout bootstrapping need further work. Validation covered synthetic cards and a simple real-card deck, rather than every Magic mechanic.
+## Training the Commander agent
 
-## Original pipeline
+```bash
+# 1. Decks: convert the lists in decks-src/ to XMage .dck files (the commander is the sideboard).
+cd xmage
+java -Dh2.bindAddress=127.0.0.1 -cp "lib/*" org.mage.magezero.DeckListConverter ../decks-src/winota.txt decks/winota.dck
+java -Dh2.bindAddress=127.0.0.1 -cp "lib/*" org.mage.magezero.DeckListConverter ../decks-src/kinnan.txt decks/kinnan.dck
 
-The original code remains available through explicit `legacy-train`, `legacy-batch`, `legacy-play`, `legacy-import`, and `legacy-export` commands. Install `pip install -e '.[legacy]'` for their additional dependencies. The [original README and results](docs/legacy-readme.md) and [legacy setup guide](setup_guide.md) describe that pipeline; its reported results do not apply to this new policy.
+# 2. Card catalog with tokens and other faces, then the reviewed roles of every card.
+java -Xmx8G -Dh2.bindAddress=127.0.0.1 -cp "lib/*" org.mage.magezero.PolicyCatalogExporter \
+    ../artifacts/commander-cards.json --sources ../.mz_engine/Mage.Sets/src decks/winota.dck decks/kinnan.dck
+cd ..
+python scripts/annotate_policy_catalog.py --catalog artifacts/commander-cards.json \
+    --annotations configs/card-roles.json --output artifacts/commander-cards-roles.json
+
+# 3. A fresh policy.
+mz init --catalog artifacts/commander-cards-roles.json --config configs/policy-final.yml \
+    --output artifacts/commander-initial.pt --seed 20261013
+
+# 4. Warm start: record XMage's AI playing both decks, then clone it.
+mz teacher-collect --checkpoint artifacts/commander-initial.pt --game configs/commander-mirror.yml \
+    --engine-script $ENGINE --output artifacts/teacher --games 2000 --engine-threads 16 --ai-skill 1
+mz clone --checkpoint artifacts/commander-initial.pt --episodes artifacts/teacher/episodes \
+    --output artifacts/commander-cloned.pt --config configs/policy-final.yml
+
+# 5. Self-play PPO from the clone: Winota mirror and league games, plus a Kinnan gauntlet
+#    piloted by XMage's AI; evaluated against XMage's AI every 25 generations.
+mz selfplay --checkpoint artifacts/commander-cloned.pt --reference artifacts/commander-cloned.pt \
+    --game configs/commander-mirror.yml --config configs/policy-final.yml --engine-script $ENGINE \
+    --output artifacts/commander-run --iterations 1000 --games 64 \
+    --gauntlet xmage/decks/kinnan.dck --gauntlet-fraction 0.5 --gauntlet-ai-skill 1 \
+    --engine-threads 16 --device cuda --eval-every 25 --eval-games 64 --eval-ai-skill 3 --eval-greedy \
+    --keep-every 100 --min-free-gb 30
+# After any interruption: the same command with --resume.
+
+# 6. Play against the agent in the XMage client ("Computer - monte carlo" seat).
+mz play --checkpoint artifacts/commander-run/best.pt --greedy
+```
+
+`mz <command> --help` lists every option. [Long runs](docs/long-run.md) explains the run folder (`run-state.json`, `metrics.json` per generation, `evaluations.jsonl`, `best.pt`). `best.pt` is selected on evaluation scores, so confirm a final choice with a fresh, larger evaluation.
+
+## Documentation
+
+| Document | Contents |
+|---|---|
+| [Architecture](docs/architecture.md) | Design choices and their sources, the actor, belief, learning and collection |
+| [Policy protocol](docs/policy-protocol.md) | Observation schema, feature layouts, service endpoints, trajectory format |
+| [Statistical roles](docs/statistical-roles-implementation.md) | The hand prior and card roles as implemented, and their validation |
+| [Statistical belief: research](docs/statistical-belief-and-card-roles.md) | Literature and reasoning behind the statistical prior and roles |
+| [Warm start](docs/warm-start.md) | Teacher recording, behaviour cloning, reward shaping and the KL term |
+| [Long runs](docs/long-run.md) | Unattended training runs: recovery, retention, gauntlet and evaluation |
+| [XMage integration](docs/xmage-integration.md) | Building the engine, engine patches, catalogs, Commander Duel, human play, coverage limits |
+| [Development notes](notes/README.md) | Session plans, reviews, and reports of earlier pilots |
+
+## Scope and limitations
+
+No playing-strength claim is made beyond measured evaluations. The policy depends on a fixed card catalog, so it cannot play cards outside the deck pool it was trained on. Card semantics are coarse features plus learned embeddings rather than rules text. The engine adapter covers the decisions these decks require; [XMage integration](docs/xmage-integration.md#coverage-and-remaining-limits) lists the mechanics it does not cover. Mana payment uses XMage's automatic payment rather than a learned policy.
+
+## Acknowledgements
+
+MageZero was created by Will Wroble ([WillWroble/MageZero](https://github.com/WillWroble/MageZero), [WillWroble/mage](https://github.com/WillWroble/mage)). Games run on [XMage](https://github.com/magefree/mage) by the XMage developers. The design draws on AlphaStar, DouZero/DouZero+, PerfectDou, DeepNash, PPO and GAE; [Architecture](docs/architecture.md) gives the references.
+
+## License
+
+MIT; see [LICENSE](LICENSE). Magic: The Gathering is a trademark of Wizards of the Coast. This project is not affiliated with or endorsed by Wizards of the Coast.

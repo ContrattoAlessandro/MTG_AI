@@ -1,5 +1,5 @@
 # Configuration for the final run. The earlier learning evidence
-# (configs/policy-cpu-30min.yml, docs/cpu-training-2026-10-12.md) used GAE lambda
+# (configs/experiments/policy-cpu-30min.yml, notes/history/cpu-training-2026-10-12.md) used GAE lambda
 # 1.0 from a random start with an untrained critic. This run starts from a
 # behaviour-cloned warm start whose value heads were pre-trained on the teacher
 # games (mz clone, the clone: section below), so it bootstraps (lambda 0.95) with

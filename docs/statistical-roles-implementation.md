@@ -1,6 +1,6 @@
-# Statistical roles: implemented default
+# Statistical roles: the default hand belief
 
-Implemented and validated on 12 October 2026. This change implements the [research proposal](statistical-belief-and-card-roles.md) as a deliberately small first variant: deterministic hand-count statistics, reviewed overlapping roles, card identity, and recurrent history. It does not implement learned history corrections or context-dependent affordability/target queries.
+This document describes the default `statistical_roles` belief mode as implemented and validated. It realizes the [research proposal](statistical-belief-and-card-roles.md) as a deliberately small first variant: deterministic hand-count statistics, reviewed overlapping roles, card identity, and recurrent history. It does not implement learned history corrections or context-dependent affordability/target queries.
 
 ## Architecture
 
@@ -35,7 +35,7 @@ For example, four counterspell copies among 40 unknown cards and five unknown ha
 
 ## Role metadata and coverage
 
-The 20 stable role names are defined in `src/magezero/roles.py`. Catalog format v2 adds these names in fixed order plus reviewed role labels on every card. `configs/card-roles.json` records 18 reviewed entries with local XMage source references and notes, covering every card in the 10-kind simplegreen pool and several interaction examples.
+The 20 stable role names are defined in `src/magezero/roles.py`. Catalog format 2 adds these names in fixed order plus reviewed role labels on every card. `configs/card-roles.json` records 187 reviewed entries, each with its XMage source reference and notes. They cover the whole Winota and Kinnan Commander pool (including tokens and other faces; written by `scripts/commander_roles.py` from the XMage implementation of each card), every card of the 10-kind `simplegreen` validation deck, and several interaction examples.
 
 Annotations preserve identities and IDs, but change the catalog digest. Unknown annotations fail explicitly rather than interpreting an unreviewed card as lacking every capability. `scripts/annotate_policy_catalog.py` converts an engine-exported v1 catalog to v2 and refuses to overwrite an existing output.
 
@@ -47,17 +47,15 @@ The role layer currently describes possession of capabilities. It does **not** c
 
 PPO still trains the policy and the two value estimators. The statistical prior has no trainable parameters. Its hand NLL is a diagnostic only; the learner forces the effective belief-loss coefficient to zero for `statistical_roles`, even if an old training config requests a nonzero coefficient. True hand labels remain absent from `/act` inputs, and are used only after collection for the privileged critic and evaluation.
 
-Checkpoint format v3 explicitly identifies `entity_statistical_roles_recurrent_policy`. V2 learned-belief checkpoints retain their original architecture; loading a file that predates `belief_mode` explicitly selects `learned`. Strict state-dict loading and catalog digest checks remain enabled. Old on-policy trajectories are not converted into fresh data for a different actor.
-
-CLI training/self-play now default to CPU because the current serial implementation measured faster there on this machine. Explicit `--device cuda` remains supported. This is a practical device choice, not a claim that GPUs are intrinsically worse for RL.
+Checkpoints record their architecture name (`entity_statistical_roles_recurrent_policy` or `entity_belief_recurrent_policy`), and loading checks it against the belief mode. Strict state-dict loading and catalog digest checks are always enabled. On-policy trajectories of one actor are never reused as fresh data for another.
 
 ## Validation and measured speed
 
-All **19 pytest checks passed**, including exhaustive small-pool comparisons, equality with the previous count-DP prior, overlapping role unions, known/empty hands, deck reordering and batch padding, role metadata validation, service retries, CPU/CUDA PPO gradients, statistical checkpoint reloads, and old v2 compatibility.
+The tests compare the prior with exhaustive enumeration of small pools and with the count-DP model given binomial count scores, and cover overlapping role unions, known and empty hands, deck reordering and batch padding, role metadata validation, service retries, CPU and CUDA PPO gradients, and statistical checkpoint reloads.
 
-[Aggregate validation data](statistical-roles-validation.json) records the smoke run and benchmarks. Actual checkpoint comparison confirmed nonzero changes in both the role encoder and action scorer, while category probabilities for the same public observation remained identical after training. The previous five-update pilot checkpoint also loaded successfully as `learned` mode.
+The measurements below were taken when the mode was introduced, with the checkpoint format of that time; [aggregate validation data](statistical-roles-validation.json) records them. Comparing checkpoints before and after one update confirmed nonzero changes in both the role encoder and the action scorer, while the role probabilities for the same public observation stayed identical, as they have no trainable parameters.
 
-The existing rebuilt XMage distribution completed two normal simplegreen mirror games with the new model. Four complete player trajectories contained **1,223 decisions**. A CPU PPO update trained the role encoder and policy, and saved `artifacts/statistical-roles-smoke/generation_0000/policy.pt`. Collection took 30.95 seconds, learning 23.98 seconds, and the full generation 55.20 seconds. This is integration evidence, not evidence of playing-strength improvement. The belief NLL remains a statistical diagnostic; it should not be interpreted as a learned-head loss.
+On the real engine, two normal `simplegreen` mirror games produced four complete player trajectories with **1,223 decisions**, and a CPU PPO update trained the role encoder and policy. Collection took 30.95 seconds, learning 23.98 seconds, and the whole generation 55.20 seconds. This is integration evidence, not evidence of playing strength. In this mode the hand NLL is a diagnostic of the fixed prior, not a learned-head loss.
 
 The matched synthetic forward benchmark used width 256, two attention layers, 64 entities, 32 actions, 24 deck kinds, hand size seven, batch one, one CPU thread, and 50 warmed timed samples:
 
@@ -66,19 +64,21 @@ The matched synthetic forward benchmark used width 256, two attention layers, 64
 | CPU | 7.29 ms | 4.72 ms |
 | CUDA / RTX 5070 | 66.97 ms | 20.54 ms |
 
-The statistical model's CPU median was approximately 35% lower for this workload. Actor parameter count at 24 kinds fell from 4,344,387 to 4,200,962. Timings exclude HTTP, encoding, Java, and learning; CUDA p95 varied substantially. Raw data: `artifacts/statistical-roles-benchmark.json`.
-
-A separate matched learner-device test used the same complete 283-decision episode and initial statistical checkpoint, one PPO epoch and sequence length 32. CPU took **6.52 seconds** versus **27.04 seconds** on CUDA, including target replay, backward, load and save. This one-episode result informed the CPU CLI default. Raw data: `artifacts/statistical-roles-learner-profile/report.json`.
+The statistical model's CPU median was approximately 35% lower for this workload. Actor parameter count at 24 kinds fell from 4,344,387 to 4,200,962. Timings exclude HTTP, encoding, Java, and learning; CUDA p95 varied substantially. `scripts/benchmark_statistical_roles.py` reproduces the benchmark.
 
 ## Reproduction
 
-Use fresh artifact paths:
+With the `simplegreen` catalog exported as in [XMage integration](xmage-integration.md#exporting-the-card-catalog) and fresh output paths:
 
-```powershell
-.venv/Scripts/python.exe scripts/annotate_policy_catalog.py --catalog artifacts/real-card-catalog.json --annotations configs/card-roles.json --output artifacts/roles-catalog-new.json
-.venv/Scripts/mz.exe init --catalog artifacts/roles-catalog-new.json --config configs/policy.yml --output artifacts/roles-initial-new.pt --seed 20261012
-.venv/Scripts/mz.exe selfplay --checkpoint artifacts/roles-initial-new.pt --game configs/real-card-smoke.yml --config configs/policy-statistical-smoke.yml --engine-script xmage/mz-policy.bat --output artifacts/roles-run-new --iterations 1 --games 2 --actor-device cpu --device cpu
-.venv/Scripts/python.exe scripts/benchmark_statistical_roles.py --output artifacts/roles-benchmark-new.json
+```bash
+python scripts/annotate_policy_catalog.py --catalog artifacts/simplegreen-cards.json \
+    --annotations configs/card-roles.json --output artifacts/simplegreen-roles.json
+mz init --catalog artifacts/simplegreen-roles.json --config configs/policy.yml \
+    --output artifacts/roles-initial.pt --seed 20261012
+mz selfplay --checkpoint artifacts/roles-initial.pt --game configs/smoke/real-card-smoke.yml \
+    --config configs/smoke/policy-statistical-smoke.yml --engine-script $ENGINE \
+    --output artifacts/roles-run --iterations 1 --games 2 --actor-device cpu --device cpu
+python scripts/benchmark_statistical_roles.py --output artifacts/roles-benchmark.json
 ```
 
-The initial checkpoint already created here is `artifacts/statistical-roles-initial.pt`; the smoke-trained checkpoint above has one update. New deck pools need reviewed annotations for their entire catalog. Use fresh seeds and multiple relevant matchups for a strength comparison, including counters/removal/tricks; simplegreen alone cannot establish benefit for those categories.
+New deck pools need reviewed annotations for their entire catalog. A strength comparison needs fresh seeds and several relevant matchups, including counters, removal and combat tricks; `simplegreen` alone cannot establish a benefit for those categories.

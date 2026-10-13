@@ -1,6 +1,6 @@
 # Warm start: behaviour cloning from XMage's AI, then regularized PPO
 
-Implemented 13 October 2026, from the architecture review (findings 3 and 4). AlphaStar's ablations show RL from scratch fails without a supervised start and a KL penalty towards it; this repository had neither, and its only reward was the ±1 result after hundreds of decisions. Three pieces address that:
+AlphaStar's ablations show that reinforcement learning from scratch fails without a supervised start and a KL penalty towards it. Without them, the only learning signal here would be the ±1 result after hundreds of decisions. Three pieces address that:
 
 | Piece | Where | What it does |
 |---|---|---|
@@ -25,22 +25,25 @@ The teacher is deterministic, so the cloned policy is sharp (low entropy) where 
 
 ## Workflow
 
-```powershell
+```bash
 # 1. Teacher games: both decks, recorded from both seats (resumable: rerun to continue).
-.venv/Scripts/mz.exe teacher-collect --checkpoint artifacts/commander-initial.pt --game configs/commander-mirror.yml `
-  --engine-script xmage/mz-policy.bat --output artifacts/teacher --games 2000 --engine-threads 16 --ai-skill 1
+mz teacher-collect --checkpoint artifacts/commander-initial.pt --game configs/commander-mirror.yml \
+    --engine-script $ENGINE --output artifacts/teacher --games 2000 --engine-threads 16 --ai-skill 1
+python scripts/teacher_stats.py artifacts/teacher     # label mix and size of the recorded data
 
-# 2. Behaviour cloning (clone: section of the config).
-.venv/Scripts/mz.exe clone --checkpoint artifacts/commander-initial.pt --episodes artifacts/teacher/episodes `
-  --output artifacts/commander-cloned.pt --config configs/policy-final.yml
+# 2. Behaviour cloning (the clone: section of the config).
+mz clone --checkpoint artifacts/commander-initial.pt --episodes artifacts/teacher/episodes \
+    --output artifacts/commander-cloned.pt --config configs/policy-final.yml
 
-# 3. PPO from the clone, regularized towards it.
-.venv/Scripts/mz.exe selfplay --checkpoint artifacts/commander-cloned.pt --reference artifacts/commander-cloned.pt `
-  --game configs/commander-mirror.yml --config configs/policy-final.yml ... (as in long-run.md)
+# 3. PPO from the clone, regularized towards it (full command in long-run.md).
+mz selfplay --checkpoint artifacts/commander-cloned.pt --reference artifacts/commander-cloned.pt \
+    --game configs/commander-mirror.yml --config configs/policy-final.yml ...
 ```
+
+`mz clone` prints the training and held-out negative log-likelihood and accuracy per epoch; the checkpoint's `metrics.behavior_cloning` keeps the full history, including accuracy by action type, hand NLL per card and the public value error.
 
 `teacher-collect` uses its checkpoint only for the card catalog and limits; it never chooses an action. `selfplay` refuses a positive `reference_kl_coefficient` without `--reference`, and keeps the reference in `run-state.json` across `--resume`. PPO from a cloned checkpoint with `gae_lambda < 1` refuses a `shaping_coefficient` or `gamma` different from the ones the clone was trained with (at λ 1 the critic is only a baseline, so the control arm may differ). Metrics gain `reference_kl`, `reference_kl_coefficient`, `shaping_coefficient` and `gae_lambda`.
 
-## Measured so far
+## Validation
 
-A 4-game Commander smoke (Winota/Kinnan, AI skill 1, 2 s think cap) took 13 s for 4 terminal games and 8 trajectories with 712 recorded decisions. Of the 369 priority decisions, 110 cast or activate; 93 of 163 attack decisions attack. Cloning, followed by PPO generations with the KL term, ran end to end. This shows the pipeline works, not that it helps: the next step is a controlled comparison of the cloned start against `commander-initial.pt` at equal PPO budget, evaluated against XMage's AI.
+A 4-game Commander smoke run (Winota and Kinnan, AI skill 1, 2 s think cap) took 13 s for 4 terminal games and 8 trajectories with 712 recorded decisions. Of the 369 priority decisions, 110 cast or activate; 93 of 163 attack decisions attack. Cloning, followed by PPO generations with the KL term, ran end to end. This shows that the pipeline works, not that it helps. That question needs a controlled comparison of the cloned start against a fresh initialization at equal PPO budget, evaluated against XMage's AI.
