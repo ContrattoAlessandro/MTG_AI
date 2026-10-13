@@ -3,10 +3,10 @@
 Sampling follows prioritized fictitious self-play; it carries no Nash guarantee.
 """
 
-from dataclasses import asdict, dataclass
 import json
-from pathlib import Path
 import random
+from dataclasses import asdict, dataclass
+from pathlib import Path
 
 
 @dataclass
@@ -46,14 +46,16 @@ class League:
         # Prioritized fictitious self-play: emphasize opponents we have not beaten;
         # mix in uniform sampling to retain diversity, smooth untested records.
         winrates = [(x.wins + 1) / (x.games + 2) for x in self.opponents]
-        weights = [(1 - w)**2 for w in winrates]
+        weights = [(1 - w) ** 2 for w in winrates]
         total = sum(weights)
         probabilities = [0.2 / len(weights) + 0.8 * w / total for w in weights]
         return rng.choices(self.opponents, weights=probabilities, k=1)[0].checkpoint
 
     def save(self, path) -> None:
-        Path(path).write_text(json.dumps({"format_version": 1,
-            "opponents": [asdict(x) for x in self.opponents]}, indent=2), encoding="utf-8")
+        Path(path).write_text(
+            json.dumps({"format_version": 1, "opponents": [asdict(x) for x in self.opponents]}, indent=2),
+            encoding="utf-8",
+        )
 
     @classmethod
     def load(cls, path) -> "League":

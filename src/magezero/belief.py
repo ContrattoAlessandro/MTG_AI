@@ -29,8 +29,7 @@ class HandBelief:
         return self.log_partition - selected.sum(-1)
 
 
-def constrained_hand_belief(logits: Tensor, lower: Tensor, upper: Tensor,
-                            hand_size: Tensor) -> HandBelief:
+def constrained_hand_belief(logits: Tensor, lower: Tensor, upper: Tensor, hand_size: Tensor) -> HandBelief:
     """Compute exact marginals of the count-factor model in log space.
 
     Arithmetic runs in float32 even under autocast. Zero-capacity padded cards
@@ -44,13 +43,11 @@ def constrained_hand_belief(logits: Tensor, lower: Tensor, upper: Tensor,
         raise ValueError("hand_size must have one entry per observation")
     if ((lower < 0) | (upper < lower) | (lower >= classes)).any():
         raise ValueError("invalid belief count bounds")
-    if ((hand_size < lower.sum(-1)) | (hand_size > upper.sum(-1))
-            | (hand_size >= classes) | (hand_size < 0)).any():
+    if ((hand_size < lower.sum(-1)) | (hand_size > upper.sum(-1)) | (hand_size >= classes) | (hand_size < 0)).any():
         raise ValueError("hand size cannot be represented by these bounds/count classes")
     horizon = int(hand_size.max().item())
     counts = torch.arange(classes, device=scores.device)
-    support = ((counts >= lower.unsqueeze(-1)) & (counts <= upper.unsqueeze(-1))
-               & (counts <= hand_size[:, None, None]))
+    support = (counts >= lower.unsqueeze(-1)) & (counts <= upper.unsqueeze(-1)) & (counts <= hand_size[:, None, None])
     scores = scores.masked_fill(~support, NEG)
     # Subtract a card-wise constant for numerical stability. This changes neither
     # the normalized joint distribution nor its negative log likelihood.

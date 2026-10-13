@@ -2,20 +2,27 @@
 
 import copy
 import json
+from pathlib import Path
 
 import pytest
 import torch
 
 from magezero import runner
 from magezero.checkpoint import load_checkpoint, save_checkpoint
-from magezero.learner import (PPOConfig, generalized_advantages, ppo_update, reference_coefficient,
-                                     reference_kl, validate_episode)
+from magezero.learner import (
+    PPOConfig,
+    generalized_advantages,
+    ppo_update,
+    reference_coefficient,
+    reference_kl,
+    validate_episode,
+)
 from magezero.schema import ACTION_TYPES, collate_observations
 from magezero.service import TEACHER_VERSION, PolicyService
 from magezero.shaping import potential, shaped_rewards
 from magezero.teacher import CloneConfig, behavior_cloning, teacher_game_config
-from test_entity_policy import components, observation  # noqa: F401  (fixture)
-from test_long_run import _episode
+
+from helpers import observation, recorded_episode
 
 torch.set_num_threads(1)
 LABELS = {"opponent_hand_counts": [1, 1, 1]}
@@ -75,17 +82,31 @@ def test_reference_kl_matches_the_definition_on_legal_candidates():
 def _games(model, catalog, tag, count=4):
     """Fresh on-policy episodes from the model's current weights."""
     service = PolicyService(model, catalog, "v")
-    return [_episode(service, [observation(model.config, t, game_id=f"{tag}{g}") for t in range(6)], "v",
-                     reward=1 if g % 2 else -1) for g in range(count)]
+    return [
+        recorded_episode(
+            service,
+            [observation(model.config, t, game_id=f"{tag}{g}") for t in range(6)],
+            "v",
+            reward=1 if g % 2 else -1,
+        )
+        for g in range(count)
+    ]
 
 
 def test_ppo_reference_kl_is_zero_for_the_same_policy_and_pulls_towards_the_reference(components):
     model, critic, catalog = components
-    config = PPOConfig(epochs=1, episodes_per_batch=2, sequence_length=4, reference_kl_coefficient=0.5,
-                       shaping_coefficient=0.3, gae_lambda=0.95)
+    config = PPOConfig(
+        epochs=1,
+        episodes_per_batch=2,
+        sequence_length=4,
+        reference_kl_coefficient=0.5,
+        shaping_coefficient=0.3,
+        gae_lambda=0.95,
+    )
     optimizer = torch.optim.AdamW(list(model.parameters()) + list(critic.parameters()), lr=0.0)
-    same = ppo_update(model, critic, optimizer, _games(model, catalog, "same"), config, "v",
-                      reference=copy.deepcopy(model))
+    same = ppo_update(
+        model, critic, optimizer, _games(model, catalog, "same"), config, "v", reference=copy.deepcopy(model)
+    )
     assert same["reference_kl"] == pytest.approx(0.0, abs=1e-6)
     assert same["reference_kl_coefficient"] == 0.5 and same["shaping_coefficient"] == 0.3
     without = ppo_update(model, critic, optimizer, _games(model, catalog, "none"), config, "v")
@@ -97,17 +118,25 @@ def test_ppo_reference_kl_is_zero_for_the_same_policy_and_pulls_towards_the_refe
         out = head(batch, *args)
         out.logits = out.logits + 2.0 * (batch.action_types == ACTION_TYPES.index("attack"))
         return out
+
     reference._head = prefers_attacks
     batch = collate_observations([observation(model.config)], model.config)
     attack = lambda m: m(batch).distribution().probs[0, 1].item()  # noqa: E731
     before = abs(attack(model) - attack(reference))
     assert before > 1e-3
     optimizer = torch.optim.AdamW(list(model.parameters()) + list(critic.parameters()), lr=3e-3)
-    strong = PPOConfig(epochs=4, episodes_per_batch=2, sequence_length=4, reference_kl_coefficient=50.0,
-                       entropy_coefficient=0.0, target_kl=100.0)
+    strong = PPOConfig(
+        epochs=4,
+        episodes_per_batch=2,
+        sequence_length=4,
+        reference_kl_coefficient=50.0,
+        entropy_coefficient=0.0,
+        target_kl=100.0,
+    )
     for round_ in range(3):
-        result = ppo_update(model, critic, optimizer, _games(model, catalog, f"r{round_}-"), strong, "v",
-                            reference=reference)
+        result = ppo_update(
+            model, critic, optimizer, _games(model, catalog, f"r{round_}-"), strong, "v", reference=reference
+        )
         assert result["reference_kl"] > 0
     assert abs(attack(model) - attack(reference)) < before
 
@@ -118,8 +147,9 @@ def _teacher_episode(service, config, game, player, length=6, result=1):
         obs = observation(config, t, game_id=game, player_id=player)
         choice = "attack" if any(a["id"] == "attack" for a in obs["actions"]) else obs["actions"][0]["id"]
         service.record({"observation": obs, "action_id": choice})
-    return service.finish({"game_id": game, "player_id": player, "result": result, "terminal": True,
-                           "labels": [LABELS] * length})
+    return service.finish(
+        {"game_id": game, "player_id": player, "result": result, "terminal": True, "labels": [LABELS] * length}
+    )
 
 
 def test_record_sessions_are_separate_idempotent_and_write_teacher_episodes(components, tmp_path):
@@ -140,9 +170,10 @@ def test_record_sessions_are_separate_idempotent_and_write_teacher_episodes(comp
     with pytest.raises(ValueError, match="plays the policy"):
         service.record({"observation": observation(model.config, 1, game_id="p"), "action_id": "pass"})
     service.record({"observation": observation(model.config, 1, game_id="t"), "action_id": "pass"})
-    response = service.finish({"game_id": "t", "player_id": "player", "result": -1, "terminal": True,
-                               "labels": [LABELS, LABELS]})
-    episode = json.loads(open(response["episode_file"], encoding="utf-8").read())
+    response = service.finish(
+        {"game_id": "t", "player_id": "player", "result": -1, "terminal": True, "labels": [LABELS, LABELS]}
+    )
+    episode = json.loads(Path(response["episode_file"]).read_text(encoding="utf-8"))
     assert episode["policy_version"] == TEACHER_VERSION
     assert [s["action_id"] for s in episode["steps"]] == ["attack", "pass"]
     assert [s["reward"] for s in episode["steps"]] == [0, -1]
@@ -161,8 +192,14 @@ def test_behavior_cloning_fits_the_teacher_and_pretrains_values(components, tmp_
         _teacher_episode(service, model.config, f"g{game}", "b", result=-1)
     batch = collate_observations([observation(model.config)], model.config)
     before = model(batch).distribution().probs[0, 1].item()
-    config = CloneConfig(epochs=6, episodes_per_batch=4, sequence_length=4, learning_rate=3e-3,
-                         validation_fraction=0.25, shaping_coefficient=0.2)
+    config = CloneConfig(
+        epochs=6,
+        episodes_per_batch=4,
+        sequence_length=4,
+        learning_rate=3e-3,
+        validation_fraction=0.25,
+        shaping_coefficient=0.2,
+    )
     metrics = behavior_cloning(start, [tmp_path / "teacher"], tmp_path / "cloned.pt", config, "cpu")
     clone = metrics["behavior_cloning"]
     assert clone["validation_episodes"] == 4 and clone["train_episodes"] == 12  # 2 of 8 games, both seats
@@ -180,8 +217,11 @@ def test_clone_and_runner_configuration_checks(components, tmp_path):
         CloneConfig(validation_fraction=1.0)
     with pytest.raises(ValueError):
         PPOConfig(reference_kl_decay=0.0)
-    base = {"player_a": {"deckPath": "a.dck", "type": "policy"}, "player_b": {"deckPath": "b.dck", "type": "policy"},
-            "training": {"games": 1}}
+    base = {
+        "player_a": {"deckPath": "a.dck", "type": "policy"},
+        "player_b": {"deckPath": "b.dck", "type": "policy"},
+        "training": {"games": 1},
+    }
     config = teacher_game_config(base, 4, 50060, 2, 5, "a")
     assert config["player_a"]["type"] == "xmage-teacher" and config["player_b"]["type"] == "xmage-ai"
     assert config["opponent_ai"] == {"skill": 2, "think_seconds": 5}
@@ -195,9 +235,16 @@ def test_clone_and_runner_configuration_checks(components, tmp_path):
     deck = tmp_path / "deck.dck"
     deck.write_text("")
     game = tmp_path / "game.yml"
-    game.write_text(json.dumps({"player_a": {"deckPath": str(deck), "type": "policy"},
-                                "player_b": {"deckPath": str(deck), "type": "policy"},
-                                "training": {"games": 1}}), encoding="utf-8")
+    game.write_text(
+        json.dumps(
+            {
+                "player_a": {"deckPath": str(deck), "type": "policy"},
+                "player_b": {"deckPath": str(deck), "type": "policy"},
+                "training": {"games": 1},
+            }
+        ),
+        encoding="utf-8",
+    )
     with pytest.raises(ValueError, match="needs --reference"):
         runner.run_selfplay(tmp_path / "c.pt", game, policy, script, tmp_path / "run", iterations=1)
 
@@ -205,6 +252,7 @@ def test_clone_and_runner_configuration_checks(components, tmp_path):
 def test_teacher_games_are_indexed_on_disk_and_loaded_per_trajectory(components, tmp_path):
     """mz clone keeps only offsets and returns in memory; several trajectories may share a file."""
     from magezero.teacher import TeacherGames, split_games
+
     model, critic, catalog = components
     service = PolicyService(model, catalog, "start", tmp_path / "teacher")
     for game in range(3):

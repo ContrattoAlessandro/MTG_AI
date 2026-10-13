@@ -8,16 +8,17 @@ Missing annotations fail explicitly: an absent label must not silently mean no c
 import argparse
 import json
 from pathlib import Path
-import sys
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from magezero.catalog import CardCatalog
 from magezero.roles import ROLE_NAMES, validate_roles
 
 
 def annotate_catalog(catalog, annotations):
-    if not isinstance(annotations, dict) or set(annotations) != {"format_version", "cards"} or annotations["format_version"] != 1:
+    if (
+        not isinstance(annotations, dict)
+        or set(annotations) != {"format_version", "cards"}
+        or annotations["format_version"] != 1
+    ):
         raise ValueError("expected reviewed annotations format_version 1")
     entries = annotations["cards"]
     if not isinstance(entries, dict):
@@ -46,7 +47,9 @@ def main():
     output = Path(args.output)
     if output.exists():
         raise ValueError("choose a fresh output path; catalog changes require a new checkpoint")
-    catalog = annotate_catalog(CardCatalog.load(args.catalog), json.loads(Path(args.annotations).read_text(encoding="utf-8")))
+    catalog = annotate_catalog(
+        CardCatalog.load(args.catalog), json.loads(Path(args.annotations).read_text(encoding="utf-8"))
+    )
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(catalog.to_dict(), indent=2) + "\n", encoding="utf-8")
     print(f"Annotated {len(catalog.cards)} card kinds; digest={catalog.digest}")

@@ -5,12 +5,20 @@ import copy
 import pytest
 import torch
 
-from magezero.learner import (PPOConfig, carry_memory, join_chunks, prepare_chunks, chunk_windows, check_warm_start,
-                                     clip_gradients, ppo_update)
+from magezero.learner import (
+    PPOConfig,
+    carry_memory,
+    check_warm_start,
+    chunk_windows,
+    clip_gradients,
+    join_chunks,
+    ppo_update,
+    prepare_chunks,
+)
 from magezero.schema import EVENT_TYPES, collate_observations
 from magezero.service import PolicyService
-from test_entity_policy import components, observation  # noqa: F401  (fixture)
-from test_long_run import _episode, _varied_trajectory
+
+from helpers import observation, recorded_episode, varied_trajectory
 
 torch.set_num_threads(1)
 LABELS = {"opponent_hand_counts": [1, 1, 1]}
@@ -18,9 +26,16 @@ LABELS = {"opponent_hand_counts": [1, 1, 1]}
 
 def _events(step, count):
     kinds = [EVENT_TYPES[i % len(EVENT_TYPES)] for i in range(count)]
-    return [{"seq": step * 1000 + i, "type": kind, "actor": i % 3,
-             "card_id": 0 if kind == "draw" else i % 4, "features": [i / 50] + [0.0] * 7}
-            for i, kind in enumerate(kinds)]
+    return [
+        {
+            "seq": step * 1000 + i,
+            "type": kind,
+            "actor": i % 3,
+            "card_id": 0 if kind == "draw" else i % 4,
+            "features": [i / 50] + [0.0] * 7,
+        }
+        for i, kind in enumerate(kinds)
+    ]
 
 
 def _bursty_trajectory(config, counts, game_id):
@@ -33,9 +48,11 @@ def _bursty_trajectory(config, counts, game_id):
 
 def test_event_pooling_is_identical_stepwise_sequenced_and_batched(components):
     model, _, _ = components
-    trajectories = [_bursty_trajectory(model.config, [3, 0, 40, 1, 0, 7, 200], "a"),
-                    _bursty_trajectory(model.config, [0, 0, 5], "b"),
-                    _bursty_trajectory(model.config, [1, 300, 2, 0], "c")]
+    trajectories = [
+        _bursty_trajectory(model.config, [3, 0, 40, 1, 0, 7, 200], "a"),
+        _bursty_trajectory(model.config, [0, 0, 5], "b"),
+        _bursty_trajectory(model.config, [1, 300, 2, 0], "c"),
+    ]
     with torch.no_grad():
         stepwise = []
         for steps in trajectories:
@@ -47,10 +64,17 @@ def test_event_pooling_is_identical_stepwise_sequenced_and_batched(components):
             stepwise.append((torch.stack(rows), memory))
         for (logits, memory), steps in zip(stepwise, trajectories):
             out = model.forward_sequence(collate_observations(steps, model.config))
-            torch.testing.assert_close(out.logits[:, :logits.shape[1]], logits, atol=1e-5, rtol=1e-5)
+            torch.testing.assert_close(out.logits[:, : logits.shape[1]], logits, atol=1e-5, rtol=1e-5)
             torch.testing.assert_close(out.memory.events, memory.events, atol=1e-5, rtol=1e-5)
-        episodes = [{"steps": [{"observation": o, "action_id": o["actions"][0]["id"], "log_probability": 0.0,
-                                "labels": LABELS} for o in t]} for t in trajectories]
+        episodes = [
+            {
+                "steps": [
+                    {"observation": o, "action_id": o["actions"][0]["id"], "log_probability": 0.0, "labels": LABELS}
+                    for o in t
+                ]
+            }
+            for t in trajectories
+        ]
         prepared = [prepare_chunks(e, model, 3) for e in episodes]
         memory, previous, rows = None, [0, 1, 2], {i: [] for i in range(3)}
         for window, members in chunk_windows([0, 1, 2], prepared):
@@ -62,7 +86,7 @@ def test_event_pooling_is_identical_stepwise_sequenced_and_batched(components):
                 rows[i].append(logits)
             memory, previous = out.memory, members
     for i, (logits, _) in enumerate(stepwise):
-        batched = torch.cat([l[:, :logits.shape[1]] for l in rows[i]])
+        batched = torch.cat([row[:, : logits.shape[1]] for row in rows[i]])
         torch.testing.assert_close(batched, logits, atol=1e-5, rtol=1e-5)
 
 
@@ -107,12 +131,16 @@ def test_actor_and_critic_gradients_are_clipped_separately(components):
 def test_kl_early_stop_skips_the_step_and_entropy_is_normalized(components, tmp_path):
     model, critic, catalog = components
     service = PolicyService(model, catalog, "v")
-    episodes = [_episode(service, _varied_trajectory(model.config, n, f"g{n}"), "v", reward=r)
-                for n, r in ((6, 1), (3, -1), (8, 1), (5, -1))]
+    episodes = [
+        recorded_episode(service, varied_trajectory(model.config, n, f"g{n}"), "v", reward=r)
+        for n, r in ((6, 1), (3, -1), (8, 1), (5, -1))
+    ]
+
     def update(config):
         m, c = copy.deepcopy(model), copy.deepcopy(critic)
         optimizer = torch.optim.AdamW(list(m.parameters()) + list(c.parameters()), lr=0.05)
         return ppo_update(m, c, optimizer, episodes, config, "v")
+
     metrics = update(PPOConfig(epochs=8, episodes_per_batch=1, sequence_length=3, target_kl=1e-6))
     assert metrics["early_stopped"] and 1 <= metrics["optimizer_steps"] < 8 * len(episodes)
     assert 0 < metrics["normalized_entropy"] <= 1 + 1e-6

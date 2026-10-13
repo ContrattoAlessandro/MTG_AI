@@ -42,7 +42,12 @@ class CardCatalog:
         keys = set()
         for i, card in enumerate(cards, 1):
             card_fields = {"id", "key", "name", "features"} | ({"roles"} if version == 2 else set())
-            if not isinstance(card, dict) or set(card) != card_fields or isinstance(card["id"], bool) or card["id"] != i:
+            if (
+                not isinstance(card, dict)
+                or set(card) != card_fields
+                or isinstance(card["id"], bool)
+                or card["id"] != i
+            ):
                 raise ValueError("catalog IDs must be contiguous, start at 1, and keep their ordering")
             if not isinstance(card["key"], str) or not card["key"] or card["key"] in keys:
                 raise ValueError("card keys must be unique stable identities")

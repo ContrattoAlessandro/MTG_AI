@@ -7,9 +7,9 @@ does not invoke the old generator. Pin matches the fork reviewed for this change
 """
 
 import argparse
-from pathlib import Path
 import shutil
 import subprocess
+from pathlib import Path
 
 EXPECTED_COMMIT = "cb7e9c6fe2dcbe2f650a77dd98a87771e730f22f"
 
@@ -22,8 +22,9 @@ def install(root):
     source = Path(__file__).resolve().parent / "src"
     for file in source.rglob("*.java"):
         relative = file.relative_to(source)
-        module = (root / "Mage.MageZero" if relative.parts[0] == "org"
-                  else root / "Mage.Server.Plugins" / "Mage.Player.AI")
+        module = (
+            root / "Mage.MageZero" if relative.parts[0] == "org" else root / "Mage.Server.Plugins" / "Mage.Player.AI"
+        )
         destination = module / "src" / "main" / "java" / relative
         if not destination.resolve().is_relative_to(root):
             raise ValueError("source target escaped the explicitly supplied checkout")
@@ -31,14 +32,21 @@ def install(root):
         shutil.copyfile(file, destination)
     # Classes extending XMage's Mad AI (Mage.Player.AI.MA keeps a non-Maven src/ layout).
     for file in (source.parent / "src-ma").rglob("*.java"):
-        destination = root / "Mage.Server.Plugins" / "Mage.Player.AI.MA" / "src" / file.relative_to(source.parent / "src-ma")
+        destination = (
+            root / "Mage.Server.Plugins" / "Mage.Player.AI.MA" / "src" / file.relative_to(source.parent / "src-ma")
+        )
         if not destination.resolve().is_relative_to(root):
             raise ValueError("source target escaped the explicitly supplied checkout")
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(file, destination)
     for patch in sorted((source.parent / "patches").glob("*.patch")):
-        applied = subprocess.run(["git", "-C", str(root), "apply", "--reverse", "--check", "--ignore-whitespace", str(patch)],
-                                 capture_output=True).returncode == 0
+        applied = (
+            subprocess.run(
+                ["git", "-C", str(root), "apply", "--reverse", "--check", "--ignore-whitespace", str(patch)],
+                capture_output=True,
+            ).returncode
+            == 0
+        )
         if not applied:
             subprocess.run(["git", "-C", str(root), "apply", "--ignore-whitespace", str(patch)], check=True)
             print(f"Applied {patch.name}")

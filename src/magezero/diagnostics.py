@@ -11,7 +11,6 @@ import time
 from pathlib import Path
 
 import torch
-from torch.nn import functional as F
 
 from .checkpoint import load_checkpoint
 from .roles import ROLE_NAMES
@@ -59,8 +58,9 @@ def evaluate_predictions(checkpoint, paths, device: str = "cpu") -> dict:
                 labels = torch.tensor([validate_labels(step["labels"], obs)], device=device)
                 out = model(batch, memory)
                 memory = out.memory
-                prior = statistical_hand_belief(batch.deck_lower, batch.deck_upper, batch.hand_size,
-                                                model.config.max_hand_size + 1)
+                prior = statistical_hand_belief(
+                    batch.deck_lower, batch.deck_upper, batch.hand_size, model.config.max_hand_size + 1
+                )
                 joint = out.belief.nll(labels).item()
                 sums["joint_nll"] += joint
                 sums["nll_per_card"] += joint / len(obs["opponent_deck"])
@@ -107,7 +107,9 @@ def _pool_attention(model, entities) -> list[float]:
     layer = model.entity_attention.layers[0]
     heads, width = model.config.attention_heads, model.config.width
     normalized = layer.norm1(torch.cat([model.pool_token, entities], 1))
-    q, k, _ = F.linear(normalized, layer.self_attn.in_proj_weight, layer.self_attn.in_proj_bias).chunk(3, -1)
+    q, k, _ = torch.nn.functional.linear(
+        normalized, layer.self_attn.in_proj_weight, layer.self_attn.in_proj_bias
+    ).chunk(3, -1)
 
     def split(x):
         return x.reshape(1, -1, heads, width // heads).transpose(1, 2)
@@ -127,8 +129,11 @@ def trace_decision(checkpoint, episode_path, output, step_index: int | None = No
     model, critic, catalog, data = load_checkpoint(checkpoint, "cpu")
     episode = read_trajectories([episode_path])[0]
     if step_index is None:
-        step_index = next((i for i, s in enumerate(episode["steps"])
-                           if len(s["observation"]["actions"]) >= 3 and len(s["observation"]["entities"]) >= 8), 0)  # fmt: skip
+        step_index = next(
+            (i for i, s in enumerate(episode["steps"])
+             if len(s["observation"]["actions"]) >= 3 and len(s["observation"]["entities"]) >= 8),
+            0,
+        )  # fmt: skip
     stages, raw, handles = {}, {}, []
     for name in TRACED_STAGES:
         if not hasattr(model, name):

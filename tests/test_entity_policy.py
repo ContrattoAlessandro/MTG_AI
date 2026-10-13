@@ -2,6 +2,7 @@ import copy
 import itertools
 import json
 import math
+from pathlib import Path
 
 import pytest
 import torch
@@ -10,44 +11,12 @@ from magezero.belief import constrained_hand_belief
 from magezero.catalog import CardCatalog
 from magezero.checkpoint import load_checkpoint, save_checkpoint
 from magezero.learner import PPOConfig, generalized_advantages, ppo_update, validate_episode
-from magezero.model import EntityBeliefPolicy, ModelConfig, PrivilegedCritic
-from magezero.schema import ENTITY_FEATURES, collate_observations, validate_observation
+from magezero.schema import collate_observations, validate_observation
 from magezero.service import PolicyService, create_app
 
+from helpers import observation
+
 torch.set_num_threads(1)
-
-
-@pytest.fixture
-def components():
-    torch.manual_seed(2)
-    catalog = CardCatalog.from_dict({"format_version": 1, "cards": [
-        {"id": i, "key": f"card-{i}", "name": f"Card {i}", "features": [0.0] * 32}
-        for i in range(1, 4)]})
-    config = ModelConfig(num_cards=catalog.num_cards, catalog_digest=catalog.digest,
-                         width=32, entity_layers=1, max_hand_size=6, belief_mode="learned")
-    return EntityBeliefPolicy(config, catalog.tensor()).eval(), PrivilegedCritic(config), catalog
-
-
-def observation(config, step=0, game_id="game", player_id="player"):
-    return {"schema_version": 2, "catalog_digest": config.catalog_digest, "game_id": game_id,
-        "player_id": player_id, "step": step,
-        "entities": [
-            {"id": "me", "card_id": 0, "kind": 0, "zone": 0, "owner": 0, "controller": 0,
-             "visibility": "public", "features": [0.0] * ENTITY_FEATURES},
-            {"id": "creature", "card_id": 1, "kind": 1, "zone": 1, "owner": 0, "controller": 0,
-             "visibility": "public", "features": [0.1] + [0.0] * (ENTITY_FEATURES - 1)}],
-        "relations": [{"source": "creature", "target": "me", "type": 0}],
-        "globals": [step / 10] + [0.0] * 23,
-        "events": [{"seq": step, "type": "pass", "actor": 1, "card_id": 0, "features": [0.0] * 8}],
-        "actions": [
-            {"id": "pass", "type": "pass", "source": None, "target": None, "card_id": 0,
-             "features": [0.0] * 16},
-            {"id": "attack", "type": "attack", "source": "creature", "target": "me", "card_id": 1,
-             "features": [1.0] + [0.0] * 15}],
-        "opponent_deck": [{"card_id": 1, "lower": 0, "upper": 2},
-                          {"card_id": 2, "lower": 0, "upper": 2},
-                          {"card_id": 3, "lower": 0, "upper": 2}],
-        "opponent_hand_size": 3}
 
 
 def test_joint_belief_matches_enumeration_and_has_finite_gradients():
@@ -70,15 +39,15 @@ def test_joint_belief_matches_enumeration_and_has_finite_gradients():
 
 def test_empty_hand_padding_and_infeasible_bounds():
     logits = torch.randn(2, 3, 5, requires_grad=True)
-    belief = constrained_hand_belief(logits, torch.zeros(2, 3, dtype=torch.long),
-        torch.tensor([[0, 0, 0], [2, 2, 0]]), torch.tensor([0, 3]))
+    belief = constrained_hand_belief(
+        logits, torch.zeros(2, 3, dtype=torch.long), torch.tensor([[0, 0, 0], [2, 2, 0]]), torch.tensor([0, 3])
+    )
     torch.testing.assert_close(belief.expected_counts.sum(-1), torch.tensor([0.0, 3.0]))
     torch.testing.assert_close(belief.probabilities[0, :, 0], torch.ones(3))
     belief.nll(torch.tensor([[0, 0, 0], [1, 2, 0]])).sum().backward()
     assert torch.isfinite(logits.grad).all()
     with pytest.raises(ValueError, match="hand size"):
-        constrained_hand_belief(logits[:1], torch.tensor([[2, 2, 0]]),
-                                torch.tensor([[2, 2, 0]]), torch.tensor([3]))
+        constrained_hand_belief(logits[:1], torch.tensor([[2, 2, 0]]), torch.tensor([[2, 2, 0]]), torch.tensor([3]))
 
 
 def test_entity_and_action_permutations_and_padding(components):
@@ -147,26 +116,37 @@ def test_privileged_critic_cannot_backpropagate_into_actor(components):
 
 def test_returns_terminal_and_truncated_bootstrapping():
     rewards, values = torch.tensor([0.0, 1.0]), torch.tensor([0.2, 0.3])
-    advantages, returns = generalized_advantages(rewards, values, torch.tensor([False, True]),
-                                                  gamma=1, gae_lambda=1)
+    advantages, returns = generalized_advantages(rewards, values, torch.tensor([False, True]), gamma=1, gae_lambda=1)
     torch.testing.assert_close(returns, torch.ones(2))
     torch.testing.assert_close(advantages, torch.tensor([0.8, 0.7]))
-    _, returns = generalized_advantages(torch.tensor([0.0]), torch.tensor([0.3]),
-        torch.tensor([False]), torch.tensor([True]), bootstrap_value=0.6)
+    _, returns = generalized_advantages(
+        torch.tensor([0.0]), torch.tensor([0.3]), torch.tensor([False]), torch.tensor([True]), bootstrap_value=0.6
+    )
     torch.testing.assert_close(returns, torch.tensor([0.6]))
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA regression check")
 def test_cuda_recurrent_ppo_backward(components):
     model, critic, catalog = components
-    model.cuda(); critic.cuda()
+    model.cuda()
+    critic.cuda()
     obs = observation(model.config)
     service = PolicyService(model, catalog, "cuda-test")
     response = service.act({"observation": obs, "sample": True})
-    episode = {"schema_version": 2, "policy_version": "cuda-test", "terminal": True,
-        "steps": [{"observation": obs, "action_id": response["action_id"],
-            "log_probability": response["log_probability"], "reward": 1,
-            "labels": {"opponent_hand_counts": [1, 1, 1]}}]}
+    episode = {
+        "schema_version": 2,
+        "policy_version": "cuda-test",
+        "terminal": True,
+        "steps": [
+            {
+                "observation": obs,
+                "action_id": response["action_id"],
+                "log_probability": response["log_probability"],
+                "reward": 1,
+                "labels": {"opponent_hand_counts": [1, 1, 1]},
+            }
+        ],
+    }
     optimizer = torch.optim.AdamW(list(model.parameters()) + list(critic.parameters()), lr=1e-4)
     metrics = ppo_update(model, critic, optimizer, [episode], PPOConfig(epochs=1), "cuda-test")
     assert metrics["decisions"] == 1
@@ -189,18 +169,24 @@ def test_service_idempotence_history_recording_and_checkpoint_training(component
     repeated = observation(model.config, 4)
     repeated["events"][0]["seq"] = 3
     assert client.post("/act", json={"observation": repeated, "sample": True}).status_code == 400
-    finish = {"game_id": "game", "player_id": "player", "terminal": True, "result": 1,
-              "labels": [{"opponent_hand_counts": [1, 1, 1]}] * 4}
+    finish = {
+        "game_id": "game",
+        "player_id": "player",
+        "terminal": True,
+        "result": 1,
+        "labels": [{"opponent_hand_counts": [1, 1, 1]}] * 4,
+    }
     response = client.post("/finish", json=finish)
     assert response.status_code == 200, response.json
     assert client.post("/finish", json=finish).json == response.json
     assert len(list((tmp_path / "episodes").glob("*.jsonl"))) == 1
-    episode = json.loads(open(response.json["episode_file"]).read())
+    episode = json.loads(Path(response.json["episode_file"]).read_text(encoding="utf-8"))
     assert [s["reward"] for s in episode["steps"]] == [0, 0, 0, 1]
     optimizer = torch.optim.Adam(list(restored.parameters()) + list(restored_critic.parameters()), lr=1e-3)
     before = restored.belief_head[0].weight.detach().clone()
-    metrics = ppo_update(restored, restored_critic, optimizer, [episode],
-                         PPOConfig(epochs=2, sequence_length=2), "initial")
+    metrics = ppo_update(
+        restored, restored_critic, optimizer, [episode], PPOConfig(epochs=2, sequence_length=2), "initial"
+    )
     assert metrics["decisions"] >= 4
     assert all(torch.isfinite(p).all() for p in restored.parameters())
     assert not torch.allclose(before, restored.belief_head[0].weight)
@@ -212,8 +198,7 @@ def test_aborted_games_are_not_draw_training_data(components, tmp_path):
     model, _, catalog = components
     service = PolicyService(model, catalog, "version", tmp_path)
     service.act({"observation": observation(model.config), "sample": True})
-    result = service.finish({"game_id": "game", "player_id": "player", "result": 0,
-                             "terminal": False, "labels": []})
+    result = service.finish({"game_id": "game", "player_id": "player", "result": 0, "terminal": False, "labels": []})
     assert not result["recorded"]
     assert not list(tmp_path.glob("*.jsonl"))
 
@@ -252,9 +237,15 @@ def test_forced_decisions_are_excluded_from_policy_statistics(components):
     steps = []
     for obs in _trajectory(model.config):
         response = service.act({"observation": obs, "sample": True})
-        steps.append({"observation": obs, "action_id": response["action_id"],
-            "log_probability": response["log_probability"], "reward": 0,
-            "labels": {"opponent_hand_counts": [1, 1, 1]}})
+        steps.append(
+            {
+                "observation": obs,
+                "action_id": response["action_id"],
+                "log_probability": response["log_probability"],
+                "reward": 0,
+                "labels": {"opponent_hand_counts": [1, 1, 1]},
+            }
+        )
     steps[-1]["reward"] = 1
     episode = {"schema_version": 2, "policy_version": "forced", "terminal": True, "steps": steps}
     optimizer = torch.optim.AdamW(list(model.parameters()) + list(critic.parameters()), lr=1e-4)
@@ -265,6 +256,7 @@ def test_forced_decisions_are_excluded_from_policy_statistics(components):
 
 def test_batched_inference_matches_individual_requests(components):
     from magezero.service import Session, _Job
+
     model, _, catalog = components
     service = PolicyService(model, catalog, "batch")
     observations = [observation(model.config, 0, game_id=f"g{i}") for i in range(3)]
@@ -281,13 +273,15 @@ def test_batched_inference_matches_individual_requests(components):
         assert len(response["belief"]["expected_counts"]) == len(job.observation["opponent_deck"])
         for field in ("log_probability", "value"):
             assert response[field] == pytest.approx(alone[field], abs=1e-5)
-        torch.testing.assert_close(torch.tensor(response["probabilities"]),
-                                   torch.tensor(alone["probabilities"]), atol=1e-5, rtol=1e-5)
+        torch.testing.assert_close(
+            torch.tensor(response["probabilities"]), torch.tensor(alone["probabilities"]), atol=1e-5, rtol=1e-5
+        )
         torch.testing.assert_close(memory.decisions, alone_memory.decisions, atol=1e-5, rtol=1e-5)
 
 
 def test_concurrent_retries_share_one_inference(components):
     import threading
+
     model, _, catalog = components
     service = PolicyService(model, catalog, "retry")
     payload = {"observation": observation(model.config), "sample": True}
@@ -296,6 +290,7 @@ def test_concurrent_retries_share_one_inference(components):
     def call():
         barrier.wait()
         results.append(service.act(copy.deepcopy(payload)))
+
     threads = [threading.Thread(target=call) for _ in range(6)]
     for thread in threads:
         thread.start()
@@ -311,6 +306,7 @@ def test_inference_failure_releases_requests_and_new_sessions(components, monkey
 
     def broken(jobs):
         raise RuntimeError("device lost")
+
     monkeypatch.setattr(service, "_infer", broken)
     with pytest.raises(RuntimeError, match="device lost"):
         service.act({"observation": observation(model.config), "sample": True})
@@ -329,22 +325,29 @@ def test_compact_responses_omit_only_belief_diagnostics(components):
 def test_reload_swaps_checkpoints_only_between_games(components, tmp_path):
     model, critic, catalog = components
     save_checkpoint(tmp_path / "next.pt", model, critic, catalog, policy_version="next")
-    assert create_app(PolicyService(model, catalog, "v")).test_client().post(
-        "/reload", json={"checkpoint": str(tmp_path / "next.pt"), "episodes": None}).status_code == 404
+    assert (
+        create_app(PolicyService(model, catalog, "v"))
+        .test_client()
+        .post("/reload", json={"checkpoint": str(tmp_path / "next.pt"), "episodes": None})
+        .status_code
+        == 404
+    )
     service = PolicyService(model, catalog, "first", tmp_path / "first")
     client = create_app(service, allow_reload=True).test_client()
     reload = {"checkpoint": str(tmp_path / "next.pt"), "episodes": str(tmp_path / "second")}
     assert client.post("/act", json={"observation": observation(model.config), "sample": True}).status_code == 200
     refused = client.post("/reload", json=reload)
     assert refused.status_code == 400 and "active" in refused.json["error"]
-    client.post("/finish", json={"game_id": "game", "player_id": "player", "result": 0,
-                                 "terminal": False, "labels": []})
+    client.post(
+        "/finish", json={"game_id": "game", "player_id": "player", "result": 0, "terminal": False, "labels": []}
+    )
     assert client.post("/reload", json=reload).json == {"policy_version": "next"}
     assert client.get("/healthz").json["policy_version"] == "next"
     assert service.output_dir == tmp_path / "second" and service.stats()["act_requests"] == 0
     # The finished game ID was from the previous policy; it may be reused afterwards.
     assert client.post("/act", json={"observation": observation(model.config), "sample": True}).status_code == 200
-    other = CardCatalog.from_dict({"format_version": 1, "cards": [
-        {"id": 1, "key": "other", "name": "Other", "features": [0.0] * 32}]})
+    other = CardCatalog.from_dict(
+        {"format_version": 1, "cards": [{"id": 1, "key": "other", "name": "Other", "features": [0.0] * 32}]}
+    )
     with pytest.raises(ValueError, match="catalog"):
         service.reload(model, other, "other")

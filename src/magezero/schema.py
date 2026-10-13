@@ -23,10 +23,37 @@ GLOBAL_FEATURES = 24
 ACTION_FEATURES = 16
 EVENT_FEATURES = 8
 CARD_FEATURES = 32
-ACTION_TYPES = ("pass", "cast", "activate", "target", "use", "mode", "attack",
-                "block", "order", "amount", "mulligan", "mana", "discard", "choose")
-EVENT_TYPES = ("draw", "reveal", "zone_change", "cast", "activate", "resolve",
-               "attack", "block", "damage", "life", "pass", "shuffle", "choice")
+ACTION_TYPES = (
+    "pass",
+    "cast",
+    "activate",
+    "target",
+    "use",
+    "mode",
+    "attack",
+    "block",
+    "order",
+    "amount",
+    "mulligan",
+    "mana",
+    "discard",
+    "choose",
+)
+EVENT_TYPES = (
+    "draw",
+    "reveal",
+    "zone_change",
+    "cast",
+    "activate",
+    "resolve",
+    "attack",
+    "block",
+    "damage",
+    "life",
+    "pass",
+    "shuffle",
+    "choice",
+)
 
 
 def _integer(value, label: str, minimum: int, maximum: int) -> int:
@@ -40,8 +67,7 @@ def numeric_vector(value, size: int, label: str) -> list[float]:
     """Return `value` as floats if it is a list of `size` finite numbers."""
     if not isinstance(value, list) or len(value) != size:
         raise ValueError(f"{label} must contain {size} numeric features")
-    if any(isinstance(x, bool) or not isinstance(x, (int, float)) or not math.isfinite(x)
-           for x in value):
+    if any(isinstance(x, bool) or not isinstance(x, (int, float)) or not math.isfinite(x) for x in value):
         raise ValueError(f"{label} contains a non-finite or non-numeric feature")
     return [float(x) for x in value]
 
@@ -54,9 +80,20 @@ def validate_observation(obs: dict, config) -> dict:
     references, hidden information in hidden zones, non-incremental events, and
     public count bounds that cannot explain the opponent's hand size.
     """
-    allowed = {"schema_version", "catalog_digest", "game_id", "player_id", "step",
-               "entities", "relations", "globals", "events", "actions", "opponent_deck",
-               "opponent_hand_size"}
+    allowed = {
+        "schema_version",
+        "catalog_digest",
+        "game_id",
+        "player_id",
+        "step",
+        "entities",
+        "relations",
+        "globals",
+        "events",
+        "actions",
+        "opponent_deck",
+        "opponent_hand_size",
+    }
     if not isinstance(obs, dict) or set(obs) - allowed:
         raise ValueError("unknown observation fields; training labels cannot enter the actor")
     required = allowed - {"relations"}
@@ -76,7 +113,16 @@ def validate_observation(obs: dict, config) -> dict:
     if not isinstance(actions, list) or not 1 <= len(actions) <= config.max_actions:
         raise ValueError("legal action count is outside the configured limit")
     for entity in entities:
-        if not isinstance(entity, dict) or set(entity) != {"id", "card_id", "kind", "zone", "owner", "controller", "visibility", "features"}:
+        if not isinstance(entity, dict) or set(entity) != {
+            "id",
+            "card_id",
+            "kind",
+            "zone",
+            "owner",
+            "controller",
+            "visibility",
+            "features",
+        }:
             raise ValueError("entity fields do not match schema v2")
         _integer(entity["card_id"], "card_id", 0, config.num_cards - 1)
         _integer(entity["kind"], "kind", 0, 7)
@@ -88,9 +134,10 @@ def validate_observation(obs: dict, config) -> dict:
             raise ValueError("invalid visibility")
         if entity["visibility"] == "own" and entity["owner"] != 0:
             raise ValueError("own private entities must belong to the observing player")
-        if entity["visibility"] == "hidden":
-            if entity["card_id"] != 0 or any(x != 0 for i, x in enumerate(features) if i != 7):
-                raise ValueError("hidden zones may expose only quantity, never identity or attributes")
+        # Slot 7 of a hidden-zone entity is its card count; nothing else may be set.
+        hidden = entity["visibility"] == "hidden"
+        if hidden and (entity["card_id"] != 0 or any(x != 0 for i, x in enumerate(features) if i != 7)):
+            raise ValueError("hidden zones may expose only quantity, never identity or attributes")
     entity_ids = [entity["id"] for entity in entities]
     if any(not isinstance(x, str) or not x for x in entity_ids) or len(set(entity_ids)) != len(entity_ids):
         raise ValueError("entity references must be unique nonempty strings")
@@ -229,9 +276,12 @@ def concat_batches(batches: list[ObservationBatch]) -> ObservationBatch:
     """Join separately collated batches; the result equals collating all rows at once."""
     if len(batches) == 1:
         return batches[0]
-    return ObservationBatch(**{key: pad_cat([vars(b)[key] for b in batches],
-                                            -1 if key in ("action_sources", "action_targets") else 0)
-                               for key in vars(batches[0])})
+    return ObservationBatch(
+        **{
+            key: pad_cat([vars(b)[key] for b in batches], -1 if key in ("action_sources", "action_targets") else 0)
+            for key in vars(batches[0])
+        }
+    )
 
 
 def _padded(rows: list[list], width: int, fill, dtype) -> Tensor:
@@ -264,32 +314,37 @@ def collate_observations(observations: list[dict], config, *, validate: bool = T
 
     def mask(groups, width):
         return _padded([[True] * len(g) for g in groups], width, False, torch.bool)
+
     return ObservationBatch(
         entity_cards=_padded([[x["card_id"] for x in g] for g in entities], n, 0, long),
-        entity_categories=_padded([[[x["kind"], x["zone"], x["owner"], x["controller"]] for x in g]
-                                   for g in entities], n, [0, 0, 0, 0], long),
-        entity_features=_padded([[x["features"] for x in g] for g in entities], n,
-                                [0.0] * ENTITY_FEATURES, real),
+        entity_categories=_padded(
+            [[[x["kind"], x["zone"], x["owner"], x["controller"]] for x in g] for g in entities], n, [0, 0, 0, 0], long
+        ),
+        entity_features=_padded([[x["features"] for x in g] for g in entities], n, [0.0] * ENTITY_FEATURES, real),
         entity_mask=mask(entities, n),
-        relations=_padded([[[m[x["source"]], m[x["target"]], x["type"]] for x in g]
-                           for g, m in zip(relations, refs)], r, [0, 0, 0], long),
+        relations=_padded(
+            [[[m[x["source"]], m[x["target"]], x["type"]] for x in g] for g, m in zip(relations, refs)],
+            r,
+            [0, 0, 0],
+            long,
+        ),
         relation_mask=mask(relations, r),
         globals=torch.tensor([o["globals"] for o in observations], dtype=real),
         event_cards=_padded([[x["card_id"] for x in g] for g in events], e, 0, long),
-        event_categories=_padded([[[EVENT_TYPES.index(x["type"]), x["actor"]] for x in g]
-                                  for g in events], e, [0, 0], long),
-        event_features=_padded([[x["features"] for x in g] for g in events], e,
-                               [0.0] * EVENT_FEATURES, real),
+        event_categories=_padded(
+            [[[EVENT_TYPES.index(x["type"]), x["actor"]] for x in g] for g in events], e, [0, 0], long
+        ),
+        event_features=_padded([[x["features"] for x in g] for g in events], e, [0.0] * EVENT_FEATURES, real),
         event_mask=mask(events, e),
         action_cards=_padded([[x["card_id"] for x in g] for g in actions], a, 0, long),
         action_types=_padded([[ACTION_TYPES.index(x["type"]) for x in g] for g in actions], a, 0, long),
         action_sources=_padded([[m.get(x["source"], -1) for x in g] for g, m in zip(actions, refs)], a, -1, long),
         action_targets=_padded([[m.get(x["target"], -1) for x in g] for g, m in zip(actions, refs)], a, -1, long),
-        action_features=_padded([[x["features"] for x in g] for g in actions], a,
-                                [0.0] * ACTION_FEATURES, real),
+        action_features=_padded([[x["features"] for x in g] for g in actions], a, [0.0] * ACTION_FEATURES, real),
         action_mask=mask(actions, a),
         deck_cards=_padded([[x["card_id"] for x in g] for g in decks], k, 0, long),
         deck_lower=_padded([[x["lower"] for x in g] for g in decks], k, 0, long),
         deck_upper=_padded([[x["upper"] for x in g] for g in decks], k, 0, long),
         deck_mask=mask(decks, k),
-        hand_size=torch.tensor([o["opponent_hand_size"] for o in observations], dtype=long))
+        hand_size=torch.tensor([o["opponent_hand_size"] for o in observations], dtype=long),
+    )

@@ -2,6 +2,7 @@ import copy
 import itertools
 import json
 import math
+from pathlib import Path
 
 import pytest
 import torch
@@ -15,20 +16,36 @@ from magezero.roles import ROLE_NAMES
 from magezero.schema import collate_observations
 from magezero.service import PolicyService, create_app
 from magezero.statistics import log_choose, role_statistics, statistical_hand_belief
-from test_entity_policy import observation
+
+from helpers import observation
 
 
 def components(**options):
-    catalog = CardCatalog.from_dict({"format_version": 2, "role_names": list(ROLE_NAMES), "cards": [
-        {"id": i, "key": f"card-{i}", "name": f"Card {i}", "features": [0.] * 32, "roles": roles}
-        for i, roles in enumerate((["land_access"], ["counterspell", "spot_removal"], ["spot_removal"]), 1)]})
-    config = ModelConfig(num_cards=catalog.num_cards, catalog_digest=catalog.digest,
-                         width=32, entity_layers=1, max_hand_size=6, **options)
+    catalog = CardCatalog.from_dict(
+        {
+            "format_version": 2,
+            "role_names": list(ROLE_NAMES),
+            "cards": [
+                {"id": i, "key": f"card-{i}", "name": f"Card {i}", "features": [0.0] * 32, "roles": roles}
+                for i, roles in enumerate((["land_access"], ["counterspell", "spot_removal"], ["spot_removal"]), 1)
+            ],
+        }
+    )
+    config = ModelConfig(
+        num_cards=catalog.num_cards,
+        catalog_digest=catalog.digest,
+        width=32,
+        entity_layers=1,
+        max_hand_size=6,
+        **options,
+    )
     return EntityBeliefPolicy(config, catalog.tensor(), catalog.role_tensor()).eval(), PrivilegedCritic(config), catalog
 
 
-@pytest.mark.parametrize("device", ["cpu", pytest.param("cuda", marks=pytest.mark.skipif(
-    not torch.cuda.is_available(), reason="CUDA unavailable"))])
+@pytest.mark.parametrize(
+    "device",
+    ["cpu", pytest.param("cuda", marks=pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA unavailable"))],
+)
 def test_closed_form_matches_physical_enumeration_and_old_dp(device):
     lower = torch.tensor([[1, 0, 0, 0], [0, 0, 0, 0]], device=device)
     upper = torch.tensor([[3, 2, 1, 0], [0, 0, 0, 0]], device=device)
@@ -61,10 +78,10 @@ def test_overlapping_role_presence_is_union_not_sum_of_card_presences():
     lower, upper, size = torch.zeros(1, 3, dtype=torch.long), torch.tensor([[2, 2, 2]]), torch.tensor([3])
     membership = catalog.role_tensor()[torch.tensor([[1, 2, 3]])]
     presence, expected = role_statistics(lower, upper, size, membership)
-    assert presence[0, ROLE_NAMES.index("land_access")].item() == pytest.approx(.8)
-    assert presence[0, ROLE_NAMES.index("counterspell")].item() == pytest.approx(.8)
-    assert presence[0, ROLE_NAMES.index("spot_removal")].item() == pytest.approx(1.)
-    assert expected[0, ROLE_NAMES.index("spot_removal")].item() == pytest.approx(2.)
+    assert presence[0, ROLE_NAMES.index("land_access")].item() == pytest.approx(0.8)
+    assert presence[0, ROLE_NAMES.index("counterspell")].item() == pytest.approx(0.8)
+    assert presence[0, ROLE_NAMES.index("spot_removal")].item() == pytest.approx(1.0)
+    assert expected[0, ROLE_NAMES.index("spot_removal")].item() == pytest.approx(2.0)
     assert presence.sum() > 1  # independent role features, never a softmax
     lower[0, 0] = 1
     known, _ = role_statistics(lower, upper, size, membership)
@@ -97,11 +114,14 @@ def test_deck_reordering_padding_and_memory_do_not_change_statistical_probabilit
     assert not hasattr(model, "belief_head")
 
 
-@pytest.mark.parametrize("device", ["cpu", pytest.param("cuda", marks=pytest.mark.skipif(
-    not torch.cuda.is_available(), reason="CUDA unavailable"))])
+@pytest.mark.parametrize(
+    "device",
+    ["cpu", pytest.param("cuda", marks=pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA unavailable"))],
+)
 def test_statistical_service_ppo_and_checkpoint(device, tmp_path):
     model, critic, catalog = components()
-    model.to(device); critic.to(device)
+    model.to(device)
+    critic.to(device)
     service = PolicyService(model, catalog, "stat-test", tmp_path / "episodes")
     client = create_app(service).test_client()
     assert client.get("/healthz").json["architecture"] == "entity_statistical_roles_recurrent_policy"
@@ -111,11 +131,19 @@ def test_statistical_service_ppo_and_checkpoint(device, tmp_path):
         assert response.status_code == 200
         assert response.json == client.post("/act", json=payload).json
         roles = response.json["belief"]["roles"]
-        assert roles["land_access"]["probability_at_least_one"] == pytest.approx(.8)
-        assert roles["spot_removal"]["probability_at_least_one"] == pytest.approx(1.)
-    finished = client.post("/finish", json={"game_id": "game", "player_id": "player", "terminal": True,
-        "result": 1, "labels": [{"opponent_hand_counts": [1, 1, 1]}] * 3})
-    episode = json.loads(open(finished.json["episode_file"]).read())
+        assert roles["land_access"]["probability_at_least_one"] == pytest.approx(0.8)
+        assert roles["spot_removal"]["probability_at_least_one"] == pytest.approx(1.0)
+    finished = client.post(
+        "/finish",
+        json={
+            "game_id": "game",
+            "player_id": "player",
+            "terminal": True,
+            "result": 1,
+            "labels": [{"opponent_hand_counts": [1, 1, 1]}] * 3,
+        },
+    )
+    episode = json.loads(Path(finished.json["episode_file"]).read_text(encoding="utf-8"))
     before = model.role_encoder[0].weight.detach().clone()
     optimizer = torch.optim.AdamW(list(model.parameters()) + list(critic.parameters()), lr=1e-3)
     metrics = ppo_update(model, critic, optimizer, [episode], PPOConfig(epochs=1, sequence_length=2), "stat-test")
@@ -132,7 +160,7 @@ def test_statistical_service_ppo_and_checkpoint(device, tmp_path):
     batch = collate_observations([observation(model.config)], model.config)
     model.cpu().eval()
     torch.testing.assert_close(restored(batch).logits, model(batch).logits)
-    assert restored(batch).role_presence[0, ROLE_NAMES.index("land_access")].item() == pytest.approx(.8)
+    assert restored(batch).role_presence[0, ROLE_NAMES.index("land_access")].item() == pytest.approx(0.8)
 
 
 def test_unknown_roles_missing_catalog_and_legacy_v2_are_explicit(tmp_path):
@@ -149,8 +177,14 @@ def test_unknown_roles_missing_catalog_and_legacy_v2_are_explicit(tmp_path):
     old = CardCatalog.from_dict(old)
     with pytest.raises(ValueError, match="v2 role catalog"):
         old.role_tensor()
-    config = ModelConfig(num_cards=old.num_cards, catalog_digest=old.digest,
-        width=32, entity_layers=1, max_hand_size=6, belief_mode="learned")
+    config = ModelConfig(
+        num_cards=old.num_cards,
+        catalog_digest=old.digest,
+        width=32,
+        entity_layers=1,
+        max_hand_size=6,
+        belief_mode="learned",
+    )
     model, critic = EntityBeliefPolicy(config, old.tensor()), PrivilegedCritic(config)
     path = tmp_path / "old.pt"
     save_checkpoint(path, model, critic, old)
@@ -169,15 +203,16 @@ def test_unknown_roles_missing_catalog_and_legacy_v2_are_explicit(tmp_path):
 
 def test_prior_example_large_pool_and_invalid_bounds():
     prior = statistical_hand_belief(torch.tensor([[0, 0]]), torch.tensor([[4, 36]]), torch.tensor([5]), 65)
-    assert (1 - prior.probabilities[0, 0, 0]).item() == pytest.approx(1-math.comb(36, 5)/math.comb(40, 5))
+    assert (1 - prior.probabilities[0, 0, 0]).item() == pytest.approx(1 - math.comb(36, 5) / math.comb(40, 5))
     large = statistical_hand_belief(torch.tensor([[0, 0]]), torch.tensor([[10000, 10000]]), torch.tensor([64]), 65)
-    torch.testing.assert_close(large.expected_counts.sum(), torch.tensor(64.), atol=1e-4, rtol=1e-6)
+    torch.testing.assert_close(large.expected_counts.sum(), torch.tensor(64.0), atol=1e-4, rtol=1e-6)
     with pytest.raises(ValueError, match="hand size"):
         statistical_hand_belief(torch.tensor([[2, 2]]), torch.tensor([[2, 2]]), torch.tensor([3]), 5)
 
 
 def test_reviewed_annotation_conversion_preserves_ids_and_rejects_missing_cards():
     from scripts.annotate_policy_catalog import annotate_catalog
+
     _, _, catalog = components()
     old = catalog.to_dict()
     old["format_version"] = 1
@@ -185,8 +220,13 @@ def test_reviewed_annotation_conversion_preserves_ids_and_rejects_missing_cards(
     for card in old["cards"]:
         card.pop("roles")
     old = CardCatalog.from_dict(old)
-    annotations = {"format_version": 1, "cards": {card["name"]: {
-        "roles": card["roles"], "source": "reviewed source", "notes": "reviewed capability"} for card in catalog.cards}}
+    annotations = {
+        "format_version": 1,
+        "cards": {
+            card["name"]: {"roles": card["roles"], "source": "reviewed source", "notes": "reviewed capability"}
+            for card in catalog.cards
+        },
+    }
     updated = annotate_catalog(old, annotations)
     assert updated.digest == catalog.digest and updated.digest != old.digest
     assert [(c["id"], c["key"]) for c in updated.cards] == [(c["id"], c["key"]) for c in old.cards]
@@ -212,13 +252,25 @@ def test_auxiliary_belief_trains_without_changing_actor_outputs(tmp_path):
     for step in range(3):
         obs = observation(model.config, step)
         response = service.act({"observation": obs, "sample": True})
-        steps.append({"observation": obs, "action_id": response["action_id"],
-            "log_probability": response["log_probability"], "reward": int(step == 2),
-            "labels": {"opponent_hand_counts": [1, 1, 1]}})
+        steps.append(
+            {
+                "observation": obs,
+                "action_id": response["action_id"],
+                "log_probability": response["log_probability"],
+                "reward": int(step == 2),
+                "labels": {"opponent_hand_counts": [1, 1, 1]},
+            }
+        )
     head = model.auxiliary_belief_head[0].weight.detach().clone()
     optimizer = torch.optim.AdamW(list(model.parameters()) + list(critic.parameters()), lr=1e-3)
-    metrics = ppo_update(model, critic, optimizer, [{"schema_version": 2, "policy_version": "aux",
-        "terminal": True, "steps": steps}], PPOConfig(epochs=1, belief_coefficient=0.1), "aux")
+    metrics = ppo_update(
+        model,
+        critic,
+        optimizer,
+        [{"schema_version": 2, "policy_version": "aux", "terminal": True, "steps": steps}],
+        PPOConfig(epochs=1, belief_coefficient=0.1),
+        "aux",
+    )
     assert metrics["belief_loss_coefficient"] == 0.1 and math.isfinite(metrics["belief_nll"])
     assert not torch.allclose(head, model.auxiliary_belief_head[0].weight)
     save_checkpoint(tmp_path / "aux.pt", model, critic, catalog, policy_version="aux")

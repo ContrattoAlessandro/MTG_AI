@@ -17,8 +17,9 @@ OUTCOMES = ("win", "loss", "draw", "truncated", "aborted")
 class ServiceProcess:
     """A policy service subprocess on a local port, logging to `log_path`."""
 
-    def __init__(self, checkpoint, port: int, episodes, device: str, log_path, torch_threads: int = 1,
-                 allow_reload: bool = False):
+    def __init__(
+        self, checkpoint, port: int, episodes, device: str, log_path, torch_threads: int = 1, allow_reload: bool = False
+    ):
         # An existing server must never silently collect data for the wrong process.
         with socket.socket() as probe:
             try:
@@ -84,8 +85,9 @@ class ServiceProcess:
         self.log.close()
 
 
-def start_service(checkpoint, port: int, episodes, device: str, log_path, policy_version: str,
-                  torch_threads: int = 1) -> ServiceProcess:
+def start_service(
+    checkpoint, port: int, episodes, device: str, log_path, policy_version: str, torch_threads: int = 1
+) -> ServiceProcess:
     """Launch a service and wait until it serves `policy_version`; stop it on failure."""
     service = ServiceProcess(checkpoint, port, episodes, device, log_path, torch_threads)
     try:
@@ -138,8 +140,15 @@ class ServicePool:
                 except (OSError, ValueError, RuntimeError) as error:
                     print(f"Restarting policy service on port {port}: {error}")
                     service.stop()
-            service = ServiceProcess(checkpoint, port, episodes, self.device, self.root / f"{name}.log",
-                                     self.torch_threads, allow_reload=True)
+            service = ServiceProcess(
+                checkpoint,
+                port,
+                episodes,
+                self.device,
+                self.root / f"{name}.log",
+                self.torch_threads,
+                allow_reload=True,
+            )
             self.services[port] = service
             fresh.append((service, version))
         for service, version in fresh:  # launched together, awaited together

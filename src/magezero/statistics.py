@@ -15,8 +15,7 @@ from .belief import HandBelief
 def log_choose(n: Tensor, k: Tensor) -> Tensor:
     """log C(n, k) in float64; -inf where the binomial coefficient is zero."""
     n, k = n.double(), k.double()
-    value = (torch.lgamma(n.clamp(min=0) + 1) - torch.lgamma(k.clamp(min=0) + 1)
-             - torch.lgamma((n - k).clamp(min=0) + 1))
+    value = torch.lgamma(n.clamp(min=0) + 1) - torch.lgamma(k.clamp(min=0) + 1) - torch.lgamma((n - k).clamp(min=0) + 1)
     return value.masked_fill((n < 0) | (k < 0) | (k > n), float("-inf"))
 
 
@@ -27,8 +26,7 @@ def _validate(lower, upper, hand_size, classes):
         raise ValueError("statistical counts must be integer tensors")
     if classes <= 0 or ((lower < 0) | (upper < lower)).any():
         raise ValueError("invalid statistical count bounds")
-    if ((hand_size < lower.sum(-1)) | (hand_size > upper.sum(-1))
-            | (hand_size < 0) | (hand_size >= classes)).any():
+    if ((hand_size < lower.sum(-1)) | (hand_size > upper.sum(-1)) | (hand_size < 0) | (hand_size >= classes)).any():
         raise ValueError("hand size cannot be represented by these bounds/count classes")
 
 
@@ -49,16 +47,19 @@ def statistical_hand_belief(
     selected = counts - lower.unsqueeze(-1)
     scores = log_choose(remaining.unsqueeze(-1), selected)
     partition = log_choose(population, draws)
-    log_marginals = (scores + log_choose((population[:, None] - remaining).unsqueeze(-1),
-                                       draws[:, None, None] - selected)
-                     - partition[:, None, None])
+    log_marginals = (
+        scores
+        + log_choose((population[:, None] - remaining).unsqueeze(-1), draws[:, None, None] - selected)
+        - partition[:, None, None]
+    )
     probabilities = torch.softmax(log_marginals, -1).float()
     expected = (probabilities * counts).sum(-1)
     return HandBelief(probabilities, expected, partition.float(), scores.float())
 
 
-def role_statistics(lower: Tensor, upper: Tensor, hand_size: Tensor,
-                    membership: Tensor, *, validate: bool = True) -> tuple[Tensor, Tensor]:
+def role_statistics(
+    lower: Tensor, upper: Tensor, hand_size: Tensor, membership: Tensor, *, validate: bool = True
+) -> tuple[Tensor, Tensor]:
     """Exact role presence/expectation under the prior, including overlaps.
 
     membership is [batch, kinds, roles]. A physical copy is counted once per
@@ -76,8 +77,7 @@ def role_statistics(lower: Tensor, upper: Tensor, hand_size: Tensor,
     draws = hand_size - lower.sum(-1)
     role_copies = (remaining.unsqueeze(-1) * membership).sum(1)
     known = (lower.unsqueeze(-1) * membership).sum(1)
-    log_absent = log_choose(population[:, None] - role_copies, draws[:, None]) - log_choose(
-        population, draws)[:, None]
+    log_absent = log_choose(population[:, None] - role_copies, draws[:, None]) - log_choose(population, draws)[:, None]
     presence = -torch.expm1(log_absent.clamp(max=0))
     presence = torch.where(known > 0, torch.ones_like(presence), presence).float()
     expected = known + draws[:, None] * role_copies / population[:, None].clamp(min=1)

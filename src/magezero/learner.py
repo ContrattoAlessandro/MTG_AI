@@ -348,7 +348,9 @@ def _ppo_targets(model, critic, episodes, prepared, config: PPOConfig, reference
                         chunk.reference_log_probability = rows[:, : chunk.batch.action_mask.shape[1]]
                 actual = out.distribution().log_prob(joined.actions)
                 if (actual - joined.behavior_log_probability).abs().max().item() > config.log_probability_tolerance:
-                    raise ValueError("behavior policy mismatch: weights, history, candidate ordering, or sampling changed")
+                    raise ValueError(
+                        "behavior policy mismatch: weights, history, candidate ordering, or sampling changed"
+                    )
                 critic_values = critic(out.context, joined.batch.deck_cards, joined.labels.float())
                 for i, value in zip(members, critic_values.split(sizes)):
                     values[i].append(value)

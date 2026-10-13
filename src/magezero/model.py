@@ -64,8 +64,18 @@ class ModelConfig:
             raise ValueError("auxiliary_belief must be a boolean")
         if self.auxiliary_belief and self.belief_mode == "learned":
             raise ValueError("learned belief mode already trains its belief head; auxiliary_belief is redundant")
-        for key in ("width", "num_cards", "entity_layers", "attention_heads", "max_hand_size", "max_entities",
-                    "max_actions", "max_events", "max_relations", "max_deck_kinds"):
+        for key in (
+            "width",
+            "num_cards",
+            "entity_layers",
+            "attention_heads",
+            "max_hand_size",
+            "max_entities",
+            "max_actions",
+            "max_events",
+            "max_relations",
+            "max_deck_kinds",
+        ):
             value = getattr(self, key)
             if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
                 raise ValueError(f"{key} must be a positive integer")
@@ -109,17 +119,17 @@ class PolicyOutput:
 @dataclass
 class _Encoded:
     """Memory-independent features; computed in one batch for many timesteps."""
+
     pooled: Tensor
     global_state: Tensor
-    events: Tensor       # [rows, d]: each row's new events pooled into one vector
-    has_events: Tensor   # [rows] bool: rows without new events carry the event memory
+    events: Tensor  # [rows, d]: each row's new events pooled into one vector
+    has_events: Tensor  # [rows] bool: rows without new events carry the event memory
     action: Tensor
 
 
 def mlp(input_size: int, width: int, output_size: int) -> nn.Sequential:
     """Two-layer SiLU perceptron."""
-    return nn.Sequential(nn.Linear(input_size, width), nn.SiLU(),
-                         nn.Linear(width, output_size))
+    return nn.Sequential(nn.Linear(input_size, width), nn.SiLU(), nn.Linear(width, output_size))
 
 
 class EventPool(nn.Module):
@@ -131,6 +141,7 @@ class EventPool(nn.Module):
     steps once per decision instead of once per event, so a Kinnan loop of
     thousands of events is no longer thousands of recurrent steps of BPTT.
     """
+
     def __init__(self, width: int, heads: int, max_events: int):
         super().__init__()
         self.heads, self.max_events = heads, max_events
@@ -149,15 +160,17 @@ class EventPool(nn.Module):
         """events [F, d] flat and row-major; owner and recency [F]; counts [rows]."""
         rows, (flat, d) = counts.shape[0], events.shape
         heads, size = self.heads, d // self.heads
-        buckets = torch.where(recency > 0, torch.log2(recency.clamp(min=1).float()).floor().long() + 1,
-                              torch.zeros_like(recency)).clamp(max=EVENT_RECENCY_BUCKETS - 1)
+        buckets = torch.where(
+            recency > 0, torch.log2(recency.clamp(min=1).float()).floor().long() + 1, torch.zeros_like(recency)
+        ).clamp(max=EVENT_RECENCY_BUCKETS - 1)
         x = events + self.recency(buckets)
         x = self.key_norm(x + self.feed(self.feed_norm(x)))
         keys, values = self.key(x).view(flat, heads, size), self.value(x).view(flat, heads, size)
         scores = (keys * self.query).sum(-1) / math.sqrt(size)  # [F, heads]
         # Softmax within each row; the max shift is a constant, so it carries no gradient.
         peak = scores.new_full((rows, heads), float("-inf")).scatter_reduce(
-            0, owner.unsqueeze(-1).expand(-1, heads), scores.detach(), "amax", include_self=True)
+            0, owner.unsqueeze(-1).expand(-1, heads), scores.detach(), "amax", include_self=True
+        )
         weights = (scores - peak[owner]).exp()
         total = scores.new_zeros(rows, heads).index_add(0, owner, weights)
         pooled = values.new_zeros(rows, heads, size).index_add(0, owner, weights.unsqueeze(-1) * values)
@@ -174,8 +187,7 @@ class EntityBeliefPolicy(nn.Module):
     compute the same outputs.
     """
 
-    def __init__(self, config: ModelConfig, card_features: Tensor | None = None,
-                 card_roles: Tensor | None = None):
+    def __init__(self, config: ModelConfig, card_features: Tensor | None = None, card_roles: Tensor | None = None):
         super().__init__()
         self.config = config
         d = config.width
@@ -192,13 +204,14 @@ class EntityBeliefPolicy(nn.Module):
         self.relation_in = nn.Linear(d, d, bias=False)
         self.relation_out = nn.Linear(d, d, bias=False)
         self.entity_norm = nn.LayerNorm(d)
-        layer = nn.TransformerEncoderLayer(d, config.attention_heads, 4 * d,
-                                            dropout=0.0, batch_first=True,
-                                            norm_first=True, activation="gelu")
+        layer = nn.TransformerEncoderLayer(
+            d, config.attention_heads, 4 * d, dropout=0.0, batch_first=True, norm_first=True, activation="gelu"
+        )
         # Pre-norm layers leave the residual stream unnormalized; the final norm keeps
         # the pooled token and pointer vectors on the scale of the other inputs.
-        self.entity_attention = nn.TransformerEncoder(layer, config.entity_layers, norm=nn.LayerNorm(d),
-                                                       enable_nested_tensor=False)
+        self.entity_attention = nn.TransformerEncoder(
+            layer, config.entity_layers, norm=nn.LayerNorm(d), enable_nested_tensor=False
+        )
         # Pooling query is always a real token; no all-padding attention rows.
         self.pool_token = nn.Parameter(torch.zeros(1, 1, d))
         # The turn step enters one-hot beside the numeric features. The norm puts
@@ -217,8 +230,12 @@ class EntityBeliefPolicy(nn.Module):
         if config.belief_mode == "learned":
             self.belief_head = mlp(2 * d + 3, d, config.max_hand_size + 1)
         else:
-            if (card_roles is None or card_roles.shape != (config.num_cards, len(ROLE_NAMES))
-                    or not torch.all((card_roles == 0) | (card_roles == 1)) or card_roles[0].any()):
+            if (
+                card_roles is None
+                or card_roles.shape != (config.num_cards, len(ROLE_NAMES))
+                or not torch.all((card_roles == 0) | (card_roles == 1))
+                or card_roles[0].any()
+            ):
                 raise ValueError("statistical_roles requires a binary catalog role matrix with empty padding")
             self.register_buffer("card_roles", card_roles.float())
             # One scalar per role: P(holding at least one). No role softmax.
@@ -267,8 +284,7 @@ class EntityBeliefPolicy(nn.Module):
         _, hidden = self.decision_memory(step_input.unsqueeze(1), memory.decisions.unsqueeze(0))
         return self._head(batch, encoded, hidden[0], PolicyMemory(event_hidden, hidden[0]))
 
-    def forward_sequence(self, batch: ObservationBatch,
-                         memory: PolicyMemory | None = None) -> PolicyOutput:
+    def forward_sequence(self, batch: ObservationBatch, memory: PolicyMemory | None = None) -> PolicyOutput:
         """Consecutive decisions of ONE trajectory, batched over time.
 
         Row t of `batch` is step t; memory has batch size one. Identical to calling
@@ -296,9 +312,13 @@ class EntityBeliefPolicy(nn.Module):
             raise ValueError("sequence recurrence lost timesteps")
         return self._head(batch, encoded, hidden, PolicyMemory(event_hidden[-1:], hidden[-1:]))
 
-    def forward_episodes(self, batch: ObservationBatch, lengths: list[int],
-                         memory: PolicyMemory | None = None,
-                         event_counts: Tensor | None = None) -> PolicyOutput:
+    def forward_episodes(
+        self,
+        batch: ObservationBatch,
+        lengths: list[int],
+        memory: PolicyMemory | None = None,
+        event_counts: Tensor | None = None,
+    ) -> PolicyOutput:
         """Consecutive decisions of SEVERAL trajectories in one pass (the learner path).
 
         Rows are episode-major: the first lengths[0] rows are consecutive steps of
@@ -341,8 +361,7 @@ class EntityBeliefPolicy(nn.Module):
             padded[owner, torch.arange(events_total, device=device) - starts[owner]] = flat
             # A trajectory without events gets one ignored zero input; its rows
             # and returned memory all read index 0, the carried state.
-            packed = pack_padded_sequence(padded, totals_cpu.clamp(min=1), batch_first=True,
-                                          enforce_sorted=False)
+            packed = pack_padded_sequence(padded, totals_cpu.clamp(min=1), batch_first=True, enforce_sorted=False)
             outputs, _ = self.event_memory(packed, memory.events.unsqueeze(0))
             outputs, _ = pad_packed_sequence(outputs, batch_first=True, total_length=longest)
             stream = torch.cat([memory.events.unsqueeze(1), outputs], 1)
@@ -386,8 +405,7 @@ class EntityBeliefPolicy(nn.Module):
         degree.scatter_add_(1, source, batch.relation_mask.to(entity.dtype))
         entity = self.entity_norm(entity + messages / degree.clamp(min=1).unsqueeze(-1))
         tokens = torch.cat([self.pool_token.expand(b, -1, -1), entity], 1)
-        valid_tokens = torch.cat([torch.ones(b, 1, dtype=torch.bool, device=entity.device),
-                                  batch.entity_mask], 1)
+        valid_tokens = torch.cat([torch.ones(b, 1, dtype=torch.bool, device=entity.device), batch.entity_mask], 1)
         tokens = self.entity_attention(tokens, src_key_padding_mask=~valid_tokens)
         pooled, entity = tokens[:, 0], tokens[:, 1:]
         # Only real events are embedded (flat, row-major), never the padding.
@@ -400,8 +418,12 @@ class EntityBeliefPolicy(nn.Module):
         within = torch.arange(owner.shape[0], device=device) - (counts.cumsum(0) - counts)[owner]
         mask = batch.event_mask
         categories = batch.event_categories[mask]
-        event = (self.embed_card(batch.event_cards[mask]) + self.event_types(categories[:, 0])
-                 + self.event_actors(categories[:, 1]) + self.event_numeric(batch.event_features[mask]))
+        event = (
+            self.embed_card(batch.event_cards[mask])
+            + self.event_types(categories[:, 0])
+            + self.event_actors(categories[:, 1])
+            + self.event_numeric(batch.event_features[mask])
+        )
         events = self.event_pool(self.event_norm(event), owner, counts[owner] - 1 - within, counts)
         phase = (batch.globals[:, PHASE_SLOT] * PHASES).round().long().clamp(0, PHASES - 1)
         phase = torch.nn.functional.one_hot(phase, PHASES).to(batch.globals.dtype)
@@ -410,11 +432,13 @@ class EntityBeliefPolicy(nn.Module):
         def pointer(refs: Tensor) -> Tensor:
             values = entity.gather(1, refs.clamp(min=0).unsqueeze(-1).expand(-1, -1, d))
             return values * (refs >= 0).unsqueeze(-1)
+
         action = self.embed_card(batch.action_cards) + self.action_types(batch.action_types)
         action = action + self.action_numeric(batch.action_features)
         source_vectors, target_vectors = pointer(batch.action_sources), pointer(batch.action_targets)
-        action = self.action_encoder(torch.cat([action, source_vectors, target_vectors,
-                                                action * (source_vectors + target_vectors)], -1))
+        action = self.action_encoder(
+            torch.cat([action, source_vectors, target_vectors, action * (source_vectors + target_vectors)], -1)
+        )
         return _Encoded(pooled, global_state, events, counts > 0, action)
 
     def _head(self, batch: ObservationBatch, encoded: _Encoded, hidden: Tensor, memory: PolicyMemory) -> PolicyOutput:
@@ -423,9 +447,14 @@ class EntityBeliefPolicy(nn.Module):
         cards = self.embed_card(batch.deck_cards)
         role_presence = role_expected = auxiliary_logits = None
         k = cards.shape[1]
-        bounds = torch.stack([batch.deck_lower.float() / self.config.max_hand_size,
-                              batch.deck_upper.float().clamp(max=self.config.max_hand_size) / self.config.max_hand_size,
-                              batch.hand_size.float()[:, None].expand(-1, k) / self.config.max_hand_size], -1)
+        bounds = torch.stack(
+            [
+                batch.deck_lower.float() / self.config.max_hand_size,
+                batch.deck_upper.float().clamp(max=self.config.max_hand_size) / self.config.max_hand_size,
+                batch.hand_size.float()[:, None].expand(-1, k) / self.config.max_hand_size,
+            ],
+            -1,
+        )
         count_input = torch.cat([cards, hidden[:, None].expand(-1, k, -1), bounds], -1)
         if self.config.belief_mode == "learned":
             count_logits = self.belief_head(count_input)
@@ -436,15 +465,23 @@ class EntityBeliefPolicy(nn.Module):
                 # flows into context, logits or value.
                 auxiliary_logits = self.auxiliary_belief_head(count_input)
             # Bounds were checked by validate_observation; skip per-pass host syncs.
-            belief = statistical_hand_belief(batch.deck_lower, batch.deck_upper, batch.hand_size,
-                                             self.config.max_hand_size + 1, validate=False)
-            role_presence, role_expected = role_statistics(batch.deck_lower, batch.deck_upper,
-                batch.hand_size, self.card_roles[batch.deck_cards], validate=False)
+            belief = statistical_hand_belief(
+                batch.deck_lower, batch.deck_upper, batch.hand_size, self.config.max_hand_size + 1, validate=False
+            )
+            role_presence, role_expected = role_statistics(
+                batch.deck_lower, batch.deck_upper, batch.hand_size, self.card_roles[batch.deck_cards], validate=False
+            )
         probs = belief.probabilities
         entropy = -(probs * probs.clamp(min=1e-12).log()).sum(-1)
-        summary_features = torch.cat([cards,
-            (belief.expected_counts / self.config.max_hand_size).unsqueeze(-1),
-            (1 - probs[..., 0]).unsqueeze(-1), entropy.unsqueeze(-1)], -1)
+        summary_features = torch.cat(
+            [
+                cards,
+                (belief.expected_counts / self.config.max_hand_size).unsqueeze(-1),
+                (1 - probs[..., 0]).unsqueeze(-1),
+                entropy.unsqueeze(-1),
+            ],
+            -1,
+        )
         summaries = self.belief_encoder(summary_features) * batch.deck_mask.unsqueeze(-1)
         belief_summary = summaries.sum(1) / batch.deck_mask.sum(1, keepdim=True).clamp(min=1)
         if role_presence is not None:
@@ -454,8 +491,16 @@ class EntityBeliefPolicy(nn.Module):
         state = context[:, None].expand_as(action)
         logits = self.action_scorer(torch.cat([state, action, state * action], -1)).squeeze(-1)
         logits = logits.masked_fill(~batch.action_mask, float("-inf"))
-        return PolicyOutput(logits, self.value_head(context).squeeze(-1), belief,
-                            memory, context, role_presence, role_expected, auxiliary_logits)
+        return PolicyOutput(
+            logits,
+            self.value_head(context).squeeze(-1),
+            belief,
+            memory,
+            context,
+            role_presence,
+            role_expected,
+            auxiliary_logits,
+        )
 
 
 class PrivilegedCritic(nn.Module):

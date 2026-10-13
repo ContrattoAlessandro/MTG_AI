@@ -36,8 +36,9 @@ def cmd_init(args: argparse.Namespace) -> None:
 
     catalog = CardCatalog.load(args.catalog)
     torch.manual_seed(args.seed)
-    config = ModelConfig(**_config_section(args.config, "model"), num_cards=catalog.num_cards,
-                         catalog_digest=catalog.digest)
+    config = ModelConfig(
+        **_config_section(args.config, "model"), num_cards=catalog.num_cards, catalog_digest=catalog.digest
+    )
     roles = catalog.role_tensor() if config.belief_mode == "statistical_roles" else None
     model = EntityBeliefPolicy(config, catalog.tensor(), roles)
     critic = PrivilegedCritic(config)
@@ -90,16 +91,26 @@ def cmd_train(args: argparse.Namespace) -> None:
     from .learner import PPOConfig, train_from_files
 
     config = PPOConfig(**_config_section(args.config, "training"))
-    metrics = train_from_files(args.checkpoint, args.episodes, args.output, config, args.device,
-                               reference=args.reference)
+    metrics = train_from_files(
+        args.checkpoint, args.episodes, args.output, config, args.device, reference=args.reference
+    )
     print(json.dumps(metrics, indent=2))
 
 
 def cmd_serve(args: argparse.Namespace) -> None:
     from .service import serve
 
-    serve(args.checkpoint, args.host, args.port, args.episodes, args.device, args.max_batch, not args.no_belief,
-          args.torch_threads, args.allow_reload)
+    serve(
+        args.checkpoint,
+        args.host,
+        args.port,
+        args.episodes,
+        args.device,
+        args.max_batch,
+        not args.no_belief,
+        args.torch_threads,
+        args.allow_reload,
+    )
 
 
 def cmd_play(args: argparse.Namespace) -> None:
@@ -146,7 +157,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_init)
 
     p = sub.add_parser("teacher-collect", help="record XMage's AI decisions as behaviour-cloning trajectories")
-    p.add_argument("--checkpoint", required=True, help="any checkpoint of the run's card catalog (never chooses actions)")
+    p.add_argument(
+        "--checkpoint", required=True, help="any checkpoint of the run's card catalog (never chooses actions)"
+    )
     p.add_argument("--game", required=True, help="game YAML with the decks (e.g. configs/commander-mirror.yml)")
     p.add_argument("--engine-script", required=True)
     p.add_argument("--output", required=True)
@@ -155,8 +168,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--engine-threads", type=int, help="parallel XMage games (1-16)")
     p.add_argument("--ai-skill", type=int, default=1, help="XMage AI skill (1-10) of the teachers")
     p.add_argument("--ai-think", type=int, default=0, help="cap on the AI's seconds per decision (0 = XMage default)")
-    p.add_argument("--seats", choices=("both", "a"), default="both",
-                   help="record both decks, or only player_a's deck against a plain XMage AI")
+    p.add_argument(
+        "--seats",
+        choices=("both", "a"),
+        default="both",
+        help="record both decks, or only player_a's deck against a plain XMage AI",
+    )
     p.add_argument("--port", type=int, default=50060, help="recording service port")
     p.add_argument("--max-retries", type=int, default=3)
     p.set_defaults(func=cmd_teacher_collect)
@@ -175,42 +192,76 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--config", default="configs/policy.yml", help="YAML with a training: section")
     p.add_argument("--engine-script", required=True)
     p.add_argument("--output", default="artifacts/selfplay")
-    p.add_argument("--iterations", type=int, default=10,
-                   help="total generations for the run; --resume continues until this many exist")
+    p.add_argument(
+        "--iterations",
+        type=int,
+        default=10,
+        help="total generations for the run; --resume continues until this many exist",
+    )
     p.add_argument("--games", type=int, default=32)
     p.add_argument("--minutes", type=float, help="approximate wall-time budget; stop between complete generations")
     p.add_argument("--device", default="auto", help="learner device; auto uses CUDA when present")
     p.add_argument("--actor-device", default="cpu", help="inference device; --device selects the learner device")
     p.add_argument("--league", help="persistent historical opponent league JSON")
-    p.add_argument("--engine-threads", type=int, help="parallel XMage games (1-16); overrides training.threads in --game")
+    p.add_argument(
+        "--engine-threads", type=int, help="parallel XMage games (1-16); overrides training.threads in --game"
+    )
     p.add_argument("--snapshot-every", type=int, default=5, help="add the learner to the league every N generations")
     p.add_argument("--actor-threads", type=int, default=4, help="torch intra-op threads per policy service")
-    p.add_argument("--actor-shards", type=int, default=1,
-                   help="policy service processes per checkpoint (1-8); games are spread across them")
+    p.add_argument(
+        "--actor-shards",
+        type=int,
+        default=1,
+        help="policy service processes per checkpoint (1-8); games are spread across them",
+    )
     p.add_argument("--resume", action="store_true", help="continue the run in --output from its run-state.json")
-    p.add_argument("--eval-every", type=int, default=0, help="benchmark every N generations (0 = never) and keep best.pt")
+    p.add_argument(
+        "--eval-every", type=int, default=0, help="benchmark every N generations (0 = never) and keep best.pt"
+    )
     p.add_argument("--eval-games", type=int, default=64, help="games per benchmark opponent, seats/decks alternating")
-    p.add_argument("--eval-ai-skill", type=int, default=6,
-                   help="XMage built-in AI (ComputerPlayer7) skill 1-10; 0 disables it")
+    p.add_argument(
+        "--eval-ai-skill", type=int, default=6, help="XMage built-in AI (ComputerPlayer7) skill 1-10; 0 disables it"
+    )
     p.add_argument("--eval-anchor", action="append", help="frozen checkpoint benchmark (repeatable)")
-    p.add_argument("--eval-greedy", action="store_true", help="evaluate with the most likely action instead of sampling")
-    p.add_argument("--keep-episodes", action="store_true",
-                   help="keep trajectory files after training (about 8.5 KB per decision)")
+    p.add_argument(
+        "--eval-greedy", action="store_true", help="evaluate with the most likely action instead of sampling"
+    )
+    p.add_argument(
+        "--keep-episodes", action="store_true", help="keep trajectory files after training (about 8.5 KB per decision)"
+    )
     p.add_argument("--keep-every", type=int, default=50, help="keep every Nth generation checkpoint; others are pruned")
-    p.add_argument("--min-free-gb", type=float, default=20.0,
-                   help="stop cleanly between generations below this free disk space")
+    p.add_argument(
+        "--min-free-gb", type=float, default=20.0, help="stop cleanly between generations below this free disk space"
+    )
     p.add_argument("--max-retries", type=int, default=3, help="engine restarts per generation before the run stops")
-    p.add_argument("--max-failure-fraction", type=float, default=0.25,
-                   help="stop when more than this fraction of a generation's games error or time out")
-    p.add_argument("--gauntlet", nargs="+", metavar="DECK",
-                   help="opponent decks piloted by XMage's AI; the learner keeps player_a's deck")
-    p.add_argument("--gauntlet-fraction", type=float, default=0.5,
-                   help="share of each generation's games played against the gauntlet")
+    p.add_argument(
+        "--max-failure-fraction",
+        type=float,
+        default=0.25,
+        help="stop when more than this fraction of a generation's games error or time out",
+    )
+    p.add_argument(
+        "--gauntlet",
+        nargs="+",
+        metavar="DECK",
+        help="opponent decks piloted by XMage's AI; the learner keeps player_a's deck",
+    )
+    p.add_argument(
+        "--gauntlet-fraction",
+        type=float,
+        default=0.5,
+        help="share of each generation's games played against the gauntlet",
+    )
     p.add_argument("--gauntlet-ai-skill", type=int, default=3, help="XMage AI skill (1-10) piloting gauntlet decks")
-    p.add_argument("--gauntlet-ai-think", type=int, default=0,
-                   help="cap on the gauntlet AI's search seconds per decision (0 = XMage default, 3 s per skill)")
-    p.add_argument("--reference",
-                   help="frozen behaviour-cloned checkpoint for the KL term (training.reference_kl_coefficient)")
+    p.add_argument(
+        "--gauntlet-ai-think",
+        type=int,
+        default=0,
+        help="cap on the gauntlet AI's search seconds per decision (0 = XMage default, 3 s per skill)",
+    )
+    p.add_argument(
+        "--reference", help="frozen behaviour-cloned checkpoint for the KL term (training.reference_kl_coefficient)"
+    )
     p.set_defaults(func=cmd_selfplay)
 
     p = sub.add_parser("train", help="one recurrent PPO update on fresh on-policy trajectories")
@@ -219,8 +270,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--output", required=True)
     p.add_argument("--config", default="configs/policy.yml", help="YAML with a training: section")
     p.add_argument("--device", default="auto", help="learner device; auto uses CUDA when present")
-    p.add_argument("--reference",
-                   help="frozen behaviour-cloned checkpoint for the KL term (training.reference_kl_coefficient)")
+    p.add_argument(
+        "--reference", help="frozen behaviour-cloned checkpoint for the KL term (training.reference_kl_coefficient)"
+    )
     p.set_defaults(func=cmd_train)
 
     p = sub.add_parser("serve", help="serve recurrent legal-action inference without search")

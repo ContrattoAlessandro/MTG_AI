@@ -1,2 +1,7 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# Text files are stored and checked out with LF, except Windows batch files.
+* text=auto eol=lf
+*.bat text eol=crlf
+
+*.png binary
+*.pdf binary
+*.pt binary

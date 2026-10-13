@@ -76,8 +76,12 @@ class CloneConfig:
             raise ValueError("clone learning rate, epochs, batch and sequence length must be positive")
         if not 0 <= self.validation_fraction < 1 or not 0 < self.gamma <= 1 or self.max_grad_norm <= 0:
             raise ValueError("invalid clone validation fraction, gamma, or gradient norm")
-        if min(self.value_coefficient, self.public_value_coefficient, self.belief_coefficient,
-               self.shaping_coefficient) < 0:
+        if (
+            min(
+                self.value_coefficient, self.public_value_coefficient, self.belief_coefficient, self.shaping_coefficient
+            )
+            < 0
+        ):
             raise ValueError("clone loss coefficients cannot be negative")
 
 
@@ -94,6 +98,7 @@ def _returns(episode, config: CloneConfig) -> tuple[torch.Tensor, bool]:
 @dataclass
 class _Entry:
     """Where one teacher trajectory lives on disk, and its small training targets."""
+
     path: Path
     offset: int
     game_id: str
@@ -109,6 +114,7 @@ class TeacherGames:
     only file offsets and return targets, and one minibatch (plus the next, being
     prefetched) is resident at a time.
     """
+
     def __init__(self, files, model_config, config: CloneConfig):
         self.entries: list[_Entry] = []
         keys = set()
@@ -118,8 +124,9 @@ class TeacherGames:
                 for line_number, line in enumerate(stream, 1):
                     if line.strip():
                         try:
-                            episode = validate_episode(json.loads(line), model_config, TEACHER_VERSION,
-                                                       config.max_episode_steps)
+                            episode = validate_episode(
+                                json.loads(line), model_config, TEACHER_VERSION, config.max_episode_steps
+                            )
                             first = episode["steps"][0]["observation"]
                             key = (first["game_id"], first["player_id"])
                             if key in keys:
@@ -148,7 +155,7 @@ def split_games(games: TeacherGames, fraction: float, seed: int) -> tuple[list[i
     """Indices of training and held-out trajectories; whole games (both seats) are held out."""
     names = sorted({entry.game_id for entry in games.entries})
     random.Random(seed).shuffle(names)
-    held = set(names[:round(len(names) * fraction)]) if len(names) > 1 else set()
+    held = set(names[: round(len(names) * fraction)]) if len(names) > 1 else set()
     train = [i for i, entry in enumerate(games.entries) if entry.game_id not in held]
     validation = [i for i, entry in enumerate(games.entries) if entry.game_id in held]
     return train, validation
@@ -159,17 +166,26 @@ def _pass(model, critic, games: TeacherGames, indices, config: CloneConfig, opti
     length = config.sequence_length
     trains_belief = model.config.belief_mode == "learned" or model.config.auxiliary_belief
     device = next(model.parameters()).device
-    totals = {"nll": 0.0, "correct": 0.0, "choices": 0, "value_error": 0.0, "valued": 0, "belief_nll": 0.0,
-              "decisions": 0}
+    totals = {
+        "nll": 0.0,
+        "correct": 0.0,
+        "choices": 0,
+        "value_error": 0.0,
+        "valued": 0,
+        "belief_nll": 0.0,
+        "decisions": 0,
+    }
     by_type = {name: [0, 0] for name in ACTION_TYPES}
     order = list(indices)
     if optimizer is not None:
         random.shuffle(order)
-    groups = [order[start:start + config.episodes_per_batch]
-              for start in range(0, len(order), config.episodes_per_batch)]
+    groups = [
+        order[start : start + config.episodes_per_batch] for start in range(0, len(order), config.episodes_per_batch)
+    ]
 
     def prepare(group):
         return {i: prepare_chunks(games.load(i), model, length) for i in group}
+
     with ThreadPoolExecutor(1) as loader:  # parse and collate the next minibatch meanwhile
         pending = loader.submit(prepare, groups[0]) if groups else None
         for position, group in enumerate(groups):
@@ -187,30 +203,41 @@ def _pass(model, critic, games: TeacherGames, indices, config: CloneConfig, opti
                     sizes = [len(prepared[i][window].actions) for i in members]
                     rows = slice(window * length, window * length + length)
                     returns = torch.cat([games.entries[i].returns[rows] for i in members]).to(device)
-                    valued = torch.cat([torch.full((sizes[k],), float(games.entries[i].valued))
-                                        for k, i in enumerate(members)]).to(device)
+                    valued = torch.cat(
+                        [torch.full((sizes[k],), float(games.entries[i].valued)) for k, i in enumerate(members)]
+                    ).to(device)
                     out = model.forward_episodes(joined.batch, sizes, memory, joined.event_counts)
                     memory, previous = out.memory.detach(), members
                     choice = joined.choice.float()
                     log_probability = out.distribution().log_prob(joined.actions)
                     nll = -log_probability * choice
-                    critic_error = (critic(out.context, joined.batch.deck_cards, joined.labels.float())
-                                    - returns).square()
+                    critic_error = (
+                        critic(out.context, joined.batch.deck_cards, joined.labels.float()) - returns
+                    ).square()
                     public_error = (out.value - returns).square()
                     # Opponent-hand NLL per deck kind: trained in the learned and auxiliary
                     # modes, a diagnostic of the fixed prior otherwise.
                     belief = out.belief
                     if out.auxiliary_count_logits is not None:
-                        belief = constrained_hand_belief(out.auxiliary_count_logits, joined.batch.deck_lower,
-                                                         joined.batch.deck_upper, joined.batch.hand_size)
+                        belief = constrained_hand_belief(
+                            out.auxiliary_count_logits,
+                            joined.batch.deck_lower,
+                            joined.batch.deck_upper,
+                            joined.batch.hand_size,
+                        )
                     belief_loss = belief.nll(joined.labels) / joined.deck_kinds
                     if not trains_belief:
                         belief_loss = belief_loss.detach()
                     if optimizer is not None:
-                        loss = (nll.sum() / choice_denominator
-                                + (config.value_coefficient * (critic_error * valued).sum()
-                                   + config.public_value_coefficient * (public_error * valued).sum()
-                                   + config.belief_coefficient * belief_loss.sum()) / step_denominator)
+                        loss = (
+                            nll.sum() / choice_denominator
+                            + (
+                                config.value_coefficient * (critic_error * valued).sum()
+                                + config.public_value_coefficient * (public_error * valued).sum()
+                                + config.belief_coefficient * belief_loss.sum()
+                            )
+                            / step_denominator
+                        )
                         loss.backward()
                     with torch.no_grad():
                         correct = (out.logits.argmax(-1) == joined.actions).float() * choice
@@ -235,15 +262,19 @@ def _pass(model, critic, games: TeacherGames, indices, config: CloneConfig, opti
 def _summary(totals: dict, by_type: dict) -> dict:
     """Per-decision averages of one sweep's summed statistics."""
     choices = max(totals["choices"], 1)
-    return {"nll": totals["nll"] / choices, "accuracy": totals["correct"] / choices,
-            "choice_decisions": totals["choices"],
-            "public_value_mse": totals["value_error"] / max(totals["valued"], 1),
-            "hand_nll_per_card": totals["belief_nll"] / max(totals["decisions"], 1),
-            "accuracy_by_type": {name: hits / count for name, (hits, count) in by_type.items() if count}}
+    return {
+        "nll": totals["nll"] / choices,
+        "accuracy": totals["correct"] / choices,
+        "choice_decisions": totals["choices"],
+        "public_value_mse": totals["value_error"] / max(totals["valued"], 1),
+        "hand_nll_per_card": totals["belief_nll"] / max(totals["decisions"], 1),
+        "accuracy_by_type": {name: hits / count for name, (hits, count) in by_type.items() if count},
+    }
 
 
-def behavior_cloning(checkpoint_path, episode_paths, output_path, config: CloneConfig | None = None,
-                     device: str = "auto") -> dict:
+def behavior_cloning(
+    checkpoint_path, episode_paths, output_path, config: CloneConfig | None = None, device: str = "auto"
+) -> dict:
     """Fit the checkpoint's policy (and value heads) to teacher trajectories; save the best epoch.
 
     The best epoch has the lowest held-out NLL (training NLL without a held-out set).
@@ -260,26 +291,41 @@ def behavior_cloning(checkpoint_path, episode_paths, output_path, config: CloneC
     if not train_ids:
         raise ValueError("no teacher games left for training after the validation split")
     set_learning_modes(model, critic)  # as in PPO
-    optimizer = torch.optim.AdamW(list(model.parameters()) + list(critic.parameters()),
-                                  lr=config.learning_rate, weight_decay=0.0)
+    optimizer = torch.optim.AdamW(
+        list(model.parameters()) + list(critic.parameters()), lr=config.learning_rate, weight_decay=0.0
+    )
     history, best = [], None
     started = time.perf_counter()
     for epoch in range(config.epochs):
         trained = _summary(*_pass(model, critic, games, train_ids, config, optimizer))
         held = _summary(*_pass(model, critic, games, validation_ids, config)) if validation_ids else None
         history.append({"epoch": epoch, "train": trained, "validation": held})
-        print(f"clone epoch {epoch}: train nll {trained['nll']:.4f} acc {trained['accuracy']:.3f}"
-              + (f"; validation nll {held['nll']:.4f} acc {held['accuracy']:.3f}" if held else ""))
+        print(
+            f"clone epoch {epoch}: train nll {trained['nll']:.4f} acc {trained['accuracy']:.3f}"
+            + (f"; validation nll {held['nll']:.4f} acc {held['accuracy']:.3f}" if held else "")
+        )
         score = (held or trained)["nll"]
         if best is None or score < best[0]:
-            best = (score, epoch, {k: v.detach().clone() for k, v in model.state_dict().items()},
-                    {k: v.detach().clone() for k, v in critic.state_dict().items()})
+            best = (
+                score,
+                epoch,
+                {k: v.detach().clone() for k, v in model.state_dict().items()},
+                {k: v.detach().clone() for k, v in critic.state_dict().items()},
+            )
     _, best_epoch, model_state, critic_state = best
     model.load_state_dict(model_state)
     critic.load_state_dict(critic_state)
-    metrics = {"behavior_cloning": {"config": asdict(config), "best_epoch": best_epoch, "history": history,
-               "train_episodes": len(train_ids), "validation_episodes": len(validation_ids),
-               "seconds": time.perf_counter() - started, "source_checkpoint": str(checkpoint_path)}}
+    metrics = {
+        "behavior_cloning": {
+            "config": asdict(config),
+            "best_epoch": best_epoch,
+            "history": history,
+            "train_episodes": len(train_ids),
+            "validation_episodes": len(validation_ids),
+            "seconds": time.perf_counter() - started,
+            "source_checkpoint": str(checkpoint_path),
+        }
+    }
     # No optimizer state: PPO starts its own AdamW moments from the warm start.
     version = save_checkpoint(output_path, model, critic, catalog, updates=checkpoint["updates"], metrics=metrics)
     metrics["policy_version"] = version
@@ -297,9 +343,21 @@ def teacher_game_config(base: dict, games: int, port: int, ai_skill: int, ai_thi
     return config
 
 
-def collect_teacher_games(checkpoint, game_yaml, engine_script, output, games: int, *, batch_games: int = 32,
-                          engine_threads: int | None = None, ai_skill: int = 1, ai_think: int = 0,
-                          seats: str = "both", port: int = 50060, max_retries: int = 3) -> dict:
+def collect_teacher_games(
+    checkpoint,
+    game_yaml,
+    engine_script,
+    output,
+    games: int,
+    *,
+    batch_games: int = 32,
+    engine_threads: int | None = None,
+    ai_skill: int = 1,
+    ai_think: int = 0,
+    seats: str = "both",
+    port: int = 50060,
+    max_retries: int = 3,
+) -> dict:
     """Play `games` teacher games into output/episodes; resumable by counting what is there.
 
     The checkpoint only supplies the card catalog and validation limits for the
@@ -321,9 +379,19 @@ def collect_teacher_games(checkpoint, game_yaml, engine_script, output, games: i
     episodes = root / "episodes"
     episodes.mkdir(parents=True, exist_ok=True)
     summary_file = root / "teacher-summary.json"
-    summary = json.loads(summary_file.read_text(encoding="utf-8")) if summary_file.exists() else {
-        "format_version": 1, "games_played": 0, "batches": [], "checkpoint": str(Path(checkpoint).resolve()),
-        "ai_skill": ai_skill, "ai_think": ai_think, "seats": seats}
+    summary = (
+        json.loads(summary_file.read_text(encoding="utf-8"))
+        if summary_file.exists()
+        else {
+            "format_version": 1,
+            "games_played": 0,
+            "batches": [],
+            "checkpoint": str(Path(checkpoint).resolve()),
+            "ai_skill": ai_skill,
+            "ai_think": ai_think,
+            "seats": seats,
+        }
+    )
     version = load_checkpoint(checkpoint)[3]["policy_version"]
     engine = server = None
     counted = dict.fromkeys(OUTCOMES, 0)  # service totals so far
@@ -372,8 +440,10 @@ def collect_teacher_games(checkpoint, game_yaml, engine_script, output, games: i
             summary["batches"].append(outcome)
             summary["episodes"] = len(list(episodes.glob("*.jsonl")))
             summary_file.write_text(json.dumps(summary, indent=2), encoding="utf-8")
-            print(f"Teacher games {summary['games_played']}/{games}: {json.dumps(outcome)}; "
-                  f"{summary['episodes']} trajectories")
+            print(
+                f"Teacher games {summary['games_played']}/{games}: {json.dumps(outcome)}; "
+                f"{summary['episodes']} trajectories"
+            )
     finally:
         stop()
     return summary

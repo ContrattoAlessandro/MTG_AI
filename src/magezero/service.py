@@ -87,9 +87,19 @@ class PolicyService:
     runs them as one forward pass. There is no wait timer: an idle service answers
     a lone request immediately, and batches grow only under concurrent load.
     """
-    def __init__(self, model, catalog, policy_version: str, output_dir=None, max_sessions: int = 64,
-                 session_ttl: float = 3600, max_steps: int = 10000, max_batch: int = 32,
-                 include_belief: bool = True):
+
+    def __init__(
+        self,
+        model,
+        catalog,
+        policy_version: str,
+        output_dir=None,
+        max_sessions: int = 64,
+        session_ttl: float = 3600,
+        max_steps: int = 10000,
+        max_batch: int = 32,
+        include_belief: bool = True,
+    ):
         if isinstance(max_batch, bool) or not isinstance(max_batch, int) or max_batch < 1:
             raise ValueError("max_batch must be a positive integer")
         self.model = model.eval()
@@ -106,9 +116,16 @@ class PolicyService:
         self.lock = threading.RLock()
         self.queue: queue.SimpleQueue[_Job] = queue.SimpleQueue()
         self.started = time.monotonic()
-        self.counters = {"act_requests": 0, "inferences": 0, "batches": 0, "max_batch": 0,
-                         "act_seconds": 0.0, "inference_seconds": 0.0,
-                         "first_act": None, "last_act": None}
+        self.counters = {
+            "act_requests": 0,
+            "inferences": 0,
+            "batches": 0,
+            "max_batch": 0,
+            "act_seconds": 0.0,
+            "inference_seconds": 0.0,
+            "first_act": None,
+            "last_act": None,
+        }
         # Per-player game outcomes reported to /finish since start or last reload.
         self.results = dict.fromkeys(("win", "loss", "draw", "truncated", "aborted"), 0)
         threading.Thread(target=self._worker, name="policy-inference", daemon=True).start()
@@ -151,8 +168,9 @@ class PolicyService:
         digest = hashlib.sha256(payload_json.encode()).hexdigest()
         with self.lock:
             now = time.monotonic()
-            for expired in [k for k, v in self.sessions.items()
-                            if v.inflight is None and now - v.accessed > self.session_ttl]:
+            for expired in [
+                k for k, v in self.sessions.items() if v.inflight is None and now - v.accessed > self.session_ttl
+            ]:
                 del self.sessions[expired]
             if key in self.completed:
                 raise ValueError("this game/player session is already finished; game IDs must be unique")
@@ -225,8 +243,13 @@ class PolicyService:
                 raise ValueError("player steps must be contiguous and within the configured limit")
             if obs["events"] and obs["events"][0]["seq"] <= session.event_cursor:
                 raise ValueError("history contains an event already recorded")
-            session.records.append({"payload_json": canonical_json({"observation": obs}),
-                                    "action_id": payload["action_id"], "log_probability": 0.0})
+            session.records.append(
+                {
+                    "payload_json": canonical_json({"observation": obs}),
+                    "action_id": payload["action_id"],
+                    "log_probability": 0.0,
+                }
+            )
             session.step, session.fingerprint = obs["step"], digest
             session.response = {"schema_version": SCHEMA_VERSION, "recorded_step": obs["step"]}
             if obs["events"]:
@@ -272,8 +295,7 @@ class PolicyService:
         batch = collate_observations(observations, self.model.config, validate=False).to(device)
         initial = self.model.initial_memory(1, device)
         previous = [job.session.memory or initial for job in jobs]
-        memory = PolicyMemory(torch.cat([m.events for m in previous]),
-                              torch.cat([m.decisions for m in previous]))
+        memory = PolicyMemory(torch.cat([m.events for m in previous]), torch.cat([m.decisions for m in previous]))
         with torch.inference_mode():
             out = self.model(batch, memory)
             distribution = out.distribution()
@@ -285,12 +307,17 @@ class PolicyService:
             if self.include_belief:
                 count_probabilities = out.belief.probabilities.cpu()
                 expected_counts = out.belief.expected_counts.cpu()
-                roles = None if out.role_presence is None else (
-                    out.role_presence.cpu().tolist(), out.role_expected_counts.cpu().tolist())
+                roles = (
+                    None
+                    if out.role_presence is None
+                    else (out.role_presence.cpu().tolist(), out.role_expected_counts.cpu().tolist())
+                )
             actions = actions.cpu().tolist()
             # Clone rows so each session keeps only its own state, not the batch.
-            memories = [PolicyMemory(out.memory.events[i:i + 1].clone(),
-                                     out.memory.decisions[i:i + 1].clone()) for i in range(len(jobs))]
+            memories = [
+                PolicyMemory(out.memory.events[i : i + 1].clone(), out.memory.decisions[i : i + 1].clone())
+                for i in range(len(jobs))
+            ]
         responses = []
         for i, obs in enumerate(observations):
             kinds = len(obs["opponent_deck"])
@@ -300,7 +327,7 @@ class PolicyService:
                 "action_id": obs["actions"][actions[i]]["id"],
                 "log_probability": float(log_probability[i]),
                 "value": float(values[i]),
-                "probabilities": probabilities[i, :len(obs["actions"])].tolist(),
+                "probabilities": probabilities[i, : len(obs["actions"])].tolist(),
             }
             if not self.include_belief:
                 responses.append(response)
@@ -313,9 +340,9 @@ class PolicyService:
             }
             if roles is not None:
                 response["belief"]["roles"] = {
-                    name: {"probability_at_least_one": float(roles[0][i][r]),
-                           "expected_count": float(roles[1][i][r])}
-                    for r, name in enumerate(ROLE_NAMES)}
+                    name: {"probability_at_least_one": float(roles[0][i][r]), "expected_count": float(roles[1][i][r])}
+                    for r, name in enumerate(ROLE_NAMES)
+                }
             responses.append(response)
         return responses, memories
 
@@ -323,8 +350,13 @@ class PolicyService:
         session, obs = job.session, job.observation
         if self.output_dir and session.sampled:
             # Parsed back only at /finish, off the per-decision path.
-            session.records.append({"payload_json": job.payload_json,
-                "action_id": response["action_id"], "log_probability": response["log_probability"]})
+            session.records.append(
+                {
+                    "payload_json": job.payload_json,
+                    "action_id": response["action_id"],
+                    "log_probability": response["log_probability"],
+                }
+            )
         session.memory = memory
         session.step, session.fingerprint, session.response = obs["step"], job.digest, response
         session.accessed = time.monotonic()
@@ -347,8 +379,9 @@ class PolicyService:
             self.output_dir = Path(output_dir) if output_dir else None
             self.completed.clear()
             self.started = time.monotonic()
-            self.counters = {key: (None if key in ("first_act", "last_act") else 0 * value)
-                             for key, value in self.counters.items()}
+            self.counters = {
+                key: (None if key in ("first_act", "last_act") else 0 * value) for key, value in self.counters.items()
+            }
             self.results = dict.fromkeys(self.results, 0)
 
     def finish(self, payload: dict) -> dict:
@@ -366,8 +399,11 @@ class PolicyService:
             raise ValueError("labels must be a list")
         key = (payload["game_id"], payload["player_id"])
         digest = fingerprint(payload)
-        if (isinstance(payload["result"], bool) or payload["result"] not in (-1, 0, 1)
-                or not isinstance(payload["terminal"], bool)):
+        if (
+            isinstance(payload["result"], bool)
+            or payload["result"] not in (-1, 0, 1)
+            or not isinstance(payload["terminal"], bool)
+        ):
             raise ValueError("result must be -1/0/+1 and terminal must be a boolean")
         with self.lock:
             if key in self.completed:
@@ -389,12 +425,23 @@ class PolicyService:
                 for i, (record, label) in enumerate(zip(session.records, labels)):
                     observation = json.loads(record["payload_json"])["observation"]
                     validate_labels(label, observation)
-                    steps.append({"observation": observation, "action_id": record["action_id"],
-                                  "log_probability": record["log_probability"], "labels": label,
-                                  "reward": payload["result"] if i == len(session.records) - 1 else 0})
+                    steps.append(
+                        {
+                            "observation": observation,
+                            "action_id": record["action_id"],
+                            "log_probability": record["log_probability"],
+                            "labels": label,
+                            "reward": payload["result"] if i == len(session.records) - 1 else 0,
+                        }
+                    )
                 version = TEACHER_VERSION if session.teacher else self.policy_version
-                episode = {"schema_version": SCHEMA_VERSION, "policy_version": version,
-                           "steps": steps, "terminal": payload["terminal"], "truncated": truncated}
+                episode = {
+                    "schema_version": SCHEMA_VERSION,
+                    "policy_version": version,
+                    "steps": steps,
+                    "terminal": payload["terminal"],
+                    "truncated": truncated,
+                }
                 self.output_dir.mkdir(parents=True, exist_ok=True)
                 path = self.output_dir / f"episode_{uuid.uuid4().hex}.jsonl"
                 temporary = path.with_suffix(".tmp")
@@ -406,11 +453,20 @@ class PolicyService:
                         temporary.unlink()
             # Aborted games release memory and are excluded from PPO data. Truncated
             # games are recorded for bootstrapping; neither is ever called a draw.
-            response = {"recorded": path is not None, "episode_file": str(path) if path else None,
-                        "terminal": payload["terminal"], "truncated": truncated}
+            response = {
+                "recorded": path is not None,
+                "episode_file": str(path) if path else None,
+                "terminal": payload["terminal"],
+                "truncated": truncated,
+            }
             del self.sessions[key]
-            outcome = ("truncated" if truncated else "aborted" if not payload["terminal"]
-                       else {1: "win", -1: "loss", 0: "draw"}[payload["result"]])
+            outcome = (
+                "truncated"
+                if truncated
+                else "aborted"
+                if not payload["terminal"]
+                else {1: "win", -1: "loss", 0: "draw"}[payload["result"]]
+            )
             self.results[outcome] += 1
             self.completed[key] = (digest, response)
             while len(self.completed) > 1024:
@@ -429,8 +485,11 @@ def create_app(service: PolicyService, allow_reload: bool = False) -> Flask:
 
     @app.get("/healthz")
     def health():
-        return jsonify(schema_version=SCHEMA_VERSION, policy_version=service.policy_version,
-                       architecture=architecture_name(service.model.config))
+        return jsonify(
+            schema_version=SCHEMA_VERSION,
+            policy_version=service.policy_version,
+            architecture=architecture_name(service.model.config),
+        )
 
     @app.get("/catalog")
     def catalog():
@@ -453,6 +512,7 @@ def create_app(service: PolicyService, allow_reload: bool = False) -> Flask:
         return jsonify(service.finish(request.get_json()))
 
     if allow_reload:
+
         @app.post("/reload")
         def reload():
             # Collection runners keep this process (and its imports) between
@@ -461,7 +521,8 @@ def create_app(service: PolicyService, allow_reload: bool = False) -> Flask:
             if not isinstance(payload, dict) or set(payload) != {"checkpoint", "episodes"}:
                 raise ValueError("/reload requires checkpoint and episodes (null to disable recording)")
             if not isinstance(payload["checkpoint"], str) or not (
-                    payload["episodes"] is None or isinstance(payload["episodes"], str)):
+                payload["episodes"] is None or isinstance(payload["episodes"], str)
+            ):
                 raise ValueError("checkpoint must be a path and episodes a path or null")
             device = next(service.model.parameters()).device
             model, _, catalog, data = load_checkpoint(payload["checkpoint"], device)
@@ -471,14 +532,24 @@ def create_app(service: PolicyService, allow_reload: bool = False) -> Flask:
     return app
 
 
-def serve(checkpoint, host: str = "127.0.0.1", port: int = 50052, output_dir=None, device: str = "auto",
-          max_batch: int = 32, include_belief: bool = True, torch_threads: int = 1, allow_reload: bool = False) -> None:
+def serve(
+    checkpoint,
+    host: str = "127.0.0.1",
+    port: int = 50052,
+    output_dir=None,
+    device: str = "auto",
+    max_batch: int = 32,
+    include_belief: bool = True,
+    torch_threads: int = 1,
+    allow_reload: bool = False,
+) -> None:
     """Serve a checkpoint with waitress until interrupted."""
     import waitress
 
     torch.set_num_threads(torch_threads)
     model, _, catalog, data = load_checkpoint(checkpoint, device)
-    service = PolicyService(model, catalog, data["policy_version"], output_dir, max_batch=max_batch,
-                            include_belief=include_belief)
+    service = PolicyService(
+        model, catalog, data["policy_version"], output_dir, max_batch=max_batch, include_belief=include_belief
+    )
     print(f"Serving policy {data['policy_version']} on {host}:{port}; device={next(model.parameters()).device}")
     waitress.serve(create_app(service, allow_reload), host=host, port=port, threads=16)

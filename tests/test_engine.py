@@ -6,7 +6,7 @@ import pytest
 
 from magezero.engine import PersistentEngine
 
-FAKE = '''
+FAKE = """
 import sys
 assert sys.argv[1:] == ["--serve"]
 print("engine log line", flush=True)
@@ -23,7 +23,7 @@ for line in sys.stdin:
         time.sleep(600)
     else:
         print("MZ-POLICY RESULT 3 4", flush=True)
-'''
+"""
 
 
 @pytest.fixture

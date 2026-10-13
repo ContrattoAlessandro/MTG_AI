@@ -16,9 +16,9 @@ import math
 import torch
 
 # Player entities: kind 0, zone 0. Battlefield objects: zone 1.
-_LIFE, _POISON, _COMMANDER_DAMAGE = 11, 12, 15        # player entity slots (/40, /10, /21)
-_POWER, _CREATURE, _LAND = 0, 21, 22                  # object entity slots (/20, flags)
-_HAND_SELF, _HAND_OPPONENT = 5, 6                     # global slots (/60)
+_LIFE, _POISON, _COMMANDER_DAMAGE = 11, 12, 15  # player entity slots (/40, /10, /21)
+_POWER, _CREATURE, _LAND = 0, 21, 22  # object entity slots (/20, flags)
+_HAND_SELF, _HAND_OPPONENT = 5, 6  # global slots (/60)
 
 
 def _health(features) -> float:
@@ -43,10 +43,12 @@ def potential(observation: dict) -> float:
             if features[_CREATURE]:
                 power[side] += max(0.0, features[_POWER] * 20)
     hands = observation["globals"]
-    x = (1.0 * (health[0] - health[1])
-         + 0.25 * (hands[_HAND_SELF] - hands[_HAND_OPPONENT]) * 60 / 7
-         + 0.25 * (permanents[0] - permanents[1]) / 10
-         + 0.5 * (power[0] - power[1]) / 20)
+    x = (
+        1.0 * (health[0] - health[1])
+        + 0.25 * (hands[_HAND_SELF] - hands[_HAND_OPPONENT]) * 60 / 7
+        + 0.25 * (permanents[0] - permanents[1]) / 10
+        + 0.5 * (power[0] - power[1]) / 20
+    )
     return math.tanh(x)
 
 
