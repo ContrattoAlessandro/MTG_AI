@@ -1,6 +1,6 @@
 # Next session: single-deck Commander Duel agent
 
-Written 12 October 2026 as a handoff. **Update 13 October:** an architecture review changed the plan; start with [review-handoff.md](review-handoff.md), which lists what is done (uncommitted) and what remains. Then read this file, then `docs/architecture.md`, `docs/long-run.md`, `docs/policy-protocol.md` and `docs/xmage-integration.md`.
+Written 12 October 2026 as a handoff. **Current plan: [final-run-plan.md](final-run-plan.md) (13 October evening).** **Update 13 October:** an architecture review changed the plan; start with [review-handoff.md](review-handoff.md), which lists what is done (uncommitted) and what remains. Then read this file, then `docs/architecture.md`, `docs/long-run.md`, `docs/policy-protocol.md` and `docs/xmage-integration.md`.
 
 ## Goal
 
