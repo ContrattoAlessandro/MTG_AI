@@ -154,6 +154,8 @@ def test_wilson_interval_and_selection_metric():
     assert runner.wilson_interval(0, 0) is None
     assert runner._primary_score({"xmage-ai": {"score": 0.4}, "anchor:a": {"score": 0.9}}) == 0.4
     assert runner._primary_score({"anchor:a": {"score": 0.5}, "anchor:b": {"score": 0.7}}) == pytest.approx(0.6)
+    assert runner._primary_score({"xmage-ai": {"score": 0.4}, "xmage-ai:kinnan": {"score": 0.2},
+                                  "anchor:a": {"score": 0.9}}) == pytest.approx(0.3)
 
 
 class _FakeServices:
@@ -172,6 +174,8 @@ class _FakeCollector:
     fail_next = 0
     resets = 0
     evaluations = 0
+    last_config = None
+    configs = []
 
     def __init__(self, script, root, services):
         self.services, self.restarts = services, 0
@@ -179,6 +183,8 @@ class _FakeCollector:
     def run(self, config_file, timeout):
         config = yaml.safe_load(open(config_file, encoding="utf-8"))
         assert config["server"]["alternate_seats"] is True and timeout > 0
+        _FakeCollector.last_config = config_file.name
+        _FakeCollector.configs.append((config_file.name, config))
         if _FakeCollector.fail_next:
             _FakeCollector.fail_next -= 1
             raise RuntimeError("engine batch failed: simulated crash")
@@ -210,6 +216,14 @@ def _fake_train(current, shards, output, training, device):
     return {"decisions": len(shards)}
 
 
+def _mock_results(monkeypatch, scores):
+    """Service outcome counters: evaluation batches take the next scripted score."""
+    def results(ports):
+        win = int(100 * next(scores)) if _FakeCollector.last_config.startswith("eval-") else 50
+        return {"win": win, "loss": 100 - win, "draw": 0, "truncated": 0, "aborted": 0}
+    monkeypatch.setattr(runner, "_results", results)
+
+
 def test_runner_retries_resumes_prunes_and_keeps_the_best(components, tmp_path, monkeypatch):
     model, critic, catalog = components
     initial = tmp_path / "initial.pt"
@@ -231,8 +245,7 @@ def test_runner_retries_resumes_prunes_and_keeps_the_best(components, tmp_path, 
     monkeypatch.setattr(runner, "_ServicePool", lambda *args: _FakeServices())
     monkeypatch.setattr(runner, "train_from_files", _fake_train)
     scores = iter([0.30, 0.55, 0.45, 0.70])
-    monkeypatch.setattr(runner, "_results", lambda ports: (lambda w: {
-        "win": w, "loss": 100 - w, "draw": 0, "truncated": 0, "aborted": 0})(int(100 * next(scores))))
+    _mock_results(monkeypatch, scores)
     output = tmp_path / "run"
     common = dict(games=4, eval_every=1, eval_games=8, eval_ai_skill=6, keep_every=2, snapshot_every=5,
                   min_free_gb=0.0)
@@ -265,3 +278,56 @@ def test_runner_retries_resumes_prunes_and_keeps_the_best(components, tmp_path, 
     assert metrics["games"] == {"terminal": 3, "requested": 4, "truncated": 1, "errors": 0, "timeouts": 0}
     assert metrics["truncation_fraction"] == 0.25 and "xmage-ai" in metrics["evaluation"]
     assert len((output / "evaluations.jsonl").read_text().splitlines()) == 4
+
+
+def test_gauntlet_generations_pin_the_learner_deck(components, tmp_path, monkeypatch):
+    model, critic, catalog = components
+    initial = tmp_path / "initial.pt"
+    save_checkpoint(initial, model, critic, catalog, policy_version="initial")
+    script = tmp_path / "engine.bat"
+    script.write_text("rem fake")
+    learner, gauntlet = tmp_path / "learner.dck", tmp_path / "kinnan.dck"
+    for deck in (learner, gauntlet):
+        deck.write_text("1 Forest")
+    game = tmp_path / "game.yml"
+    game.write_text(yaml.safe_dump({
+        "game_mode": "commander",
+        "player_a": {"deckPath": str(learner), "type": "policy"},
+        "player_b": {"deckPath": str(learner), "type": "policy"},
+        "training": {"games": 4, "threads": 2, "max_turns": 50, "max_minutes": 5}}))
+    policy = tmp_path / "policy.yml"
+    policy.write_text(yaml.safe_dump({"training": {"epochs": 1}}))
+    monkeypatch.setattr(runner, "_Collector", _FakeCollector)
+    monkeypatch.setattr(runner, "_ServicePool", lambda *args: _FakeServices())
+    trained = []
+    monkeypatch.setattr(runner, "train_from_files",
+                        lambda current, shards, *rest: trained.append(list(shards)) or _fake_train(current, shards, *rest))
+    _mock_results(monkeypatch, iter([0.25, 0.75]))
+    _FakeCollector.configs, _FakeCollector.fail_next = [], 0
+    output = tmp_path / "run"
+    runner.run_selfplay(initial, game, policy, script, output, iterations=1, games=8, eval_every=1, eval_games=4,
+                        eval_ai_skill=5, min_free_gb=0.0, gauntlet=[gauntlet], gauntlet_fraction=0.25,
+                        gauntlet_ai_skill=2, gauntlet_ai_think=1, eval_greedy=True)
+    configs = dict(_FakeCollector.configs)
+    selfplay, versus = configs["game.yml"], configs["gauntlet.yml"]
+    assert selfplay["training"]["games"] == 6 and versus["training"]["games"] == 2
+    assert selfplay["player_b"]["type"] == "policy" and selfplay["server"]["sample"] is True
+    # The learner keeps its own deck in every seat; the gauntlet deck is XMage's AI.
+    assert versus["server"]["learner_keeps_deck"] is True
+    assert versus["player_a"]["deckPath"] == str(learner.resolve())
+    assert versus["player_b"] == {**versus["player_b"], "type": "xmage-ai", "deckPath": str(gauntlet.resolve())}
+    assert versus["opponent_ai"] == {"skill": 2, "think_seconds": 1} and versus["game_mode"] == "commander"
+    # Both kinds of trajectories reach one PPO update.
+    assert sorted(path.parent.name for path in trained[0]) == ["gauntlet"] * 2 + ["selfplay"] * 6
+    metrics = json.loads((output / "generation_0000" / "metrics.json").read_text())
+    assert set(metrics["games_by_kind"]) == {"selfplay", "gauntlet:kinnan"}
+    assert metrics["games_by_kind"]["gauntlet:kinnan"]["learner_results"]["win"] == 50
+    # Evaluation covers the mirror and each gauntlet deck against XMage's AI, greedily.
+    evaluations = {name: config for name, config in _FakeCollector.configs if name.startswith("eval-")}
+    assert set(evaluations) == {"eval-xmage-ai.yml", "eval-xmage-ai-kinnan.yml"}
+    assert evaluations["eval-xmage-ai-kinnan.yml"]["player_b"]["deckPath"] == str(gauntlet.resolve())
+    assert all(config["server"]["sample"] is False and config["opponent_ai"] == {"skill": 5}
+               for config in evaluations.values())
+    assert set(metrics["evaluation"]) == {"xmage-ai", "xmage-ai:kinnan"}
+    state = json.loads((output / "run-state.json").read_text())
+    assert state["best"]["score"] == pytest.approx(0.5)  # mean over the AI benchmarks

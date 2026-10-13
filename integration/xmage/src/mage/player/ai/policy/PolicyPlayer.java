@@ -29,9 +29,18 @@ public final class PolicyPlayer extends ComputerPlayer {
     private transient UUID encodedGame;
     private List<Map<String, Object>> labels = new ArrayList<>();
     private int mulligans = 0;
+    // Abilities the engine refused to activate (failed payment or choices) in the
+    // current priority window; they are not offered again until the game moves on.
+    private Set<String> rejected = new HashSet<>();
+    private String rejectedWindow = "";
 
     public PolicyPlayer(String name, RangeOfInfluence range, String endpoint) {
         this(name, range, endpoint, true, true);
+    }
+
+    /** Recorded batch game; sample=false plays the most likely action (evaluation, never trained on). */
+    public PolicyPlayer(String name, RangeOfInfluence range, String endpoint, boolean sample) {
+        this(name, range, endpoint, true, sample);
     }
 
     /**
@@ -66,9 +75,14 @@ public final class PolicyPlayer extends ComputerPlayer {
         this.encodedGame = other.encodedGame;
         this.labels = other.labels;
         this.mulligans = other.mulligans;
+        this.rejected = other.rejected;
+        this.rejectedWindow = other.rejectedWindow;
     }
 
     @Override public PolicyPlayer copy() { return new PolicyPlayer(this); }
+
+    /** The policy service's max_actions. */
+    private static final int MAX_OPTIONS = 2048;
 
     private static String setting(String property, String environment, String fallback) {
         String value = System.getProperty(property);
@@ -161,8 +175,12 @@ public final class PolicyPlayer extends ComputerPlayer {
         if (game.isSimulation()) { pass(game); return false; }
         game.getState().setPriorityPlayerId(getId());
         game.firePriorityEvent(getId());
+        String window = game.getTurnNum() + ":" + game.getTurnStepType() + ":" + game.getStack().size()
+            + ":" + game.getBattlefield().getAllPermanents().size() + ":" + getHand().size();
+        if (!window.equals(rejectedWindow)) { rejected.clear(); rejectedWindow = window; }
         List<ActivatedAbility> abilities = new ArrayList<>(getPlayable(game, true));
         abilities.removeIf(Ability::isManaAbility);
+        abilities.removeIf(ability -> rejected.contains(abilityKey(ability)));
         abilities.sort(Comparator.comparing((Ability a) -> String.valueOf(a.getSourceId())).thenComparing(Ability::toString));
         abilities.add(0, new PassAbility());
         List<Map<String, Object>> choices = new ArrayList<>();
@@ -176,8 +194,17 @@ public final class PolicyPlayer extends ComputerPlayer {
         ActivatedAbility chosen = abilities.get(select(game, choices, null));
         game.setLastPriority(getId());
         if (chosen instanceof PassAbility) { pass(game); return false; }
-        if (!activateAbility(chosen, game)) throw new IllegalStateException("engine rejected a supplied priority action");
+        if (!activateAbility(chosen, game)) {
+            // XMage lists some abilities as playable that then fail during payment or
+            // choices (the state is rolled back). Like its own AI, treat that as no
+            // action, and drop the ability from this priority window's candidates.
+            rejected.add(abilityKey(chosen));
+        }
         return true;
+    }
+
+    private static String abilityKey(Ability ability) {
+        return ability.getSourceId() + "|" + ability.getOriginalId();
     }
 
     @Override protected boolean makeChoice(Outcome outcome, Target target, Ability source, Game game, Cards fromCards) {
@@ -239,6 +266,12 @@ public final class PolicyPlayer extends ComputerPlayer {
 
     @Override public boolean choose(Outcome outcome, Choice choice, Game game) {
         List<String> options = new ArrayList<>(choice.getKeyChoices().isEmpty() ? choice.getChoices() : choice.getKeyChoices().keySet());
+        if (options.size() > MAX_OPTIONS && choice.getKeyChoices().isEmpty() && client != null) {
+            // "Name a card" lists every card in XMage. Only names in the card pool
+            // can matter in these games, so offer those.
+            options.retainAll(client.cardIds.keySet());
+        }
+        if (options.size() > MAX_OPTIONS) throw new IllegalStateException("choice has " + options.size() + " options, above the candidate limit");
         Collections.sort(options);
         if (options.isEmpty()) return false;
         List<Map<String, Object>> actions = new ArrayList<>();
@@ -252,7 +285,10 @@ public final class PolicyPlayer extends ComputerPlayer {
 
     @Override protected int makeChoiceAmount(int min, int max, Game game, Ability source, boolean isManaPay) {
         if (min >= max) return min;
-        if ((long) max - min > 2047) throw new IllegalStateException("amount choice exceeds candidate limit; use a hierarchical amount decoder");
+        // Open-ended ranges ("choose a number", Sanctum Prelate: 0 to 2^31) offer the
+        // smallest 256 values, a legal subset that covers every mana value and life
+        // total in practice. Ranges within the candidate limit are offered whole.
+        if ((long) max - min >= MAX_OPTIONS) max = min + 255;
         List<Map<String, Object>> actions = new ArrayList<>();
         for (int i = min; i <= max; i++) actions.add(action("amount-" + i, "amount",
             source == null ? null : source.getSourceId(), null, game, i));
@@ -410,10 +446,14 @@ public final class PolicyPlayer extends ComputerPlayer {
     }
 
     @Override public int chooseReplacementEffect(Map<String, String> effects, Map<String, MageObject> objects, Game game) {
+        // XMage reads the result as an index into the map's iteration order; the keys
+        // are object/effect identifiers, not numbers.
         List<String> keys = new ArrayList<>(effects.keySet());
-        Collections.sort(keys);
+        if (keys.size() <= 1) return 0;
+        List<String> sorted = new ArrayList<>(keys);
+        Collections.sort(sorted);
         List<Map<String, Object>> actions = new ArrayList<>();
-        for (int i = 0; i < keys.size(); i++) actions.add(describe(action("replacement-" + i, "order", null, null, game, i), effects.get(keys.get(i))));
-        return Integer.parseInt(keys.get(select(game, actions, null)));
+        for (int i = 0; i < sorted.size(); i++) actions.add(describe(action("replacement-" + i, "order", null, null, game, i), effects.get(sorted.get(i))));
+        return keys.indexOf(sorted.get(select(game, actions, null)));
     }
 }

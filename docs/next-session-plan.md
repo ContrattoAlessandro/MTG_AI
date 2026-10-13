@@ -16,11 +16,27 @@ One agent that pilots **one Commander deck** (example: Winota, Joiner of Forces)
 | Opponents | Mirror self-play plus league snapshots, **plus** a gauntlet of decks piloted by XMage's AI (see task C). Not mirror only: a pure mirror only meets the deck's own interaction. |
 | Format | Commander **Duel** only. Multiplayer pods would need a redesign: one opponent is assumed throughout the observation, belief and seats. |
 
+## Progress, 12–13 October (second session)
+
+Inputs received: the learner is **Winota, Joiner of Forces** and the only gauntlet deck is **Kinnan, Bonder Prodigy** (the user wants exactly these two). Lists in `decks-src/`, converted to `xmage/decks/winota.dck` and `kinnan.dck`. Three cards are missing from this XMage build and were substituted with the user's agreement (Mayor Tong → Ragavan; Avatar Sanctuary → Breeding Pool; Tidus → Bounding Krasis). Task E: "later / no" for now.
+
+| Task | State |
+|---|---|
+| A Commander Duel | Done. `game_mode: commander`; command-zone entities; entity vector 48 wide (commander flag, casts, commander damage); opponent commander in the known deck; library sizes /100. Limits: `max_turns` 60, `max_events` 8,192. |
+| B Catalog | Done. 173 kinds incl. 10 tokens and 5 other faces; every card role-annotated (`scripts/commander_roles.py`); fresh `artifacts/commander-initial.pt` (seed 20261013, `configs/policy-final.yml`). |
+| C Gauntlet | Done. `mz selfplay --gauntlet ... --gauntlet-fraction --gauntlet-ai-skill --gauntlet-ai-think --eval-greedy`; deck pinning (`learner_keeps_deck`); per-deck evaluation; test in `tests/test_long_run.py`. |
+| Engine fixes | Six `PolicyPlayer`/`PolicyHistory` fixes, fast-fail off, and five engine patches, listed in [XMage integration](xmage-integration.md#commander-duel). |
+| D Launch check | Done 13 October (GPU approved by the user); results below. Final run not started. |
+
+Measured (CPU only, untrained policy, 13 October): Winota mirror, 64 games on 12 threads in 82 s, **0 errors**, 79 decisions per player per game, longest game 59 turns, no truncations at `max_turns` 60. Gauntlet vs Kinnan (XMage AI skill 1), 16 games on 16 threads after the engine patches: 15 terminal, 0 errors, 1 AI action loop (now stopped after `max_turn_seconds` 120 and discarded); most games end within 1–3 minutes, turns 13–26. Before the patches it was 8 games in 9 minutes with 3 stack overflows. One mixed generation (16 mirror + 16 gauntlet, then 8+8 greedy evaluation games) took 362 s on CPU: 30/32 terminal, 0 errors, 2 timeouts (6%), 3,341 decisions. The untrained policy won 2 of 14 gauntlet games and 0 of 16 greedy evaluation games, as expected before training.
+
+Launch check (13 October, RTX 5070 idle, 16 engine threads, `artifacts/commander-launch-check/`): 25 generations of 64 games (half mirror, half gauntlet vs Kinnan at AI skill 1) in 88 minutes, 1,600 games, 125k recorded decisions. Learner (CUDA) 7–15 s per generation, about 1,000 decision passes/s: collection is about 95% of the time, so the learner is not the bottleneck and bf16 is unnecessary. 66 games (4%) failed, all against Kinnan: XMage's AI looping one ability (Basalt Monolith untap) and "AI can't find good blocker combination". Both fixed afterwards (`ai-activation-cap.patch`, fast-fail off): 128 all-gauntlet games then had 0 errors and 0 timeouts, at 110–173 s per 64-game generation (about 1,300–2,000 games/hour). Learning signals over 25 generations: value loss 0.98 → 0.5, entropy 0.97 → 0.91, KL 0.002–0.005; training-game wins vs Kinnan rose from about 15% to about 25% (sampling). Greedy 16-game evaluations (score vs XMage AI on Winota / on Kinnan): 0.29, 0.38, 0.16, 0.25, 0.31: too noisy to show a trend at 16 games. Disk: about 52 MB per kept checkpoint, about 20 MB per generation otherwise.
+
+Remaining: the final run. Use `--eval-games 32` or more (16 is noise-dominated) and `--eval-every 10`. Human play: `mz play --checkpoint <best.pt>`, then a "Commander Two Player Duel" table in the XMage client, with the user's Kinnan (or Winota) list using only catalog cards.
+
 ## Inputs needed from the user before starting
 
-1. **The learner's deck list** (100 cards, commander marked). Put it in `xmage/decks/` as a `.dck`; XMage reads the commander from the sideboard section (`SB:` lines).
-2. **3–5 gauntlet decks** typical of the user's playgroup, also as `.dck` with commanders.
-3. **Learning from the user's own games (task E): yes or no.** Recommended for a synergy deck.
+All received (above).
 
 ## State at handoff
 

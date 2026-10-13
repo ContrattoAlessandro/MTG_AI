@@ -1,0 +1,45 @@
+diff --git a/Mage.Server.Plugins/Mage.Player.AI/src/main/java/mage/player/ai/ComputerPlayer.java b/Mage.Server.Plugins/Mage.Player.AI/src/main/java/mage/player/ai/ComputerPlayer.java
+index 625c56ae..5e205cc4 100644
+--- a/Mage.Server.Plugins/Mage.Player.AI/src/main/java/mage/player/ai/ComputerPlayer.java
++++ b/Mage.Server.Plugins/Mage.Player.AI/src/main/java/mage/player/ai/ComputerPlayer.java
+@@ -83,7 +83,9 @@ public class ComputerPlayer extends PlayerImpl {
+     // * use yours CPU cores for best performance
+     // TODO: add server config to control max AI threads (with CPU cores by default)
+     // TODO: rework AI implementation to use multiple sims calculation instead one by one
+-    final static int COMPUTER_MAX_THREADS_FOR_SIMULATIONS = 5;//DebugUtil.AI_ENABLE_DEBUG_MODE ? 1 : 5;
++    // MageZero patch: -Dxmage.ai.simulationThreads=N (default 5). Not a compile-time
++    // constant, so ComputerPlayer6 must be recompiled with this class.
++    final static int COMPUTER_MAX_THREADS_FOR_SIMULATIONS = Math.max(1, Integer.getInteger("xmage.ai.simulationThreads", 5));//DebugUtil.AI_ENABLE_DEBUG_MODE ? 1 : 5;
+ 
+ 
+     // remember picked cards for better draft choices
+@@ -467,11 +469,25 @@ public class ComputerPlayer extends PlayerImpl {
+             payManaMode = false;
+         }
+     }
++    // MageZero patch: mana abilities that cost mana (Prismite, Energy Refractor, Urn of
++    // Godfire) can pay for each other without end; the nested payments then overflow
++    // the stack. Paying through more than a few nested mana abilities is never needed.
++    private static final int MAX_MANA_PAYMENT_DEPTH = 8;
++    private transient int manaPaymentDepth = 0;
++
+     protected boolean playManaHandling(Ability ability, ManaCost unpaid, final Game game) {
+-        isPayingMana = true;
+-        boolean out = playManaHandlingHelper(ability, unpaid, game);
+-        isPayingMana = false;
+-        return out;
++        if (manaPaymentDepth >= MAX_MANA_PAYMENT_DEPTH) {
++            return false;
++        }
++        manaPaymentDepth++;
++        try {
++            isPayingMana = true;
++            boolean out = playManaHandlingHelper(ability, unpaid, game);
++            isPayingMana = false;
++            return out;
++        } finally {
++            manaPaymentDepth--;
++        }
+     }
+     private boolean playManaHandlingHelper(Ability ability, ManaCost unpaid, final Game game) {
+         Set<ApprovingObject> approvingObjects = game.getContinuousEffects().asThough(ability.getSourceId(), AsThoughEffectType.SPEND_OTHER_MANA, ability, ability.getControllerId(), game);

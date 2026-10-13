@@ -1,0 +1,35 @@
+# Commander Duel gauntlet: Winota (policy) vs Kinnan piloted by XMage's AI.
+goes_first: random
+game_mode: commander
+player_a:
+  deckPath: xmage/decks/winota.dck
+  type: policy
+  hiddenInfo:
+    see_opponent_hand: false
+  gameplay:
+    mulligans_enabled: true
+    manual_tapping: false
+player_b:
+  deckPath: xmage/decks/kinnan.dck
+  type: xmage-ai
+  hiddenInfo:
+    see_opponent_hand: false
+  gameplay:
+    mulligans_enabled: true
+    manual_tapping: false
+training:
+  games: 32
+  threads: 4
+  max_turns: 60
+  max_minutes: 30
+  # One turn longer than this is an engine or AI loop; the game ends as a timeout.
+  max_turn_seconds: 120
+server:
+  host: 127.0.0.1
+  port: 50052
+  opponent_port: 50052
+  # One learner deck: the deck always moves with the learner when seats swap.
+  learner_keeps_deck: true
+logging:
+  log_feature_hash: false
+  save_final_wr: true

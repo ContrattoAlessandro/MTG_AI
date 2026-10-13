@@ -12,8 +12,21 @@ Implemented 12 October 2026. This covers the machinery for an unattended multi-d
 | Recovery | A failed or hung batch (`engine.run` timeout, derived from games/threads/max_minutes) kills the JVM, restarts the policy services, discards that attempt's episodes, and replays the generation, up to `--max-retries` times. `run-state.json` is written atomically after every generation; `--resume` continues from it and moves any half-finished generation folder aside as `generation_NNNN.incomplete-*`. |
 | Failure guard | The run stops (resumable) if more than `--max-failure-fraction` (default 25%) of a generation's games error or time out, since training on the survivors would bias the data. |
 | Disk | Episodes are deleted after training unless `--keep-episodes`. The checkpoint a generation trained from is deleted unless it is every `--keep-every`-th one. League snapshots are stored as optimizer-free copies in `snapshots/` (about 1/3 the size). The run stops cleanly below `--min-free-gb`. |
-| Seats | Odd games swap the two controllers between seats, so the learner plays both decks against historical opponents and benchmarks. The starting player alternates independently. |
-| Evaluation | Every `--eval-every` generations (and after the last one), the learner plays `--eval-games` games against XMage's built-in AI (`ComputerPlayer7`, `--eval-ai-skill`, 0 disables it) and against each `--eval-anchor` checkpoint. These games are never recorded for training. Results go to `evaluations.jsonl` and the generation's `metrics.json`. The best checkpoint by score against XMage's AI (or the mean anchor score) is copied to `best.pt` without optimizer state. Score = (wins + ½·(draws + truncated)) / scored games; errors are reported, never scored. |
+| Seats | Odd games swap the two controllers between seats, so the learner plays both decks against historical opponents and benchmarks. The starting player alternates independently. With `server.learner_keeps_deck: true` (set in `configs/commander-mirror.yml`, and always in gauntlet games) the deck moves with the learner, so a single-deck learner never plays another deck. |
+| Gauntlet (13 Oct) | `--gauntlet DECK ...` adds a third kind of game: a `--gauntlet-fraction` share of every generation (default 0.5) puts the learner's deck (player_a) against a gauntlet deck piloted by XMage's AI (`--gauntlet-ai-skill`, default 3; `--gauntlet-ai-think` caps its seconds per decision). Decks rotate by generation. Each generation runs the mirror/league batch, then the gauntlet batch, and trains on both in one PPO update; only the learner's side of a gauntlet game is recorded. Trajectories go to `episodes/selfplay` and `episodes/gauntlet`; league win rates use only the self-play ones. `metrics.json` has `games_by_kind` with each batch's engine counts and the learner's results. |
+| Evaluation | Every `--eval-every` generations (and after the last one), the learner plays `--eval-games` games against XMage's built-in AI (`ComputerPlayer7`, `--eval-ai-skill`, 0 disables it) and against each `--eval-anchor` checkpoint. These games are never recorded for training. With a gauntlet, each gauntlet deck is also evaluated against XMage's AI (`xmage-ai:<deck>`), and `--eval-greedy` evaluates with the most likely action instead of sampling. Results go to `evaluations.jsonl` and the generation's `metrics.json`. The best checkpoint by mean score over the XMage-AI benchmarks (or the mean anchor score) is copied to `best.pt` without optimizer state. Score = (wins + ½·(draws + truncated)) / scored games; errors are reported, never scored. |
+
+## Commander Duel: Winota learner, Kinnan gauntlet
+
+```powershell
+.venv/Scripts/mz.exe selfplay --checkpoint artifacts/commander-initial.pt --game configs/commander-mirror.yml --config configs/policy-final.yml `
+  --engine-script xmage/mz-policy.bat --output artifacts/commander-run --iterations 5000 --games 64 `
+  --gauntlet xmage/decks/kinnan.dck --gauntlet-fraction 0.5 --gauntlet-ai-skill 1 `
+  --engine-threads 16 --device cuda --eval-every 25 --eval-games 64 --eval-ai-skill 3 --eval-greedy `
+  --keep-every 100 --min-free-gb 30
+```
+
+The numbers (fraction, skills, games) are a starting point to be set from the launch check in [the plan](next-session-plan.md#task-d-launch-check-then-the-final-run).
 
 ## Caveats
 

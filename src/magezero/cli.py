@@ -50,7 +50,10 @@ def cmd_selfplay(args: argparse.Namespace) -> None:
                  eval_ai_skill=args.eval_ai_skill, eval_anchors=args.eval_anchor or (),
                  keep_episodes=args.keep_episodes, keep_every=args.keep_every,
                  min_free_gb=args.min_free_gb, max_retries=args.max_retries,
-                 max_failure_fraction=args.max_failure_fraction)
+                 max_failure_fraction=args.max_failure_fraction, gauntlet=args.gauntlet or (),
+                 gauntlet_fraction=args.gauntlet_fraction, gauntlet_ai_skill=args.gauntlet_ai_skill,
+                 gauntlet_ai_think=args.gauntlet_ai_think,
+                 eval_greedy=args.eval_greedy)
 
 
 def cmd_play_policy(args: argparse.Namespace) -> None:
@@ -261,6 +264,15 @@ def main() -> None:
     p_selfplay.add_argument("--max-retries", type=int, default=3, help="engine restarts per generation before the run stops")
     p_selfplay.add_argument("--max-failure-fraction", type=float, default=0.25,
                             help="stop when more than this fraction of a generation's games error or time out")
+    p_selfplay.add_argument("--gauntlet", nargs="+", metavar="DECK",
+                            help="opponent decks piloted by XMage's AI; the learner keeps player_a's deck")
+    p_selfplay.add_argument("--gauntlet-fraction", type=float, default=0.5,
+                            help="share of each generation's games played against the gauntlet")
+    p_selfplay.add_argument("--gauntlet-ai-skill", type=int, default=3, help="XMage AI skill (1-10) piloting gauntlet decks")
+    p_selfplay.add_argument("--gauntlet-ai-think", type=int, default=0,
+                            help="cap on the gauntlet AI's search seconds per decision (0 = XMage default, 3 s per skill)")
+    p_selfplay.add_argument("--eval-greedy", action="store_true",
+                            help="evaluate with the most likely action instead of sampling")
     p_selfplay.set_defaults(func=cmd_selfplay)
 
     p_old_train = sub.add_parser("legacy-train", help="original MCTS pipeline (explicit opt-in)")

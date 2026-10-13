@@ -11,7 +11,7 @@ from magezero.policy.catalog import CardCatalog
 from magezero.policy.checkpoint import load_checkpoint, save_checkpoint
 from magezero.policy.learner import PPOConfig, generalized_advantages, ppo_update, validate_episode
 from magezero.policy.model import EntityBeliefPolicy, ModelConfig, PrivilegedCritic
-from magezero.policy.schema import collate_observations, validate_observation
+from magezero.policy.schema import ENTITY_FEATURES, collate_observations, validate_observation
 from magezero.policy.service import PolicyService, create_app
 
 torch.set_num_threads(1)
@@ -33,9 +33,9 @@ def observation(config, step=0, game_id="game", player_id="player"):
         "player_id": player_id, "step": step,
         "entities": [
             {"id": "me", "card_id": 0, "kind": 0, "zone": 0, "owner": 0, "controller": 0,
-             "visibility": "public", "features": [0.0] * 32},
+             "visibility": "public", "features": [0.0] * ENTITY_FEATURES},
             {"id": "creature", "card_id": 1, "kind": 1, "zone": 1, "owner": 0, "controller": 0,
-             "visibility": "public", "features": [0.1] + [0.0] * 31}],
+             "visibility": "public", "features": [0.1] + [0.0] * (ENTITY_FEATURES - 1)}],
         "relations": [{"source": "creature", "target": "me", "type": 0}],
         "globals": [step / 10] + [0.0] * 23,
         "events": [{"seq": step, "type": "pass", "actor": 1, "card_id": 0, "features": [0.0] * 8}],

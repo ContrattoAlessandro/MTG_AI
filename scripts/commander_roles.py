@@ -1,0 +1,346 @@
+"""Reviewed role annotations for the Winota / Kinnan Commander Duel pool.
+
+Merges entries into configs/card-roles.json (existing reviewed entries are kept).
+Roles were assigned from the XMage implementation text of each card (the
+`getRules()` dump of the fork at commit cb7e9c6f), not from Oracle text alone.
+
+python scripts/commander_roles.py --catalog artifacts/commander-cards.json
+"""
+
+import argparse
+import json
+from pathlib import Path
+import re
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+from magezero.policy.roles import validate_roles
+
+SETS = ".mz_engine/Mage.Sets/src/mage/cards"
+TOKENS = ".mz_engine/Mage/src/main/java/mage/game/permanent/token"
+BASICS = ".mz_engine/Mage/src/main/java/mage/cards/basiclands"
+
+# name: (roles, notes[, source override])
+ROLES = {
+    # --- Winota, Joiner of Forces (learner) ---
+    "Winota, Joiner of Forces": (["board_presence", "repeatable_engine", "recursion_cheating", "deck_synergy"],
+        "Commander. Each non-Human attacker digs six cards and puts a Human onto the battlefield attacking and indestructible: the deck's central engine."),
+    "Ajani, Nacatl Pariah": (["board_presence", "deck_synergy"],
+        "Human body plus a 2/1 non-Human Cat Warrior token: one card supplies both halves of a Winota trigger. Transforms when another Cat dies."),
+    "Ajani, Nacatl Avenger": (["board_presence", "direct_reach", "repeatable_engine"],
+        "Transformed planeswalker face of Ajani, Nacatl Pariah; only reachable from the battlefield, never held in hand.",
+        f"{SETS}/a/AjaniNacatlAvenger.java"),
+    "Alexios, Deimos of Kosmos": (["board_presence", "deck_synergy"],
+        "Trampling non-Human that changes control each upkeep and must attack; pressure and a Winota trigger rather than a stable blocker."),
+    "Alseid of Life's Bounty": (["board_presence", "protection", "survival"],
+        "Lifelink non-Human one-drop that sacrifices to give protection from a colour to a creature or enchantment."),
+    "Angrath's Marauders": (["board_presence", "combat_modifier", "direct_reach"],
+        "Non-Human body that doubles all damage its controller's sources deal."),
+    "Arcane Signet": (["mana_acceleration"], "Mana rock for the commander's colours."),
+    "Archon of Emeria": (["board_presence", "persistent_restriction"],
+        "Flying non-Human; one spell per turn for each player and opposing nonbasic lands enter tapped."),
+    "Auratouched Mage": (["board_presence", "tutor"],
+        "Human that fetches an Aura (here Breath of Fury) onto itself."),
+    "Avalanche of Sector 7": (["board_presence", "repeatable_engine", "direct_reach"],
+        "Menace non-Human whose power is the opponent's artifact count, and pings an opponent who activates artifact abilities."),
+    "Aven Interrupter": (["board_presence", "tempo_interaction", "persistent_restriction"],
+        "Flash flier that exiles a spell as plotted (a delay, not a counter) and taxes casting from graveyard or exile."),
+    "Aven Mindcensor": (["board_presence", "persistent_restriction"],
+        "Flash flier that limits opposing library searches to the top four cards."),
+    "Battlefield Forge": (["land_access"], "Painland for red and white."),
+    "Benevolent Bodyguard": (["board_presence", "protection"],
+        "Human one-drop that sacrifices to give a creature protection from a colour."),
+    "Blade Historian": (["board_presence", "combat_modifier"],
+        "Human that gives attacking creatures double strike."),
+    "Blinkmoth Nexus": (["land_access", "board_presence"],
+        "Colourless land that becomes a 1/1 flying non-Human artifact creature."),
+    "Boromir, Warden of the Tower": (["board_presence", "persistent_restriction", "protection"],
+        "Human; counters opposing spells cast without mana and sacrifices to make the team indestructible."),
+    "Breath of Fury": (["combat_modifier", "repeatable_engine"],
+        "Aura that sacrifices the creature after combat damage to a player for an untap and an extra combat."),
+    "Captain of the Watch": (["board_presence", "combat_modifier"],
+        "Human that makes three Soldier tokens and pumps Soldiers."),
+    "Cathar Commando": (["board_presence", "spot_removal"],
+        "Flash Human that sacrifices to destroy an artifact or enchantment."),
+    "Chance for Glory": (["combat_modifier", "protection"],
+        "Team indestructible and an extra turn; that turn's end step loses the game, so it is an all-in finisher."),
+    "Charitable Levy": (["persistent_restriction", "card_draw", "land_access"],
+        "Taxes noncreature spells by one; after three noncreature spells it cashes in for a card and a Plains."),
+    "Clarion Conqueror": (["board_presence", "persistent_restriction"],
+        "Flying non-Human that shuts off activated abilities of artifacts, creatures and planeswalkers (mana rocks and dorks included)."),
+    "Cliffside Rescuer": (["board_presence", "protection"],
+        "Vigilant non-Human that sacrifices to protect a permanent from opponents."),
+    "Clifftop Retreat": (["land_access"], "Red-white checkland."),
+    "Combat Celebrant": (["board_presence", "combat_modifier"],
+        "Human that exerts for an untap and an additional combat phase."),
+    "Command Tower": (["land_access"], "Land for the commander's colours."),
+    "Dauntless Dismantler": (["board_presence", "persistent_restriction", "sweeper"],
+        "Human; opposing artifacts enter tapped, and it sacrifices to destroy every artifact of one mana value."),
+    "Deafening Silence": (["persistent_restriction"],
+        "One noncreature spell per turn for each player."),
+    "Eidolon of Rhetoric": (["board_presence", "persistent_restriction"],
+        "Enchantment creature: one spell per turn for each player."),
+    "Eomer, King of Rohan": (["board_presence", "direct_reach", "spot_removal", "card_draw"],
+        "Double-strike Human that grows with Humans, makes a player the monarch and deals its power to any target on entry."),
+    "Ethersworn Canonist": (["board_presence", "persistent_restriction"],
+        "Non-Human artifact creature: one nonartifact spell per turn for each player."),
+    "Fellwar Stone": (["mana_acceleration"], "Mana rock for colours the opponent's lands make."),
+    "Flamescroll Celebrant": (["board_presence", "direct_reach", "persistent_restriction"],
+        "MDFC: a Human that pings opponents for non-mana activations, or Revel in Silence (no spells or loyalty abilities for opponents this turn)."),
+    "Revel in Silence": (["persistent_restriction", "protection"],
+        "Back face of Flamescroll Celebrant: opponents cannot cast spells or activate loyalty abilities this turn.",
+        f"{SETS}/f/FlamescrollCelebrant.java"),
+    "Gingerbrute": (["board_presence", "combat_modifier", "survival"],
+        "Hasty non-Human artifact creature with conditional evasion; sacrifices for life."),
+    "Giver of Runes": (["board_presence", "protection"],
+        "Repeatable protection from colourless or a colour for another creature."),
+    "Goblin Rabblemaster": (["board_presence", "repeatable_engine"],
+        "Non-Human that makes a hasty Goblin token each combat; Goblins must attack."),
+    "Gold Myr": (["board_presence", "mana_acceleration"], "Non-Human artifact mana creature."),
+    "Goldhound": (["board_presence", "mana_acceleration"],
+        "First-strike menace non-Human one-drop that sacrifices for one mana."),
+    "Grand Abolisher": (["board_presence", "persistent_restriction", "protection"],
+        "Human: opponents cannot cast spells or activate artifact/creature/enchantment abilities during its controller's turn."),
+    "Great Furnace": (["land_access"], "Artifact Mountain."),
+    "High Noon": (["persistent_restriction", "direct_reach", "spot_removal"],
+        "One spell per turn for each player; sacrifices for 5 damage to any target."),
+    "Hope of Ghirapur": (["board_presence", "persistent_restriction"],
+        "Flying non-Human artifact one-drop; after combat damage it sacrifices to stop that player casting noncreature spells."),
+    "Howlsquad Heavy": (["board_presence", "repeatable_engine", "mana_acceleration"],
+        "Non-Human that makes a Goblin token each combat and gives Goblins haste; mana at max speed."),
+    "Hushbringer": (["board_presence", "persistent_restriction", "survival"],
+        "Flying lifelink non-Human; creatures entering or dying trigger nothing (Winota triggers on attack, so it is unaffected)."),
+    "Jor Kadeen, the Prevailer": (["board_presence", "combat_modifier"],
+        "Human; with metalcraft the team gets +3/+0."),
+    "Legion Warboss": (["board_presence", "repeatable_engine", "combat_modifier"],
+        "Non-Human; makes a hasty attacking Goblin each combat and mentors."),
+    "Lena, Selfless Champion": (["board_presence", "protection"],
+        "Human that makes a Soldier per nontoken creature and sacrifices to make smaller creatures indestructible."),
+    "Loyal Apprentice": (["board_presence", "repeatable_engine"],
+        "Hasty Human; with the commander out it makes a hasty flying Thopter each combat."),
+    "Memnite": (["board_presence"], "Free non-Human artifact creature: a zero-mana Winota trigger."),
+    "Mirage Phalanx": (["board_presence", "repeatable_engine"],
+        "Human with soulbond that copies itself and its partner each combat."),
+    "Mishra's Factory": (["land_access", "board_presence"],
+        "Colourless land that becomes a 2/2 non-Human artifact creature."),
+    "Mountain": (["land_access"], "Basic land.", f"{BASICS}/Mountain.java"),
+    "Myr Convert": (["board_presence", "mana_acceleration"], "Non-Human toxic mana creature (pays life)."),
+    "Ornithopter": (["board_presence"], "Free flying non-Human artifact creature."),
+    "Ornithopter of Paradise": (["board_presence", "mana_acceleration"], "Flying non-Human mana creature."),
+    "Phoenix Chick": (["board_presence", "recursion_cheating"],
+        "Hasty flying non-Human; returns from the graveyard attacking when three or more creatures attack."),
+    "Phyrexian Revoker": (["board_presence", "persistent_restriction"],
+        "Non-Human artifact creature that names a card whose activated abilities stop working."),
+    "Pia and Kiran Nalaar": (["board_presence", "direct_reach", "spot_removal"],
+        "Human pair making two Thopter tokens; sacrifices artifacts for 2 damage to any target."),
+    "Plains": (["land_access"], "Basic land.", f"{BASICS}/Plains.java"),
+    "Professional Face-Breaker": (["board_presence", "repeatable_engine", "card_draw"],
+        "Human; combat damage makes Treasure, and Treasure becomes impulse draws."),
+    "Ragavan, Nimble Pilferer": (["board_presence", "repeatable_engine", "mana_acceleration"],
+        "Substitute for Mayor Tong of Chin Village (not in this XMage build). Non-Human one-drop with dash; combat damage makes Treasure and steals a card."),
+    "Razorgrass Ambush": (["spot_removal", "land_access"],
+        "MDFC: 3 damage to an attacking or blocking creature, or the land Razorgrass Field."),
+    "Razorgrass Field": (["land_access"], "Land face of Razorgrass Ambush.", f"{SETS}/r/RazorgrassAmbush.java"),
+    "Rionya, Fire Dancer": (["board_presence", "repeatable_engine"],
+        "Human that makes hasty token copies of another creature each combat."),
+    "Rograkh, Son of Rohgahh": (["board_presence"],
+        "Zero-mana first-strike menace trample non-Human."),
+    "Rugged Prairie": (["land_access"], "Red-white filter land."),
+    "Samurai of the Pale Curtain": (["board_presence", "graveyard_hate"],
+        "Human; permanents that would go to a graveyard are exiled instead."),
+    "Sanctum Prelate": (["board_presence", "persistent_restriction"],
+        "Human that forbids noncreature spells of a chosen mana value."),
+    "Signal Pest": (["board_presence", "combat_modifier"],
+        "Non-Human artifact one-drop with battle cry and evasion."),
+    "Silence": (["persistent_restriction", "protection"],
+        "Opponents cannot cast spells this turn: protects a combo or alpha strike."),
+    "Skrelv, Defector Mite": (["board_presence", "protection", "combat_modifier"],
+        "Non-Human artifact one-drop giving hexproof from a colour, toxic and evasion."),
+    "Skyclave Apparition": (["board_presence", "spot_removal"],
+        "Exiles a nonland, nontoken permanent of mana value 4 or less; the owner gets an Illusion if it leaves."),
+    "Sokenzan, Crucible of Defiance": (["land_access", "board_presence"],
+        "Legendary Mountain; channel makes two hasty Spirit tokens."),
+    "Sol Ring": (["mana_acceleration"], "Two colourless mana rock."),
+    "Soulless Jailer": (["board_presence", "graveyard_hate", "persistent_restriction"],
+        "Non-Human artifact creature: no permanents from graveyards, no noncreature casts from graveyard or exile."),
+    "Spirit of the Labyrinth": (["board_presence", "persistent_restriction"],
+        "Each player draws at most one card per turn."),
+    "Sundering Eruption": (["spot_removal", "combat_modifier", "land_access"],
+        "MDFC: destroys a land (its controller may fetch a basic) and grounders cannot block; or the land Volcanic Fissure."),
+    "Volcanic Fissure": (["land_access"], "Land face of Sundering Eruption.", f"{SETS}/s/SunderingEruption.java"),
+    "Swords to Plowshares": (["spot_removal"], "One-mana creature exile; its controller gains life."),
+    "Talisman of Conviction": (["mana_acceleration"], "Red-white mana rock."),
+    "Thalia, Guardian of Thraben": (["board_presence", "persistent_restriction"],
+        "First-strike Human; noncreature spells cost one more."),
+    "The Wandering Rescuer": (["board_presence", "protection", "combat_modifier"],
+        "Flash convoke double-strike Human; other tapped creatures (attackers) have hexproof."),
+    "Touch the Spirit Realm": (["spot_removal", "tempo_interaction", "protection"],
+        "Exiles an artifact or creature while it remains; channel flickers one (removal-lite or protection)."),
+    "Yuffie, Materia Hunter": (["board_presence", "tempo_interaction", "spot_removal"],
+        "Human with ninjutsu that steals a noncreature artifact while it stays."),
+
+    # --- Kinnan, Bonder Prodigy (gauntlet) ---
+    "Kinnan, Bonder Prodigy": (["board_presence", "mana_acceleration", "repeatable_engine", "recursion_cheating", "deck_synergy"],
+        "Commander. Nonland mana permanents make an extra mana; {5}{G}{U} puts a non-Human creature from the top five onto the battlefield."),
+    "Arcane Denial": (["counterspell"], "Hard counter; both players draw later."),
+    "Armored Scrapgorger": (["board_presence", "mana_acceleration", "graveyard_hate"],
+        "Mana creature that exiles a graveyard card each time it taps."),
+    "Basalt Monolith": (["mana_acceleration", "deck_synergy"],
+        "Three-mana rock; with Kinnan it untaps for net infinite colourless mana."),
+    "Beast Within": (["spot_removal"], "Destroys any permanent; its controller gets a 3/3 Beast."),
+    "Birds of Paradise": (["board_presence", "mana_acceleration"], "Flying mana creature."),
+    "Bloom Tender": (["board_presence", "mana_acceleration", "deck_synergy"],
+        "Mana per colour among its controller's permanents; combo piece with Freed from the Real."),
+    "Bootleggers' Stash": (["mana_acceleration", "repeatable_engine"], "Lands make Treasure."),
+    "Bounding Krasis": (["board_presence", "tempo_interaction"],
+        "Substitute for Tidus, Zanarkand Fayth (not in this XMage build). Flash body that taps or untaps a creature."),
+    "Breeding Pool": (["land_access"], "Substitute for Avatar Sanctuary (not in this XMage build). Green-blue shockland."),
+    "Colossal Skyturtle": (["board_presence", "tempo_interaction", "recursion_cheating"],
+        "Big flying ward body; channel returns a graveyard card or bounces a creature."),
+    "Counterspell": (["counterspell"], "Counters a spell, not an activated ability or land play.", f"{SETS}/c/Counterspell.java"),
+    "Devoted Druid": (["board_presence", "mana_acceleration", "deck_synergy"],
+        "Mana creature that untaps with -1/-1 counters; combo piece."),
+    "Drift of Phantasms": (["board_presence", "tutor"],
+        "Flying defender; transmute finds a mana-value-3 card (Basalt Monolith, Bloom Tender...)."),
+    "Elvish Mystic": (["board_presence", "mana_acceleration"], "Mana creature."),
+    "Enduring Vitality": (["board_presence", "mana_acceleration", "survival"],
+        "Creatures tap for any colour; returns as an enchantment when it dies."),
+    "Energy Refractor": (["mana_acceleration", "card_draw"], "Filter rock that replaces itself."),
+    "Eternal Witness": (["board_presence", "recursion_cheating"], "Returns a graveyard card to hand."),
+    "Exotic Orchard": (["land_access"], "Land making colours the opponent's lands make."),
+    "Explore the Vastlands": (["card_selection", "land_access", "survival"],
+        "Adventure-side spell of Wandering Archaic: each player digs for lands/instants/sorceries and gains 3 life.",
+        f"{SETS}/w/WanderingArchaic.java"),
+    "Fabricate": (["tutor"], "Finds an artifact (Basalt Monolith, Sol Ring...)."),
+    "Forest": (["land_access"], "Ordinary land access. A normal land drop is not additional mana acceleration.", f"{BASICS}/Forest.java"),
+    "Freed from the Real": (["deck_synergy", "tempo_interaction"],
+        "Aura that taps and untaps a creature for {U}; infinite mana with Bloom Tender or Devoted Druid-style dorks."),
+    "Fyndhorn Elves": (["board_presence", "mana_acceleration"], "Mana creature."),
+    "Gene Pollinator": (["board_presence", "mana_acceleration"], "Mana creature that taps another permanent."),
+    "Gyre Engineer": (["board_presence", "mana_acceleration"], "Mana creature making two colours."),
+    "Hinterland Harbor": (["land_access"], "Green-blue checkland."),
+    "Hullbreaker Horror": (["board_presence", "counterspell", "tempo_interaction", "repeatable_engine"],
+        "Uncounterable flash body; each own spell bounces a spell or nonland permanent."),
+    "Ilysian Caryatid": (["board_presence", "mana_acceleration"], "Mana creature."),
+    "Incubation Druid": (["board_presence", "mana_acceleration"], "Mana creature; three mana once it has a counter."),
+    "Intruder Alarm": (["deck_synergy", "persistent_restriction"],
+        "Creatures do not untap normally; any creature entering untaps all: combo engine with mana creatures and tokens."),
+    "Island": (["land_access"], "Basic land.", f"{BASICS}/Island.java"),
+    "Leyline of Abundance": (["mana_acceleration", "combat_modifier"],
+        "Creatures tapped for mana make an extra {G}; can start on the battlefield; late-game team pump."),
+    "Llanowar Elves": (["board_presence", "mana_acceleration"],
+        "Creature plus tap-for-mana capability; summoning sickness can delay mana production.", f"{SETS}/l/LlanowarElves.java"),
+    "Machine God's Effigy": (["mana_acceleration", "board_presence"],
+        "Mana artifact that can enter as a copy of any creature."),
+    "Mana Leak": (["counterspell"], "Soft counter: unless its controller pays three."),
+    "Maraleaf Pixie": (["board_presence", "mana_acceleration"], "Flying mana creature."),
+    "March of Swirling Mist": (["tempo_interaction", "protection"],
+        "Phases out up to X creatures: protects its own or removes blockers/attackers for a turn."),
+    "Mirage Mirror": (["deck_synergy", "board_presence"],
+        "Becomes a copy of an artifact, creature, enchantment or land until end of turn."),
+    "Miscast": (["counterspell"], "Counters an instant or sorcery unless its controller pays three."),
+    "Moonsilver Key": (["tutor", "land_access"], "Finds a mana artifact or a basic land."),
+    "Muddle the Mixture": (["counterspell", "tutor"],
+        "Counters an instant or sorcery; transmute finds a mana-value-2 card."),
+    "Murkfiend Liege": (["board_presence", "combat_modifier", "deck_synergy"],
+        "Anthem for green and blue creatures that untap on the opponent's untap step."),
+    "Narset, Parter of Veils": (["board_presence", "persistent_restriction", "card_selection"],
+        "Planeswalker: opponents draw one card per turn; -2 digs for a noncreature, nonland card."),
+    "Nature's Rhythm": (["tutor", "recursion_cheating"],
+        "Puts a creature of mana value X or less from library onto the battlefield; harmonize recasts it."),
+    "Negate": (["counterspell"], "Only noncreature spells.", f"{SETS}/n/Negate.java"),
+    "Neoform": (["tutor", "recursion_cheating"],
+        "Sacrifices a creature to put one with one more mana value onto the battlefield."),
+    "Nyxbloom Ancient": (["board_presence", "mana_acceleration", "deck_synergy"],
+        "Triples mana from permanents; trample body."),
+    "Paradise Druid": (["board_presence", "mana_acceleration"], "Mana creature with hexproof while untapped."),
+    "Pemmin's Aura": (["deck_synergy", "protection", "combat_modifier"],
+        "Aura that untaps for {U} (combo with Kinnan/Bloom Tender), grants shroud, flying or stat shifts."),
+    "Perplexing Chimera": (["board_presence", "tempo_interaction"],
+        "Exchanges itself for an opponent's spell: steals that spell."),
+    "Poison Dart Frog": (["board_presence", "mana_acceleration"], "Reach mana creature that can gain deathtouch."),
+    "Prismite": (["board_presence", "mana_acceleration"], "Artifact creature that filters mana."),
+    "Prophet of Distortion": (["board_presence", "card_draw", "repeatable_engine"],
+        "Body with a colourless-mana draw outlet."),
+    "Reality Shift": (["spot_removal"], "Exiles a creature; its controller manifests a 2/2."),
+    "Reclamation Sage": (["board_presence", "spot_removal"], "Body that destroys an artifact or enchantment."),
+    "Regrowth": (["recursion_cheating"], "Returns a graveyard card to hand."),
+    "Seedborn Muse": (["board_presence", "deck_synergy"],
+        "Untaps its controller's permanents on each other player's untap step."),
+    "Shared Summons": (["tutor"], "Finds two creature cards."),
+    "Simic Signet": (["mana_acceleration"], "Green-blue mana rock."),
+    "Spell Pierce": (["counterspell"], "Noncreature spell unless its controller pays two."),
+    "Springleaf Drum": (["mana_acceleration", "deck_synergy"], "Taps a creature for any colour; mana permanent for Kinnan."),
+    "Stroke of Genius": (["card_draw", "deck_synergy"], "Draws X: the infinite-mana payoff."),
+    "Sylvan Caryatid": (["board_presence", "mana_acceleration"], "Hexproof defender mana creature."),
+    "Talisman of Curiosity": (["mana_acceleration"], "Green-blue mana rock."),
+    "Thorn Mammoth": (["board_presence", "spot_removal", "repeatable_engine"],
+        "Fights an opposing creature whenever it or another own creature enters."),
+    "Tidespout Tyrant": (["board_presence", "tempo_interaction", "repeatable_engine"],
+        "Flying body; every own spell bounces a permanent."),
+    "Treasure Vault": (["land_access", "mana_acceleration"], "Land that cashes in for X Treasure."),
+    "Trophy Mage": (["board_presence", "tutor"], "Finds a mana-value-3 artifact (Basalt Monolith)."),
+    "Unstoppable Plan": (["deck_synergy", "mana_acceleration"],
+        "Untaps all its controller's nonland permanents at its end step."),
+    "Urn of Godfire": (["mana_acceleration", "spot_removal"],
+        "Filter rock that later destroys a creature or enchantment."),
+    "Vineglimmer Snarl": (["land_access"], "Green-blue snarl land."),
+    "Volatile Stormdrake": (["board_presence", "tempo_interaction", "spot_removal"],
+        "Flier that exchanges itself for an opposing creature; that creature is sacrificed unless energy pays for it."),
+    "Walking Ballista": (["board_presence", "direct_reach", "spot_removal", "deck_synergy"],
+        "Counter-based pinger; with infinite mana it is a finisher."),
+    "Wandering Archaic": (["board_presence", "persistent_restriction", "deck_synergy"],
+        "MDFC/adventure body that copies opposing instants and sorceries unless they pay two."),
+    "Waterlogged Grove": (["land_access", "card_draw"], "Painland for green and blue that cashes in for a card."),
+    "Yavimaya Coast": (["land_access"], "Painland for green and blue."),
+
+    # --- tokens: they never sit in a hand, roles describe the object ---
+    "Assembly-Worker Token": (["board_presence"], "Mishra's Factory's creature form template.", f"{TOKENS}/AssemblyWorkerToken.java"),
+    "Beast Token": (["board_presence"], "3/3 Beast from Beast Within.", f"{TOKENS}/BeastToken.java"),
+    "Blinkmoth Token": (["board_presence"], "Blinkmoth Nexus's creature form template.", f"{SETS}/b/BlinkmothNexus.java"),
+    "Cat Warrior Token": (["board_presence"], "2/1 non-Human Cat Warrior from Ajani.", f"{TOKENS}/CatWarrior21Token.java"),
+    "Goblin Token": (["board_presence"], "1/1 red Goblin, a non-Human Winota trigger.", f"{TOKENS}/GoblinToken.java"),
+    "Illusion Token": (["board_presence"], "X/X Illusion from Skyclave Apparition.", f"{TOKENS}/CustomIllusionToken.java"),
+    "Soldier Token": (["board_presence"], "1/1 Soldier token; not a Human, so it triggers Winota when it attacks.", f"{TOKENS}/SoldierToken.java"),
+    "Spirit Token": (["board_presence"], "1/1 Spirit from Sokenzan.", f"{TOKENS}/SpiritToken.java"),
+    "Thopter Token": (["board_presence"], "1/1 flying Thopter, a non-Human Winota trigger.", f"{TOKENS}/ThopterColorlessToken.java"),
+    "Treasure Token": (["mana_acceleration"], "Sacrifice for one mana of any colour.", f"{TOKENS}/TreasureToken.java"),
+}
+
+
+
+def class_name(name):
+    """XMage's class naming: words title-cased, punctuation dropped (Mishra's Factory -> MishrasFactory)."""
+    return re.sub(r"[^A-Za-z0-9]", "", name.title().replace("'S", "s"))
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--catalog", required=True)
+    parser.add_argument("--annotations", default="configs/card-roles.json")
+    args = parser.parse_args()
+    path = Path(args.annotations)
+    annotations = json.loads(path.read_text(encoding="utf-8"))
+    names = [card["name"] for card in json.loads(Path(args.catalog).read_text(encoding="utf-8"))["cards"]]
+    missing = [name for name in names if name not in ROLES and name not in annotations["cards"]]
+    if missing:
+        raise ValueError("no reviewed roles for: " + ", ".join(missing))
+    added = 0
+    for name in names:
+        if name not in ROLES:
+            continue
+        entry = ROLES[name]
+        roles, notes = entry[0], entry[1]
+        source = entry[2] if len(entry) > 2 else f"{SETS}/{name[0].lower()}/{class_name(name)}.java"
+        validate_roles(roles)
+        if not Path(source).exists():
+            raise ValueError(f"source for {name} not found: {source}")
+        annotations["cards"][name] = {"roles": roles, "source": source, "notes": notes}
+        added += 1
+    path.write_text(json.dumps(annotations, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(f"Wrote {added} reviewed entries; {len(annotations['cards'])} in {path}")
+
+
+if __name__ == "__main__":
+    main()

@@ -106,7 +106,7 @@ public final class PolicyArena {
         return result;
     }
     private static void load(Game game,Match match,Player player,Deck deck) {
-        player.setTestMode(true); game.loadCards(deck.getCards(),player.getId()); game.loadCards(deck.getSideboard(),player.getId());
+        player.setTestMode(true); player.setFastFailInTestMode(false); game.loadCards(deck.getCards(),player.getId()); game.loadCards(deck.getSideboard(),player.getId());
         game.addPlayer(player,deck); match.addPlayer(player,deck);
     }
 }

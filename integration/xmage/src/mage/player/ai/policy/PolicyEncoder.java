@@ -13,6 +13,8 @@ import mage.game.permanent.Permanent;
 import mage.game.permanent.PermanentToken;
 import mage.game.stack.StackObject;
 import mage.players.Player;
+import mage.watchers.common.CommanderInfoWatcher;
+import mage.watchers.common.CommanderPlaysCountWatcher;
 import java.util.*;
 
 /** Entity snapshots with a strict private/public split. The deck is known before play. */
@@ -26,6 +28,11 @@ public final class PolicyEncoder {
     private PolicyHistory history;
     private int step = 0;
     private List<Integer> lastCandidateIds = new ArrayList<>();
+    private Set<UUID> commanderIds = Collections.emptySet();
+    private CommanderPlaysCountWatcher commanderPlays;
+
+    /** Entity vector width; must match ENTITY_FEATURES in schema.py. */
+    public static final int ENTITY_FEATURES = 48;
 
     public PolicyEncoder(UUID observer, UUID opponent, PolicyClient client, Game game) {
         this.observer = observer;
@@ -33,8 +40,13 @@ public final class PolicyEncoder {
         this.client = client;
         // Called BEFORE game.start: enumerating the announced deck list cannot
         // disclose a shuffle, hand, library order, or later hidden game state.
+        // A Commander game moves the sideboard (the commander) to the command
+        // zone, so it is part of the known deck: public while there, and a
+        // legitimate hand candidate if it is ever returned to hand.
+        boolean commander = game instanceof GameCommanderImpl;
         for (Card card : game.getCards()) {
-            if (!card.getOwnerId().equals(opponent) || game.getPlayer(opponent).getSideboard().contains(card.getId())) continue;
+            if (!card.getOwnerId().equals(opponent)) continue;
+            if (!commander && game.getPlayer(opponent).getSideboard().contains(card.getId())) continue;
             if (!card.getId().equals(card.getMainCard().getId())) continue;
             Integer id = client.cardIds.get(card.getName());
             if (id == null) throw new IllegalStateException("card catalog is missing known deck card: " + card.getName());
@@ -86,7 +98,7 @@ public final class PolicyEncoder {
         if (object == null || entities.containsKey(object.getId().toString())) return;
         boolean hidden = visibility.equals("hidden");
         boolean concealedIdentity = hidden || (object instanceof Card && ((Card) object).isFaceDown(game));
-        double[] values = new double[32];
+        double[] values = new double[ENTITY_FEATURES];
         int cardId = concealedIdentity ? 0 : client.cardIds.getOrDefault(object.getName(), 0);
         if (!hidden) {
             values[0] = object.getPower().getValue() / 20.0;
@@ -122,6 +134,12 @@ public final class PolicyEncoder {
                 values[9] = permanent.getBlocking() > 0 ? 1 : 0;
                 values[26] = permanent.isTransformed() ? 1 : 0;
             }
+            UUID identity = object instanceof StackObject ? ((StackObject) object).getSourceId() : object.getId();
+            if (commanderIds.contains(identity)) {
+                values[32] = 1;
+                // Casts from the command zone; each adds {2} of commander tax.
+                values[33] = commanderPlays == null ? 0 : commanderPlays.getPlaysCount(identity) / 8.0;
+            }
         }
         entities.put(object.getId().toString(), map("id", object.getId().toString(), "card_id", cardId,
             "kind", kind, "zone", zone, "owner", side(owner), "controller", side(controller),
@@ -133,14 +151,25 @@ public final class PolicyEncoder {
         Map<String, Map<String, Object>> entities = new LinkedHashMap<>();
         Set<UUID> publicIdentities = new HashSet<>();
         Player me = game.getPlayer(observer), enemy = game.getPlayer(opponent);
+        commanderIds = new HashSet<>();
+        for (Player player : Arrays.asList(me, enemy)) commanderIds.addAll(game.getCommandersIds(player, CommanderCardType.ANY, false));
+        commanderPlays = game.getState().getWatcher(CommanderPlaysCountWatcher.class);
         for (Player player : Arrays.asList(me, enemy)) {
-            double[] features = new double[32];
+            double[] features = new double[ENTITY_FEATURES];
             features[11] = player.getLife() / 40.0;
             features[12] = player.getCountersCount(CounterType.POISON) / 10.0;
             features[13] = player.getCountersCount(CounterType.ENERGY) / 20.0;
             features[7] = player.getHand().size() / 60.0;
             features[10] = Math.min(player.getLandsPlayed(), 4) / 4.0;
             features[14] = Math.max(0, Math.min(player.getLandsPerTurn(), 4) - player.getLandsPlayed()) / 4.0;
+            // Combat damage taken from the other player's commanders (21 loses).
+            Player other = player == me ? enemy : me;
+            int commanderDamage = 0;
+            for (UUID commanderId : game.getCommandersIds(other, CommanderCardType.ANY, false)) {
+                CommanderInfoWatcher watcher = game.getState().getWatcher(CommanderInfoWatcher.class, commanderId);
+                if (watcher != null) commanderDamage = Math.max(commanderDamage, watcher.getDamageToPlayer().getOrDefault(player.getId(), 0));
+            }
+            features[15] = commanderDamage / 21.0;
             entities.put(player.getId().toString(), map("id", player.getId().toString(), "card_id", 0,
                 "kind", 0, "zone", 0, "owner", side(player.getId()), "controller", side(player.getId()),
                 "visibility", "public", "features", features));
@@ -148,11 +177,16 @@ public final class PolicyEncoder {
                 addObject(entities, card, 2, 3, player.getId(), player.getId(), "public", game);
                 publicIdentities.add(card.getId());
             }
-            double[] count = new double[32];
-            count[7] = player.getLibrary().size() / 60.0;
+            double[] count = new double[ENTITY_FEATURES];
+            count[7] = player.getLibrary().size() / 100.0;
             entities.put("library-" + player.getId(), map("id", "library-" + player.getId(), "card_id", 0,
                 "kind", 4, "zone", 6, "owner", side(player.getId()), "controller", side(player.getId()),
                 "visibility", "hidden", "features", count));
+            for (UUID commanderId : game.getCommandersIds(player, CommanderCardType.ANY, false)) {
+                if (game.getState().getZone(commanderId) != Zone.COMMAND) continue;
+                addObject(entities, game.getCard(commanderId), 2, 7, player.getId(), player.getId(), "public", game);
+                publicIdentities.add(commanderId);
+            }
         }
         for (Card card : me.getHand().getCards(game)) {
             addObject(entities, card, 2, 2, observer, observer, "own", game);
@@ -238,8 +272,8 @@ public final class PolicyEncoder {
         global[4] = enemy.getLife() / 40.0;
         global[5] = me.getHand().size() / 60.0;
         global[6] = enemy.getHand().size() / 60.0;
-        global[7] = me.getLibrary().size() / 60.0;
-        global[8] = enemy.getLibrary().size() / 60.0;
+        global[7] = me.getLibrary().size() / 100.0;
+        global[8] = enemy.getLibrary().size() / 100.0;
         global[9] = game.getTurnStepType() == null ? 0 : game.getTurnStepType().ordinal() / 32.0;
         int[] myMana = {me.getManaPool().getWhite(), me.getManaPool().getBlue(), me.getManaPool().getBlack(),
             me.getManaPool().getRed(), me.getManaPool().getGreen(), me.getManaPool().getColorless()};

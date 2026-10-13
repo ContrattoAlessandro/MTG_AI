@@ -19,7 +19,7 @@ from magezero.policy.catalog import CardCatalog
 from magezero.policy.checkpoint import load_checkpoint, resolve_device, save_checkpoint
 from magezero.policy.learner import PPOConfig, train_from_files
 from magezero.policy.model import EntityBeliefPolicy, ModelConfig, PrivilegedCritic
-from magezero.policy.schema import collate_observations
+from magezero.policy.schema import ENTITY_FEATURES, collate_observations
 from magezero.policy.service import PolicyService
 from magezero.policy.roles import ROLE_NAMES
 
@@ -28,7 +28,7 @@ def observation(config, game, step):
     return {"schema_version": 2, "catalog_digest": config.catalog_digest, "game_id": game,
         "player_id": "smoke", "step": step,
         "entities": [{"id": "card", "card_id": 1, "kind": 1, "zone": 1, "owner": 0,
-            "controller": 0, "visibility": "public", "features": [0.1] + [0.] * 31}],
+            "controller": 0, "visibility": "public", "features": [0.1] + [0.] * (ENTITY_FEATURES - 1)}],
         "relations": [], "globals": [step / 100.] + [0.] * 23,
         "events": [{"seq": step, "type": "pass", "actor": 1, "card_id": 0, "features": [0.] * 8}],
         "actions": [{"id": name, "type": name, "source": "card", "target": None,

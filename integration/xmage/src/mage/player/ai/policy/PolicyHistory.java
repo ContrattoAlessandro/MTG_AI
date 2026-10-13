@@ -6,13 +6,18 @@ import mage.game.Game;
 import mage.game.events.*;
 import mage.watchers.Watcher;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /** Captures sanitized events when they happen, including between actor decisions. */
 public final class PolicyHistory extends Watcher {
     private final UUID observer;
     private final Map<String, Integer> cardIds;
     private final List<Map<String, Object>> pending = new ArrayList<>();
-    private int sequence = 0;
+    // Shared by every copy: XMage restores a saved game state (and this watcher with
+    // it) when an activation fails or a human undoes. Event numbers must keep
+    // increasing, and events already sent to the policy must not be sent again.
+    private final AtomicInteger sequence;
+    private final AtomicInteger sent;
     private final Map<UUID, Integer> knownHand = new HashMap<>();
 
     public PolicyHistory(UUID observer, Map<String, Integer> cardIds) {
@@ -20,6 +25,8 @@ public final class PolicyHistory extends Watcher {
         this.observer = observer;
         this.cardIds = new HashMap<>(cardIds);
         this.controllerId = observer;
+        this.sequence = new AtomicInteger();
+        this.sent = new AtomicInteger(-1);
     }
 
     private PolicyHistory(PolicyHistory other) {
@@ -29,6 +36,7 @@ public final class PolicyHistory extends Watcher {
         pending.addAll(other.pending);
         knownHand.putAll(other.knownHand);
         sequence = other.sequence;
+        sent = other.sent;
     }
 
     @Override @SuppressWarnings("unchecked") public <T extends Watcher> T copy() {
@@ -91,7 +99,7 @@ public final class PolicyHistory extends Watcher {
             features[2] = PolicyEncoder.zone(change.getFromZone()) / 7.0;
             features[3] = PolicyEncoder.zone(change.getToZone()) / 7.0;
         }
-        pending.add(PolicyEncoder.map("seq", sequence++, "type", type,
+        pending.add(PolicyEncoder.map("seq", sequence.getAndIncrement(), "type", type,
             "actor", observer.equals(event.getPlayerId()) ? 0 : event.getPlayerId() == null ? 2 : 1,
             "card_id", cardId, "features", features));
     }
@@ -102,8 +110,12 @@ public final class PolicyHistory extends Watcher {
     }
 
     public List<Map<String, Object>> drain() {
-        List<Map<String, Object>> result = new ArrayList<>(pending);
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Map<String, Object> event : pending) {
+            if ((Integer) event.get("seq") > sent.get()) result.add(event);
+        }
         pending.clear();
+        if (!result.isEmpty()) sent.set((Integer) result.get(result.size() - 1).get("seq"));
         return result;
     }
 
@@ -116,14 +128,14 @@ public final class PolicyHistory extends Watcher {
     public void choice(int cardId, double[] actionFeatures, Game game) {
         double[] features = new double[8];
         System.arraycopy(actionFeatures, 0, features, 0, 8);
-        pending.add(PolicyEncoder.map("seq", sequence++, "type", "choice", "actor", 0,
+        pending.add(PolicyEncoder.map("seq", sequence.getAndIncrement(), "type", "choice", "actor", 0,
             "card_id", cardId, "features", features));
     }
 
     public void passed(UUID playerId, Game game) {
         double[] features = new double[8];
         features[1] = game.getTurnNum() / 100.0;
-        pending.add(PolicyEncoder.map("seq", sequence++, "type", "pass", "actor",
+        pending.add(PolicyEncoder.map("seq", sequence.getAndIncrement(), "type", "pass", "actor",
             observer.equals(playerId) ? 0 : 1, "card_id", 0, "features", features));
     }
 }

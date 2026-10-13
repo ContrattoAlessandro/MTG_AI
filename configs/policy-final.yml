@@ -11,7 +11,8 @@ model:
   max_hand_size: 64
   max_entities: 512
   max_actions: 2048
-  max_events: 1024
+  # Kinnan mana loops can emit thousands of events between two decisions.
+  max_events: 8192
   max_relations: 2048
   max_deck_kinds: 128
 

@@ -211,30 +211,50 @@ class _Collector:
         self.services.close()
 
 
-def _game_config(base, games, ports, opponent_ports):
+def _game_config(base, games, ports, opponent_ports, keep_deck=False, sample=True):
     config = json.loads(json.dumps(base))
     config["training"]["games"] = games
-    # Odd games swap seats: against a fixed opponent the learner plays both decks
-    # of an asymmetric matchup, and each controller starts with each deck.
+    # Odd games swap seats and each controller starts with each deck. Without
+    # keep_deck the decks stay with the seats, so against a fixed opponent the
+    # learner plays both decks of an asymmetric matchup; with it the learner
+    # always plays player_a's deck.
     config["goes_first"] = "random"
     config["server"] = {"host": "127.0.0.1", "port": ports[0], "opponent_port": opponent_ports[0],
-                        "ports": ports, "opponent_ports": opponent_ports, "alternate_seats": True}
+                        "ports": ports, "opponent_ports": opponent_ports, "alternate_seats": True,
+                        "learner_keeps_deck": bool(keep_deck or (base.get("server") or {}).get("learner_keeps_deck")),
+                        "sample": sample}
     for player in ("player_a", "player_b"):
         config[player]["hiddenInfo"] = {"see_opponent_hand": False}
     return config
 
 
-def _evaluate(collector, base, folder, current, version, benchmarks, games, ai_skill, actor_ports, digest):
-    """Fixed benchmark matches; never recorded as training data."""
+def _gauntlet_config(base, games, ports, deck, ai_skill, sample=True, think_seconds=0):
+    """The learner's deck (player_a) against `deck` piloted by XMage's AI.
+
+    think_seconds > 0 caps the AI's search per decision (XMage: 3 s per skill level)."""
+    config = _game_config(base, games, ports, ports, keep_deck=True, sample=sample)
+    config["player_b"]["deckPath"] = str(deck)
+    config["player_b"]["type"] = "xmage-ai"
+    config["opponent_ai"] = {"skill": ai_skill, **({"think_seconds": think_seconds} if think_seconds else {})}
+    return config
+
+
+def _evaluate(collector, base, folder, current, version, benchmarks, games, ai_skill, actor_ports, digest,
+              greedy=False):
+    """Fixed benchmark matches; never recorded as training data.
+
+    benchmarks: (name, anchor checkpoint or None for XMage's AI, opponent deck or
+    None for player_b's deck). greedy plays the learner's most likely actions.
+    """
     report = {}
-    for name, anchor in benchmarks:
-        config = _game_config(base, games, actor_ports,
-                              actor_ports if anchor is None else [port + 1 for port in actor_ports])
-        targets = {port: (current, None, version, f"actor-{i}") for i, port in enumerate(actor_ports)}
+    for name, anchor, deck in benchmarks:
+        sample = not greedy
         if anchor is None:
-            config["player_b"]["type"] = "xmage-ai"
-            config["opponent_ai"] = {"skill": ai_skill}
+            config = _gauntlet_config(base, games, actor_ports, deck or base["player_b"]["deckPath"], ai_skill, sample)
         else:
+            config = _game_config(base, games, actor_ports, [port + 1 for port in actor_ports], sample=sample)
+        targets = {port: (current, None, version, f"actor-{i}") for i, port in enumerate(actor_ports)}
+        if anchor is not None:
             _, _, catalog, data = load_checkpoint(anchor)
             if catalog.digest != digest:
                 raise ValueError(f"benchmark {anchor} uses a different card catalog")
@@ -262,10 +282,11 @@ def _evaluate(collector, base, folder, current, version, benchmarks, games, ai_s
 
 
 def _primary_score(report):
-    """Selection metric: score against XMage's AI when evaluated, else mean anchor score."""
-    if "xmage-ai" in report:
-        return report["xmage-ai"].get("score")
-    scores = [entry["score"] for entry in report.values() if entry.get("score") is not None]
+    """Selection metric: mean score against XMage's AI (over every deck it pilots)
+    when evaluated, else the mean anchor score."""
+    ai = [entry.get("score") for name, entry in report.items() if name.startswith("xmage-ai")]
+    scores = ai if ai else [entry.get("score") for entry in report.values()]
+    scores = [score for score in scores if score is not None]
     return sum(scores) / len(scores) if scores else None
 
 
@@ -274,7 +295,8 @@ def run_selfplay(checkpoint, game_config, policy_config, engine_script, output,
                  max_seconds=None, engine_threads=None, snapshot_every=5, actor_threads=1,
                  actor_shards=1, resume=False, eval_every=0, eval_games=64, eval_ai_skill=6,
                  eval_anchors=(), keep_episodes=False, keep_every=50, min_free_gb=20.0,
-                 max_retries=3, max_failure_fraction=0.25):
+                 max_retries=3, max_failure_fraction=0.25, gauntlet=(), gauntlet_fraction=0.5,
+                 gauntlet_ai_skill=3, gauntlet_ai_think=0, eval_greedy=False):
     """Run collect/learn generations until `iterations` generations exist in `output`.
 
     Long-run safety: a failed or hung engine batch restarts the engine and services
@@ -282,6 +304,11 @@ def run_selfplay(checkpoint, game_config, policy_config, engine_script, output,
     counted, not fatal. `resume=True` continues an interrupted run from its state
     file. Episodes are deleted after training unless kept, checkpoints are pruned
     to league snapshots, the best evaluated policy, and every keep_every-th one.
+
+    Gauntlet: a `gauntlet_fraction` share of each generation's games puts the
+    learner's deck (player_a) against one of the `gauntlet` decks piloted by
+    XMage's AI, rotating through them by generation. The rest are mirror/league
+    games. Only the learner's side is recorded in gauntlet games.
     """
     script = Path(engine_script).resolve()
     if not script.is_file():
@@ -298,6 +325,11 @@ def run_selfplay(checkpoint, game_config, policy_config, engine_script, output,
         raise ValueError("evaluation interval must be >= 0, games >= 1, AI skill 0 (off) to 10")
     if not 0 < max_failure_fraction <= 1:
         raise ValueError("max_failure_fraction must be in (0, 1]")
+    gauntlet = [Path(deck).resolve() for deck in gauntlet]
+    if any(not deck.is_file() for deck in gauntlet):
+        raise ValueError(f"gauntlet deck is missing: {[str(d) for d in gauntlet if not d.is_file()]}")
+    if gauntlet and not (0 < gauntlet_fraction <= 1 and 1 <= gauntlet_ai_skill <= 10 and gauntlet_ai_think >= 0):
+        raise ValueError("gauntlet fraction must be in (0, 1], its AI skill in 1..10 and think time >= 0")
     raw = yaml.safe_load(Path(policy_config).read_text(encoding="utf-8"))
     training = PPOConfig(**raw.get("training", {}))
     base = yaml.safe_load(Path(game_config).read_text(encoding="utf-8"))
@@ -331,8 +363,9 @@ def run_selfplay(checkpoint, game_config, policy_config, engine_script, output,
     league_file = Path(state["league"])
     league = League.load(league_file) if league_file.exists() else League()
     _, _, initial_catalog, _ = load_checkpoint(state["initial_checkpoint"])
-    benchmarks = ([("xmage-ai", None)] if eval_ai_skill else []) + [
-        (f"anchor:{Path(anchor).stem}", Path(anchor).resolve()) for anchor in eval_anchors]
+    benchmarks = ([("xmage-ai", None, None)] if eval_ai_skill else []) + [
+        (f"xmage-ai:{deck.stem}", None, deck) for deck in (gauntlet if eval_ai_skill else [])] + [
+        (f"anchor:{Path(anchor).stem}", Path(anchor).resolve(), None) for anchor in eval_anchors]
     if eval_every and not benchmarks:
         raise ValueError("evaluation needs the XMage AI (skill > 0) or at least one anchor checkpoint")
     current = Path(state["current"])
@@ -388,21 +421,44 @@ def run_selfplay(checkpoint, game_config, policy_config, engine_script, output,
             # Learner shard i listens on 50052+2i, historical-opponent shard i on 50053+2i.
             # The engine routes game g to shard g mod n for both of its players.
             opponent_ports = actor_ports if opponent == current else [port + 1 for port in actor_ports]
-            config = _game_config(base, games, actor_ports, opponent_ports)
-            config_file = folder / "game.yml"
-            config_file.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
-            targets = {port: (current, episodes, initial["policy_version"], f"actor-{i}")
-                       for i, port in enumerate(actor_ports)}
-            if opponent != current:
-                targets.update({port: (opponent, None, opponent_data["policy_version"], f"opponent-{i}")
-                                for i, port in enumerate(opponent_ports)})
-            print(f"Generation {generation}: {games} games, learner={initial['policy_version']}, opponent={opponent}")
+            gauntlet_games = min(games, round(games * gauntlet_fraction)) if gauntlet else 0
+            batches = []  # (kind, config, config file, service targets)
+            if games - gauntlet_games:
+                config = _game_config(base, games - gauntlet_games, actor_ports, opponent_ports)
+                config_file = folder / "game.yml"
+                config_file.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+                targets = {port: (current, episodes / "selfplay", initial["policy_version"], f"actor-{i}")
+                           for i, port in enumerate(actor_ports)}
+                if opponent != current:
+                    targets.update({port: (opponent, None, opponent_data["policy_version"], f"opponent-{i}")
+                                    for i, port in enumerate(opponent_ports)})
+                batches.append(("selfplay", config, config_file, targets))
+            if gauntlet_games:
+                deck = gauntlet[generation % len(gauntlet)]
+                config = _gauntlet_config(base, gauntlet_games, actor_ports, deck, gauntlet_ai_skill,
+                                          think_seconds=gauntlet_ai_think)
+                config_file = folder / "gauntlet.yml"
+                config_file.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+                targets = {port: (current, episodes / "gauntlet", initial["policy_version"], f"actor-{i}")
+                           for i, port in enumerate(actor_ports)}
+                batches.append((f"gauntlet:{deck.stem}", config, config_file, targets))
+            print(f"Generation {generation}: {games} games ({gauntlet_games} gauntlet), "
+                  f"learner={initial['policy_version']}, opponent={opponent}")
             collection_started = time.perf_counter()
             for attempt in range(max_retries + 1):
                 try:
-                    collector.services.prepare(targets)
-                    counts = collector.run(config_file, _batch_timeout(config))
-                    shards = sorted(episodes.glob("*.jsonl"))
+                    counts, by_kind, service_stats = [0] * 5, {}, {}
+                    for kind, config, config_file, targets in batches:
+                        collector.services.prepare(targets)
+                        result = collector.run(config_file, _batch_timeout(config))
+                        counts = [x + y for x, y in zip(counts, result)]
+                        # Service counters restart at each reload, so these are this batch's.
+                        by_kind[kind] = {**dict(zip(("terminal", "requested", "truncated", "errors", "timeouts"), result)),
+                                         "learner_results": _results(actor_ports)}
+                        service_stats[kind] = {"actor": [_service_stats(port) for port in actor_ports]}
+                        if kind == "selfplay" and opponent != current:
+                            service_stats[kind]["opponent"] = [_service_stats(port) for port in opponent_ports]
+                    shards = sorted(episodes.glob("*/*.jsonl"))
                     if not shards:
                         raise RuntimeError("engine emitted no trajectories (every game failed)")
                     break
@@ -412,9 +468,6 @@ def run_selfplay(checkpoint, game_config, policy_config, engine_script, output,
                     if attempt == max_retries:
                         raise RuntimeError(f"generation {generation} failed {max_retries + 1} times; "
                                            f"inspect {root / 'engine.log'} and rerun with --resume") from error
-            service_stats = {"actor": [_service_stats(port) for port in actor_ports]}
-            if opponent != current:
-                service_stats["opponent"] = [_service_stats(port) for port in opponent_ports]
             outcome = dict(zip(("terminal", "requested", "truncated", "errors", "timeouts"), counts))
             failures = outcome["errors"] + outcome["timeouts"]
             next_checkpoint = folder / "policy.pt"
@@ -428,7 +481,7 @@ def run_selfplay(checkpoint, game_config, policy_config, engine_script, output,
                 collected_decisions=decisions, games=outcome,
                 failure_fraction=failures / outcome["requested"],
                 truncation_fraction=outcome["truncated"] / outcome["requested"],
-                completed_games=outcome["terminal"],
+                completed_games=outcome["terminal"], games_by_kind=by_kind,
                 collection_games_per_hour=3600 * outcome["terminal"] / collection_seconds,
                 collected_decisions_per_second=decisions / collection_seconds,
                 training_decision_passes_per_second=metrics["decisions"] / training_seconds,
@@ -436,8 +489,8 @@ def run_selfplay(checkpoint, game_config, policy_config, engine_script, output,
                 engine_restarts=collector.restarts, policy_services=service_stats)
             # Result statistics are terminal game outcomes, from the learner's side.
             if opponent != current:
-                for record in records:
-                    if record["terminal"]:
+                for shard, record in zip(shards, records):
+                    if record["terminal"] and shard.parent.name == "selfplay":
                         league.record(opponent, record["steps"][-1]["reward"])
             # Sparse snapshots: one per generation would fill the pool with nearly
             # identical policies whose win-rate estimates never leave their prior.
@@ -447,7 +500,7 @@ def run_selfplay(checkpoint, game_config, policy_config, engine_script, output,
             previous, current = current, next_checkpoint
             if eval_every and ((generation + 1) % eval_every == 0 or generation + 1 == iterations):
                 report = _evaluate(collector, base, folder, current, _policy_version(current), benchmarks,
-                                   eval_games, eval_ai_skill, actor_ports, catalog.digest)
+                                   eval_games, eval_ai_skill, actor_ports, catalog.digest, eval_greedy)
                 score = _primary_score(report)
                 entry = {"generation": generation, "checkpoint": str(current), "score": score, "report": report}
                 with (root / "evaluations.jsonl").open("a", encoding="utf-8") as stream:

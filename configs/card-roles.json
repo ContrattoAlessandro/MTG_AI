@@ -1,23 +1,1498 @@
 {
   "format_version": 1,
   "cards": {
-    "Cenote Scout": {"roles": ["board_presence", "card_draw", "card_selection"], "source": ".mz_engine/Mage.Sets/src/mage/cards/c/CenoteScout.java", "notes": "Body with ETB explore: conditional land access into hand and selection of a nonland. This is not an unconditional draw spell."},
-    "Elfhame Wurm": {"roles": ["board_presence"], "source": ".mz_engine/Mage.Sets/src/mage/cards/e/ElfhameWurm.java", "notes": "Vigilance/trample body; intrinsic combat keywords do not count as an independent combat trick."},
-    "Evolving Adaptive": {"roles": ["board_presence"], "source": ".mz_engine/Mage.Sets/src/mage/cards/e/EvolvingAdaptive.java", "notes": "Growing body; its self-growth does not supply an independent pump spell or hidden removal."},
-    "Flourishing Bloom-Kin": {"roles": ["board_presence", "mana_acceleration", "tutor"], "source": ".mz_engine/Mage.Sets/src/mage/cards/f/FlourishingBloomKin.java", "notes": "Body, with conditional Forest search and deployment after being turned face up. Role presence does not imply that route is immediately usable from hand."},
-    "Forest": {"roles": ["land_access"], "source": ".mz_engine/Mage/src/main/java/mage/cards/basiclands/Forest.java", "notes": "Ordinary land access. A normal land drop is not additional mana acceleration."},
-    "Grizzly Bears": {"roles": ["board_presence"], "source": ".mz_engine/Mage.Sets/src/mage/cards/g/GrizzlyBears.java", "notes": "Vanilla creature body."},
-    "Hazard of the Dunes": {"roles": ["board_presence"], "source": ".mz_engine/Mage.Sets/src/mage/cards/h/HazardOfTheDunes.java", "notes": "Body with an on-board self-boost. Do not interpret holding this creature as holding a separate combat trick."},
-    "Hulking Raptor": {"roles": ["board_presence", "mana_acceleration"], "source": ".mz_engine/Mage.Sets/src/mage/cards/h/HulkingRaptor.java", "notes": "Body with recurring precombat mana. Its own ward is not a protection spell for another permanent or a counterspell in hand."},
-    "Ichorspit Basilisk": {"roles": ["board_presence"], "source": ".mz_engine/Mage.Sets/src/mage/cards/i/IchorspitBasilisk.java", "notes": "Deathtouch/toxic body; combat keywords do not constitute a standalone removal or direct burn spell."},
-    "Pugnacious Hammerskull": {"roles": ["board_presence"], "source": ".mz_engine/Mage.Sets/src/mage/cards/p/PugnaciousHammerskull.java", "notes": "Creature presence with an attack condition, not hidden independent interaction."},
-    "Llanowar Elves": {"roles": ["board_presence", "mana_acceleration"], "source": ".mz_engine/Mage.Sets/src/mage/cards/l/LlanowarElves.java", "notes": "Creature plus tap-for-mana capability; summoning sickness can delay mana production."},
-    "Brazen Borrower": {"roles": ["board_presence", "tempo_interaction"], "source": ".mz_engine/Mage.Sets/src/mage/cards/b/BrazenBorrower.java", "notes": "Flash creature and bounce Adventure. Available routes depend on zone; bounce is temporary rather than permanent spot removal."},
-    "Boseiju, Who Endures": {"roles": ["land_access", "spot_removal"], "source": ".mz_engine/Mage.Sets/src/mage/cards/b/BoseijuWhoEndures.java", "notes": "Land plus channel destruction of an opposing artifact, enchantment or nonbasic land; not a creature answer."},
-    "Negate": {"roles": ["counterspell"], "source": ".mz_engine/Mage.Sets/src/mage/cards/n/Negate.java", "notes": "Only noncreature spells. This broad role does not claim an answer to every legal spell."},
-    "Counterspell": {"roles": ["counterspell"], "source": ".mz_engine/Mage.Sets/src/mage/cards/c/Counterspell.java", "notes": "Counters a spell, not an activated ability or land play."},
-    "Growth Spiral": {"roles": ["card_draw", "mana_acceleration"], "source": ".mz_engine/Mage.Sets/src/mage/cards/g/GrowthSpiral.java", "notes": "One-card replacement and conditional additional land deployment; requires an eligible land to accelerate."},
-    "Lightning Bolt": {"roles": ["spot_removal", "direct_reach"], "source": ".mz_engine/Mage.Sets/src/mage/cards/l/LightningBolt.java", "notes": "Three damage to any target, supplying conditional creature removal or direct reach. One physical card is counted once in each role."},
-    "Wrath of God": {"roles": ["sweeper"], "source": ".mz_engine/Mage.Sets/src/mage/cards/w/WrathOfGod.java", "notes": "Mass creature destruction, not an individually targeted removal route."}
+    "Cenote Scout": {
+      "roles": [
+        "board_presence",
+        "card_draw",
+        "card_selection"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/c/CenoteScout.java",
+      "notes": "Body with ETB explore: conditional land access into hand and selection of a nonland. This is not an unconditional draw spell."
+    },
+    "Elfhame Wurm": {
+      "roles": [
+        "board_presence"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/e/ElfhameWurm.java",
+      "notes": "Vigilance/trample body; intrinsic combat keywords do not count as an independent combat trick."
+    },
+    "Evolving Adaptive": {
+      "roles": [
+        "board_presence"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/e/EvolvingAdaptive.java",
+      "notes": "Growing body; its self-growth does not supply an independent pump spell or hidden removal."
+    },
+    "Flourishing Bloom-Kin": {
+      "roles": [
+        "board_presence",
+        "mana_acceleration",
+        "tutor"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/f/FlourishingBloomKin.java",
+      "notes": "Body, with conditional Forest search and deployment after being turned face up. Role presence does not imply that route is immediately usable from hand."
+    },
+    "Forest": {
+      "roles": [
+        "land_access"
+      ],
+      "source": ".mz_engine/Mage/src/main/java/mage/cards/basiclands/Forest.java",
+      "notes": "Ordinary land access. A normal land drop is not additional mana acceleration."
+    },
+    "Grizzly Bears": {
+      "roles": [
+        "board_presence"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/g/GrizzlyBears.java",
+      "notes": "Vanilla creature body."
+    },
+    "Hazard of the Dunes": {
+      "roles": [
+        "board_presence"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/h/HazardOfTheDunes.java",
+      "notes": "Body with an on-board self-boost. Do not interpret holding this creature as holding a separate combat trick."
+    },
+    "Hulking Raptor": {
+      "roles": [
+        "board_presence",
+        "mana_acceleration"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/h/HulkingRaptor.java",
+      "notes": "Body with recurring precombat mana. Its own ward is not a protection spell for another permanent or a counterspell in hand."
+    },
+    "Ichorspit Basilisk": {
+      "roles": [
+        "board_presence"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/i/IchorspitBasilisk.java",
+      "notes": "Deathtouch/toxic body; combat keywords do not constitute a standalone removal or direct burn spell."
+    },
+    "Pugnacious Hammerskull": {
+      "roles": [
+        "board_presence"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/p/PugnaciousHammerskull.java",
+      "notes": "Creature presence with an attack condition, not hidden independent interaction."
+    },
+    "Llanowar Elves": {
+      "roles": [
+        "board_presence",
+        "mana_acceleration"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/l/LlanowarElves.java",
+      "notes": "Creature plus tap-for-mana capability; summoning sickness can delay mana production."
+    },
+    "Brazen Borrower": {
+      "roles": [
+        "board_presence",
+        "tempo_interaction"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/b/BrazenBorrower.java",
+      "notes": "Flash creature and bounce Adventure. Available routes depend on zone; bounce is temporary rather than permanent spot removal."
+    },
+    "Boseiju, Who Endures": {
+      "roles": [
+        "land_access",
+        "spot_removal"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/b/BoseijuWhoEndures.java",
+      "notes": "Land plus channel destruction of an opposing artifact, enchantment or nonbasic land; not a creature answer."
+    },
+    "Negate": {
+      "roles": [
+        "counterspell"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/n/Negate.java",
+      "notes": "Only noncreature spells."
+    },
+    "Counterspell": {
+      "roles": [
+        "counterspell"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/c/Counterspell.java",
+      "notes": "Counters a spell, not an activated ability or land play."
+    },
+    "Growth Spiral": {
+      "roles": [
+        "card_draw",
+        "mana_acceleration"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/g/GrowthSpiral.java",
+      "notes": "One-card replacement and conditional additional land deployment; requires an eligible land to accelerate."
+    },
+    "Lightning Bolt": {
+      "roles": [
+        "spot_removal",
+        "direct_reach"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/l/LightningBolt.java",
+      "notes": "Three damage to any target, supplying conditional creature removal or direct reach. One physical card is counted once in each role."
+    },
+    "Wrath of God": {
+      "roles": [
+        "sweeper"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/w/WrathOfGod.java",
+      "notes": "Mass creature destruction, not an individually targeted removal route."
+    },
+    "Ajani, Nacatl Avenger": {
+      "roles": [
+        "board_presence",
+        "direct_reach",
+        "repeatable_engine"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/a/AjaniNacatlAvenger.java",
+      "notes": "Transformed planeswalker face of Ajani, Nacatl Pariah; only reachable from the battlefield, never held in hand."
+    },
+    "Ajani, Nacatl Pariah": {
+      "roles": [
+        "board_presence",
+        "deck_synergy"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/a/AjaniNacatlPariah.java",
+      "notes": "Human body plus a 2/1 non-Human Cat Warrior token: one card supplies both halves of a Winota trigger. Transforms when another Cat dies."
+    },
+    "Alexios, Deimos of Kosmos": {
+      "roles": [
+        "board_presence",
+        "deck_synergy"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/a/AlexiosDeimosOfKosmos.java",
+      "notes": "Trampling non-Human that changes control each upkeep and must attack; pressure and a Winota trigger rather than a stable blocker."
+    },
+    "Alseid of Life's Bounty": {
+      "roles": [
+        "board_presence",
+        "protection",
+        "survival"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/a/AlseidOfLifesBounty.java",
+      "notes": "Lifelink non-Human one-drop that sacrifices to give protection from a colour to a creature or enchantment."
+    },
+    "Angrath's Marauders": {
+      "roles": [
+        "board_presence",
+        "combat_modifier",
+        "direct_reach"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/a/AngrathsMarauders.java",
+      "notes": "Non-Human body that doubles all damage its controller's sources deal."
+    },
+    "Arcane Denial": {
+      "roles": [
+        "counterspell"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/a/ArcaneDenial.java",
+      "notes": "Hard counter; both players draw later."
+    },
+    "Arcane Signet": {
+      "roles": [
+        "mana_acceleration"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/a/ArcaneSignet.java",
+      "notes": "Mana rock for the commander's colours."
+    },
+    "Archon of Emeria": {
+      "roles": [
+        "board_presence",
+        "persistent_restriction"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/a/ArchonOfEmeria.java",
+      "notes": "Flying non-Human; one spell per turn for each player and opposing nonbasic lands enter tapped."
+    },
+    "Armored Scrapgorger": {
+      "roles": [
+        "board_presence",
+        "mana_acceleration",
+        "graveyard_hate"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/a/ArmoredScrapgorger.java",
+      "notes": "Mana creature that exiles a graveyard card each time it taps."
+    },
+    "Assembly-Worker Token": {
+      "roles": [
+        "board_presence"
+      ],
+      "source": ".mz_engine/Mage/src/main/java/mage/game/permanent/token/AssemblyWorkerToken.java",
+      "notes": "Mishra's Factory's creature form template."
+    },
+    "Auratouched Mage": {
+      "roles": [
+        "board_presence",
+        "tutor"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/a/AuratouchedMage.java",
+      "notes": "Human that fetches an Aura (here Breath of Fury) onto itself."
+    },
+    "Avalanche of Sector 7": {
+      "roles": [
+        "board_presence",
+        "repeatable_engine",
+        "direct_reach"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/a/AvalancheOfSector7.java",
+      "notes": "Menace non-Human whose power is the opponent's artifact count, and pings an opponent who activates artifact abilities."
+    },
+    "Aven Interrupter": {
+      "roles": [
+        "board_presence",
+        "tempo_interaction",
+        "persistent_restriction"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/a/AvenInterrupter.java",
+      "notes": "Flash flier that exiles a spell as plotted (a delay, not a counter) and taxes casting from graveyard or exile."
+    },
+    "Aven Mindcensor": {
+      "roles": [
+        "board_presence",
+        "persistent_restriction"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/a/AvenMindcensor.java",
+      "notes": "Flash flier that limits opposing library searches to the top four cards."
+    },
+    "Basalt Monolith": {
+      "roles": [
+        "mana_acceleration",
+        "deck_synergy"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/b/BasaltMonolith.java",
+      "notes": "Three-mana rock; with Kinnan it untaps for net infinite colourless mana."
+    },
+    "Battlefield Forge": {
+      "roles": [
+        "land_access"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/b/BattlefieldForge.java",
+      "notes": "Painland for red and white."
+    },
+    "Beast Token": {
+      "roles": [
+        "board_presence"
+      ],
+      "source": ".mz_engine/Mage/src/main/java/mage/game/permanent/token/BeastToken.java",
+      "notes": "3/3 Beast from Beast Within."
+    },
+    "Beast Within": {
+      "roles": [
+        "spot_removal"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/b/BeastWithin.java",
+      "notes": "Destroys any permanent; its controller gets a 3/3 Beast."
+    },
+    "Benevolent Bodyguard": {
+      "roles": [
+        "board_presence",
+        "protection"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/b/BenevolentBodyguard.java",
+      "notes": "Human one-drop that sacrifices to give a creature protection from a colour."
+    },
+    "Birds of Paradise": {
+      "roles": [
+        "board_presence",
+        "mana_acceleration"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/b/BirdsOfParadise.java",
+      "notes": "Flying mana creature."
+    },
+    "Blade Historian": {
+      "roles": [
+        "board_presence",
+        "combat_modifier"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/b/BladeHistorian.java",
+      "notes": "Human that gives attacking creatures double strike."
+    },
+    "Blinkmoth Nexus": {
+      "roles": [
+        "land_access",
+        "board_presence"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/b/BlinkmothNexus.java",
+      "notes": "Colourless land that becomes a 1/1 flying non-Human artifact creature."
+    },
+    "Blinkmoth Token": {
+      "roles": [
+        "board_presence"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/b/BlinkmothNexus.java",
+      "notes": "Blinkmoth Nexus's creature form template."
+    },
+    "Bloom Tender": {
+      "roles": [
+        "board_presence",
+        "mana_acceleration",
+        "deck_synergy"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/b/BloomTender.java",
+      "notes": "Mana per colour among its controller's permanents; combo piece with Freed from the Real."
+    },
+    "Bootleggers' Stash": {
+      "roles": [
+        "mana_acceleration",
+        "repeatable_engine"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/b/BootleggersStash.java",
+      "notes": "Lands make Treasure."
+    },
+    "Boromir, Warden of the Tower": {
+      "roles": [
+        "board_presence",
+        "persistent_restriction",
+        "protection"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/b/BoromirWardenOfTheTower.java",
+      "notes": "Human; counters opposing spells cast without mana and sacrifices to make the team indestructible."
+    },
+    "Bounding Krasis": {
+      "roles": [
+        "board_presence",
+        "tempo_interaction"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/b/BoundingKrasis.java",
+      "notes": "Substitute for Tidus, Zanarkand Fayth (not in this XMage build). Flash body that taps or untaps a creature."
+    },
+    "Breath of Fury": {
+      "roles": [
+        "combat_modifier",
+        "repeatable_engine"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/b/BreathOfFury.java",
+      "notes": "Aura that sacrifices the creature after combat damage to a player for an untap and an extra combat."
+    },
+    "Breeding Pool": {
+      "roles": [
+        "land_access"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/b/BreedingPool.java",
+      "notes": "Substitute for Avatar Sanctuary (not in this XMage build). Green-blue shockland."
+    },
+    "Captain of the Watch": {
+      "roles": [
+        "board_presence",
+        "combat_modifier"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/c/CaptainOfTheWatch.java",
+      "notes": "Human that makes three Soldier tokens and pumps Soldiers."
+    },
+    "Cat Warrior Token": {
+      "roles": [
+        "board_presence"
+      ],
+      "source": ".mz_engine/Mage/src/main/java/mage/game/permanent/token/CatWarrior21Token.java",
+      "notes": "2/1 non-Human Cat Warrior from Ajani."
+    },
+    "Cathar Commando": {
+      "roles": [
+        "board_presence",
+        "spot_removal"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/c/CatharCommando.java",
+      "notes": "Flash Human that sacrifices to destroy an artifact or enchantment."
+    },
+    "Chance for Glory": {
+      "roles": [
+        "combat_modifier",
+        "protection"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/c/ChanceForGlory.java",
+      "notes": "Team indestructible and an extra turn; that turn's end step loses the game, so it is an all-in finisher."
+    },
+    "Charitable Levy": {
+      "roles": [
+        "persistent_restriction",
+        "card_draw",
+        "land_access"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/c/CharitableLevy.java",
+      "notes": "Taxes noncreature spells by one; after three noncreature spells it cashes in for a card and a Plains."
+    },
+    "Clarion Conqueror": {
+      "roles": [
+        "board_presence",
+        "persistent_restriction"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/c/ClarionConqueror.java",
+      "notes": "Flying non-Human that shuts off activated abilities of artifacts, creatures and planeswalkers (mana rocks and dorks included)."
+    },
+    "Cliffside Rescuer": {
+      "roles": [
+        "board_presence",
+        "protection"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/c/CliffsideRescuer.java",
+      "notes": "Vigilant non-Human that sacrifices to protect a permanent from opponents."
+    },
+    "Clifftop Retreat": {
+      "roles": [
+        "land_access"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/c/ClifftopRetreat.java",
+      "notes": "Red-white checkland."
+    },
+    "Colossal Skyturtle": {
+      "roles": [
+        "board_presence",
+        "tempo_interaction",
+        "recursion_cheating"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/c/ColossalSkyturtle.java",
+      "notes": "Big flying ward body; channel returns a graveyard card or bounces a creature."
+    },
+    "Combat Celebrant": {
+      "roles": [
+        "board_presence",
+        "combat_modifier"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/c/CombatCelebrant.java",
+      "notes": "Human that exerts for an untap and an additional combat phase."
+    },
+    "Command Tower": {
+      "roles": [
+        "land_access"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/c/CommandTower.java",
+      "notes": "Land for the commander's colours."
+    },
+    "Dauntless Dismantler": {
+      "roles": [
+        "board_presence",
+        "persistent_restriction",
+        "sweeper"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/d/DauntlessDismantler.java",
+      "notes": "Human; opposing artifacts enter tapped, and it sacrifices to destroy every artifact of one mana value."
+    },
+    "Deafening Silence": {
+      "roles": [
+        "persistent_restriction"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/d/DeafeningSilence.java",
+      "notes": "One noncreature spell per turn for each player."
+    },
+    "Devoted Druid": {
+      "roles": [
+        "board_presence",
+        "mana_acceleration",
+        "deck_synergy"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/d/DevotedDruid.java",
+      "notes": "Mana creature that untaps with -1/-1 counters; combo piece."
+    },
+    "Drift of Phantasms": {
+      "roles": [
+        "board_presence",
+        "tutor"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/d/DriftOfPhantasms.java",
+      "notes": "Flying defender; transmute finds a mana-value-3 card (Basalt Monolith, Bloom Tender...)."
+    },
+    "Eidolon of Rhetoric": {
+      "roles": [
+        "board_presence",
+        "persistent_restriction"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/e/EidolonOfRhetoric.java",
+      "notes": "Enchantment creature: one spell per turn for each player."
+    },
+    "Elvish Mystic": {
+      "roles": [
+        "board_presence",
+        "mana_acceleration"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/e/ElvishMystic.java",
+      "notes": "Mana creature."
+    },
+    "Enduring Vitality": {
+      "roles": [
+        "board_presence",
+        "mana_acceleration",
+        "survival"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/e/EnduringVitality.java",
+      "notes": "Creatures tap for any colour; returns as an enchantment when it dies."
+    },
+    "Energy Refractor": {
+      "roles": [
+        "mana_acceleration",
+        "card_draw"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/e/EnergyRefractor.java",
+      "notes": "Filter rock that replaces itself."
+    },
+    "Eomer, King of Rohan": {
+      "roles": [
+        "board_presence",
+        "direct_reach",
+        "spot_removal",
+        "card_draw"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/e/EomerKingOfRohan.java",
+      "notes": "Double-strike Human that grows with Humans, makes a player the monarch and deals its power to any target on entry."
+    },
+    "Eternal Witness": {
+      "roles": [
+        "board_presence",
+        "recursion_cheating"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/e/EternalWitness.java",
+      "notes": "Returns a graveyard card to hand."
+    },
+    "Ethersworn Canonist": {
+      "roles": [
+        "board_presence",
+        "persistent_restriction"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/e/EtherswornCanonist.java",
+      "notes": "Non-Human artifact creature: one nonartifact spell per turn for each player."
+    },
+    "Exotic Orchard": {
+      "roles": [
+        "land_access"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/e/ExoticOrchard.java",
+      "notes": "Land making colours the opponent's lands make."
+    },
+    "Explore the Vastlands": {
+      "roles": [
+        "card_selection",
+        "land_access",
+        "survival"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/w/WanderingArchaic.java",
+      "notes": "Adventure-side spell of Wandering Archaic: each player digs for lands/instants/sorceries and gains 3 life."
+    },
+    "Fabricate": {
+      "roles": [
+        "tutor"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/f/Fabricate.java",
+      "notes": "Finds an artifact (Basalt Monolith, Sol Ring...)."
+    },
+    "Fellwar Stone": {
+      "roles": [
+        "mana_acceleration"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/f/FellwarStone.java",
+      "notes": "Mana rock for colours the opponent's lands make."
+    },
+    "Flamescroll Celebrant": {
+      "roles": [
+        "board_presence",
+        "direct_reach",
+        "persistent_restriction"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/f/FlamescrollCelebrant.java",
+      "notes": "MDFC: a Human that pings opponents for non-mana activations, or Revel in Silence (no spells or loyalty abilities for opponents this turn)."
+    },
+    "Freed from the Real": {
+      "roles": [
+        "deck_synergy",
+        "tempo_interaction"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/f/FreedFromTheReal.java",
+      "notes": "Aura that taps and untaps a creature for {U}; infinite mana with Bloom Tender or Devoted Druid-style dorks."
+    },
+    "Fyndhorn Elves": {
+      "roles": [
+        "board_presence",
+        "mana_acceleration"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/f/FyndhornElves.java",
+      "notes": "Mana creature."
+    },
+    "Gene Pollinator": {
+      "roles": [
+        "board_presence",
+        "mana_acceleration"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/g/GenePollinator.java",
+      "notes": "Mana creature that taps another permanent."
+    },
+    "Gingerbrute": {
+      "roles": [
+        "board_presence",
+        "combat_modifier",
+        "survival"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/g/Gingerbrute.java",
+      "notes": "Hasty non-Human artifact creature with conditional evasion; sacrifices for life."
+    },
+    "Giver of Runes": {
+      "roles": [
+        "board_presence",
+        "protection"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/g/GiverOfRunes.java",
+      "notes": "Repeatable protection from colourless or a colour for another creature."
+    },
+    "Goblin Rabblemaster": {
+      "roles": [
+        "board_presence",
+        "repeatable_engine"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/g/GoblinRabblemaster.java",
+      "notes": "Non-Human that makes a hasty Goblin token each combat; Goblins must attack."
+    },
+    "Goblin Token": {
+      "roles": [
+        "board_presence"
+      ],
+      "source": ".mz_engine/Mage/src/main/java/mage/game/permanent/token/GoblinToken.java",
+      "notes": "1/1 red Goblin, a non-Human Winota trigger."
+    },
+    "Gold Myr": {
+      "roles": [
+        "board_presence",
+        "mana_acceleration"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/g/GoldMyr.java",
+      "notes": "Non-Human artifact mana creature."
+    },
+    "Goldhound": {
+      "roles": [
+        "board_presence",
+        "mana_acceleration"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/g/Goldhound.java",
+      "notes": "First-strike menace non-Human one-drop that sacrifices for one mana."
+    },
+    "Grand Abolisher": {
+      "roles": [
+        "board_presence",
+        "persistent_restriction",
+        "protection"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/g/GrandAbolisher.java",
+      "notes": "Human: opponents cannot cast spells or activate artifact/creature/enchantment abilities during its controller's turn."
+    },
+    "Great Furnace": {
+      "roles": [
+        "land_access"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/g/GreatFurnace.java",
+      "notes": "Artifact Mountain."
+    },
+    "Gyre Engineer": {
+      "roles": [
+        "board_presence",
+        "mana_acceleration"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/g/GyreEngineer.java",
+      "notes": "Mana creature making two colours."
+    },
+    "High Noon": {
+      "roles": [
+        "persistent_restriction",
+        "direct_reach",
+        "spot_removal"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/h/HighNoon.java",
+      "notes": "One spell per turn for each player; sacrifices for 5 damage to any target."
+    },
+    "Hinterland Harbor": {
+      "roles": [
+        "land_access"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/h/HinterlandHarbor.java",
+      "notes": "Green-blue checkland."
+    },
+    "Hope of Ghirapur": {
+      "roles": [
+        "board_presence",
+        "persistent_restriction"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/h/HopeOfGhirapur.java",
+      "notes": "Flying non-Human artifact one-drop; after combat damage it sacrifices to stop that player casting noncreature spells."
+    },
+    "Howlsquad Heavy": {
+      "roles": [
+        "board_presence",
+        "repeatable_engine",
+        "mana_acceleration"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/h/HowlsquadHeavy.java",
+      "notes": "Non-Human that makes a Goblin token each combat and gives Goblins haste; mana at max speed."
+    },
+    "Hullbreaker Horror": {
+      "roles": [
+        "board_presence",
+        "counterspell",
+        "tempo_interaction",
+        "repeatable_engine"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/h/HullbreakerHorror.java",
+      "notes": "Uncounterable flash body; each own spell bounces a spell or nonland permanent."
+    },
+    "Hushbringer": {
+      "roles": [
+        "board_presence",
+        "persistent_restriction",
+        "survival"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/h/Hushbringer.java",
+      "notes": "Flying lifelink non-Human; creatures entering or dying trigger nothing (Winota triggers on attack, so it is unaffected)."
+    },
+    "Illusion Token": {
+      "roles": [
+        "board_presence"
+      ],
+      "source": ".mz_engine/Mage/src/main/java/mage/game/permanent/token/CustomIllusionToken.java",
+      "notes": "X/X Illusion from Skyclave Apparition."
+    },
+    "Ilysian Caryatid": {
+      "roles": [
+        "board_presence",
+        "mana_acceleration"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/i/IlysianCaryatid.java",
+      "notes": "Mana creature."
+    },
+    "Incubation Druid": {
+      "roles": [
+        "board_presence",
+        "mana_acceleration"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/i/IncubationDruid.java",
+      "notes": "Mana creature; three mana once it has a counter."
+    },
+    "Intruder Alarm": {
+      "roles": [
+        "deck_synergy",
+        "persistent_restriction"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/i/IntruderAlarm.java",
+      "notes": "Creatures do not untap normally; any creature entering untaps all: combo engine with mana creatures and tokens."
+    },
+    "Island": {
+      "roles": [
+        "land_access"
+      ],
+      "source": ".mz_engine/Mage/src/main/java/mage/cards/basiclands/Island.java",
+      "notes": "Basic land."
+    },
+    "Jor Kadeen, the Prevailer": {
+      "roles": [
+        "board_presence",
+        "combat_modifier"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/j/JorKadeenThePrevailer.java",
+      "notes": "Human; with metalcraft the team gets +3/+0."
+    },
+    "Kinnan, Bonder Prodigy": {
+      "roles": [
+        "board_presence",
+        "mana_acceleration",
+        "repeatable_engine",
+        "recursion_cheating",
+        "deck_synergy"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/k/KinnanBonderProdigy.java",
+      "notes": "Commander. Nonland mana permanents make an extra mana; {5}{G}{U} puts a non-Human creature from the top five onto the battlefield."
+    },
+    "Legion Warboss": {
+      "roles": [
+        "board_presence",
+        "repeatable_engine",
+        "combat_modifier"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/l/LegionWarboss.java",
+      "notes": "Non-Human; makes a hasty attacking Goblin each combat and mentors."
+    },
+    "Lena, Selfless Champion": {
+      "roles": [
+        "board_presence",
+        "protection"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/l/LenaSelflessChampion.java",
+      "notes": "Human that makes a Soldier per nontoken creature and sacrifices to make smaller creatures indestructible."
+    },
+    "Leyline of Abundance": {
+      "roles": [
+        "mana_acceleration",
+        "combat_modifier"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/l/LeylineOfAbundance.java",
+      "notes": "Creatures tapped for mana make an extra {G}; can start on the battlefield; late-game team pump."
+    },
+    "Loyal Apprentice": {
+      "roles": [
+        "board_presence",
+        "repeatable_engine"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/l/LoyalApprentice.java",
+      "notes": "Hasty Human; with the commander out it makes a hasty flying Thopter each combat."
+    },
+    "Machine God's Effigy": {
+      "roles": [
+        "mana_acceleration",
+        "board_presence"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/m/MachineGodsEffigy.java",
+      "notes": "Mana artifact that can enter as a copy of any creature."
+    },
+    "Mana Leak": {
+      "roles": [
+        "counterspell"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/m/ManaLeak.java",
+      "notes": "Soft counter: unless its controller pays three."
+    },
+    "Maraleaf Pixie": {
+      "roles": [
+        "board_presence",
+        "mana_acceleration"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/m/MaraleafPixie.java",
+      "notes": "Flying mana creature."
+    },
+    "March of Swirling Mist": {
+      "roles": [
+        "tempo_interaction",
+        "protection"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/m/MarchOfSwirlingMist.java",
+      "notes": "Phases out up to X creatures: protects its own or removes blockers/attackers for a turn."
+    },
+    "Memnite": {
+      "roles": [
+        "board_presence"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/m/Memnite.java",
+      "notes": "Free non-Human artifact creature: a zero-mana Winota trigger."
+    },
+    "Mirage Mirror": {
+      "roles": [
+        "deck_synergy",
+        "board_presence"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/m/MirageMirror.java",
+      "notes": "Becomes a copy of an artifact, creature, enchantment or land until end of turn."
+    },
+    "Mirage Phalanx": {
+      "roles": [
+        "board_presence",
+        "repeatable_engine"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/m/MiragePhalanx.java",
+      "notes": "Human with soulbond that copies itself and its partner each combat."
+    },
+    "Miscast": {
+      "roles": [
+        "counterspell"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/m/Miscast.java",
+      "notes": "Counters an instant or sorcery unless its controller pays three."
+    },
+    "Mishra's Factory": {
+      "roles": [
+        "land_access",
+        "board_presence"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/m/MishrasFactory.java",
+      "notes": "Colourless land that becomes a 2/2 non-Human artifact creature."
+    },
+    "Moonsilver Key": {
+      "roles": [
+        "tutor",
+        "land_access"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/m/MoonsilverKey.java",
+      "notes": "Finds a mana artifact or a basic land."
+    },
+    "Mountain": {
+      "roles": [
+        "land_access"
+      ],
+      "source": ".mz_engine/Mage/src/main/java/mage/cards/basiclands/Mountain.java",
+      "notes": "Basic land."
+    },
+    "Muddle the Mixture": {
+      "roles": [
+        "counterspell",
+        "tutor"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/m/MuddleTheMixture.java",
+      "notes": "Counters an instant or sorcery; transmute finds a mana-value-2 card."
+    },
+    "Murkfiend Liege": {
+      "roles": [
+        "board_presence",
+        "combat_modifier",
+        "deck_synergy"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/m/MurkfiendLiege.java",
+      "notes": "Anthem for green and blue creatures that untap on the opponent's untap step."
+    },
+    "Myr Convert": {
+      "roles": [
+        "board_presence",
+        "mana_acceleration"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/m/MyrConvert.java",
+      "notes": "Non-Human toxic mana creature (pays life)."
+    },
+    "Narset, Parter of Veils": {
+      "roles": [
+        "board_presence",
+        "persistent_restriction",
+        "card_selection"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/n/NarsetParterOfVeils.java",
+      "notes": "Planeswalker: opponents draw one card per turn; -2 digs for a noncreature, nonland card."
+    },
+    "Nature's Rhythm": {
+      "roles": [
+        "tutor",
+        "recursion_cheating"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/n/NaturesRhythm.java",
+      "notes": "Puts a creature of mana value X or less from library onto the battlefield; harmonize recasts it."
+    },
+    "Neoform": {
+      "roles": [
+        "tutor",
+        "recursion_cheating"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/n/Neoform.java",
+      "notes": "Sacrifices a creature to put one with one more mana value onto the battlefield."
+    },
+    "Nyxbloom Ancient": {
+      "roles": [
+        "board_presence",
+        "mana_acceleration",
+        "deck_synergy"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/n/NyxbloomAncient.java",
+      "notes": "Triples mana from permanents; trample body."
+    },
+    "Ornithopter": {
+      "roles": [
+        "board_presence"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/o/Ornithopter.java",
+      "notes": "Free flying non-Human artifact creature."
+    },
+    "Ornithopter of Paradise": {
+      "roles": [
+        "board_presence",
+        "mana_acceleration"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/o/OrnithopterOfParadise.java",
+      "notes": "Flying non-Human mana creature."
+    },
+    "Paradise Druid": {
+      "roles": [
+        "board_presence",
+        "mana_acceleration"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/p/ParadiseDruid.java",
+      "notes": "Mana creature with hexproof while untapped."
+    },
+    "Pemmin's Aura": {
+      "roles": [
+        "deck_synergy",
+        "protection",
+        "combat_modifier"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/p/PemminsAura.java",
+      "notes": "Aura that untaps for {U} (combo with Kinnan/Bloom Tender), grants shroud, flying or stat shifts."
+    },
+    "Perplexing Chimera": {
+      "roles": [
+        "board_presence",
+        "tempo_interaction"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/p/PerplexingChimera.java",
+      "notes": "Exchanges itself for an opponent's spell: steals that spell."
+    },
+    "Phoenix Chick": {
+      "roles": [
+        "board_presence",
+        "recursion_cheating"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/p/PhoenixChick.java",
+      "notes": "Hasty flying non-Human; returns from the graveyard attacking when three or more creatures attack."
+    },
+    "Phyrexian Revoker": {
+      "roles": [
+        "board_presence",
+        "persistent_restriction"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/p/PhyrexianRevoker.java",
+      "notes": "Non-Human artifact creature that names a card whose activated abilities stop working."
+    },
+    "Pia and Kiran Nalaar": {
+      "roles": [
+        "board_presence",
+        "direct_reach",
+        "spot_removal"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/p/PiaAndKiranNalaar.java",
+      "notes": "Human pair making two Thopter tokens; sacrifices artifacts for 2 damage to any target."
+    },
+    "Plains": {
+      "roles": [
+        "land_access"
+      ],
+      "source": ".mz_engine/Mage/src/main/java/mage/cards/basiclands/Plains.java",
+      "notes": "Basic land."
+    },
+    "Poison Dart Frog": {
+      "roles": [
+        "board_presence",
+        "mana_acceleration"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/p/PoisonDartFrog.java",
+      "notes": "Reach mana creature that can gain deathtouch."
+    },
+    "Prismite": {
+      "roles": [
+        "board_presence",
+        "mana_acceleration"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/p/Prismite.java",
+      "notes": "Artifact creature that filters mana."
+    },
+    "Professional Face-Breaker": {
+      "roles": [
+        "board_presence",
+        "repeatable_engine",
+        "card_draw"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/p/ProfessionalFaceBreaker.java",
+      "notes": "Human; combat damage makes Treasure, and Treasure becomes impulse draws."
+    },
+    "Prophet of Distortion": {
+      "roles": [
+        "board_presence",
+        "card_draw",
+        "repeatable_engine"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/p/ProphetOfDistortion.java",
+      "notes": "Body with a colourless-mana draw outlet."
+    },
+    "Ragavan, Nimble Pilferer": {
+      "roles": [
+        "board_presence",
+        "repeatable_engine",
+        "mana_acceleration"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/r/RagavanNimblePilferer.java",
+      "notes": "Substitute for Mayor Tong of Chin Village (not in this XMage build). Non-Human one-drop with dash; combat damage makes Treasure and steals a card."
+    },
+    "Razorgrass Ambush": {
+      "roles": [
+        "spot_removal",
+        "land_access"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/r/RazorgrassAmbush.java",
+      "notes": "MDFC: 3 damage to an attacking or blocking creature, or the land Razorgrass Field."
+    },
+    "Razorgrass Field": {
+      "roles": [
+        "land_access"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/r/RazorgrassAmbush.java",
+      "notes": "Land face of Razorgrass Ambush."
+    },
+    "Reality Shift": {
+      "roles": [
+        "spot_removal"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/r/RealityShift.java",
+      "notes": "Exiles a creature; its controller manifests a 2/2."
+    },
+    "Reclamation Sage": {
+      "roles": [
+        "board_presence",
+        "spot_removal"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/r/ReclamationSage.java",
+      "notes": "Body that destroys an artifact or enchantment."
+    },
+    "Regrowth": {
+      "roles": [
+        "recursion_cheating"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/r/Regrowth.java",
+      "notes": "Returns a graveyard card to hand."
+    },
+    "Revel in Silence": {
+      "roles": [
+        "persistent_restriction",
+        "protection"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/f/FlamescrollCelebrant.java",
+      "notes": "Back face of Flamescroll Celebrant: opponents cannot cast spells or activate loyalty abilities this turn."
+    },
+    "Rionya, Fire Dancer": {
+      "roles": [
+        "board_presence",
+        "repeatable_engine"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/r/RionyaFireDancer.java",
+      "notes": "Human that makes hasty token copies of another creature each combat."
+    },
+    "Rograkh, Son of Rohgahh": {
+      "roles": [
+        "board_presence"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/r/RograkhSonOfRohgahh.java",
+      "notes": "Zero-mana first-strike menace trample non-Human."
+    },
+    "Rugged Prairie": {
+      "roles": [
+        "land_access"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/r/RuggedPrairie.java",
+      "notes": "Red-white filter land."
+    },
+    "Samurai of the Pale Curtain": {
+      "roles": [
+        "board_presence",
+        "graveyard_hate"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/s/SamuraiOfThePaleCurtain.java",
+      "notes": "Human; permanents that would go to a graveyard are exiled instead."
+    },
+    "Sanctum Prelate": {
+      "roles": [
+        "board_presence",
+        "persistent_restriction"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/s/SanctumPrelate.java",
+      "notes": "Human that forbids noncreature spells of a chosen mana value."
+    },
+    "Seedborn Muse": {
+      "roles": [
+        "board_presence",
+        "deck_synergy"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/s/SeedbornMuse.java",
+      "notes": "Untaps its controller's permanents on each other player's untap step."
+    },
+    "Shared Summons": {
+      "roles": [
+        "tutor"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/s/SharedSummons.java",
+      "notes": "Finds two creature cards."
+    },
+    "Signal Pest": {
+      "roles": [
+        "board_presence",
+        "combat_modifier"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/s/SignalPest.java",
+      "notes": "Non-Human artifact one-drop with battle cry and evasion."
+    },
+    "Silence": {
+      "roles": [
+        "persistent_restriction",
+        "protection"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/s/Silence.java",
+      "notes": "Opponents cannot cast spells this turn: protects a combo or alpha strike."
+    },
+    "Simic Signet": {
+      "roles": [
+        "mana_acceleration"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/s/SimicSignet.java",
+      "notes": "Green-blue mana rock."
+    },
+    "Skrelv, Defector Mite": {
+      "roles": [
+        "board_presence",
+        "protection",
+        "combat_modifier"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/s/SkrelvDefectorMite.java",
+      "notes": "Non-Human artifact one-drop giving hexproof from a colour, toxic and evasion."
+    },
+    "Skyclave Apparition": {
+      "roles": [
+        "board_presence",
+        "spot_removal"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/s/SkyclaveApparition.java",
+      "notes": "Exiles a nonland, nontoken permanent of mana value 4 or less; the owner gets an Illusion if it leaves."
+    },
+    "Sokenzan, Crucible of Defiance": {
+      "roles": [
+        "land_access",
+        "board_presence"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/s/SokenzanCrucibleOfDefiance.java",
+      "notes": "Legendary Mountain; channel makes two hasty Spirit tokens."
+    },
+    "Sol Ring": {
+      "roles": [
+        "mana_acceleration"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/s/SolRing.java",
+      "notes": "Two colourless mana rock."
+    },
+    "Soldier Token": {
+      "roles": [
+        "board_presence"
+      ],
+      "source": ".mz_engine/Mage/src/main/java/mage/game/permanent/token/SoldierToken.java",
+      "notes": "1/1 Soldier token; not a Human, so it triggers Winota when it attacks."
+    },
+    "Soulless Jailer": {
+      "roles": [
+        "board_presence",
+        "graveyard_hate",
+        "persistent_restriction"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/s/SoullessJailer.java",
+      "notes": "Non-Human artifact creature: no permanents from graveyards, no noncreature casts from graveyard or exile."
+    },
+    "Spell Pierce": {
+      "roles": [
+        "counterspell"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/s/SpellPierce.java",
+      "notes": "Noncreature spell unless its controller pays two."
+    },
+    "Spirit Token": {
+      "roles": [
+        "board_presence"
+      ],
+      "source": ".mz_engine/Mage/src/main/java/mage/game/permanent/token/SpiritToken.java",
+      "notes": "1/1 Spirit from Sokenzan."
+    },
+    "Spirit of the Labyrinth": {
+      "roles": [
+        "board_presence",
+        "persistent_restriction"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/s/SpiritOfTheLabyrinth.java",
+      "notes": "Each player draws at most one card per turn."
+    },
+    "Springleaf Drum": {
+      "roles": [
+        "mana_acceleration",
+        "deck_synergy"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/s/SpringleafDrum.java",
+      "notes": "Taps a creature for any colour; mana permanent for Kinnan."
+    },
+    "Stroke of Genius": {
+      "roles": [
+        "card_draw",
+        "deck_synergy"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/s/StrokeOfGenius.java",
+      "notes": "Draws X: the infinite-mana payoff."
+    },
+    "Sundering Eruption": {
+      "roles": [
+        "spot_removal",
+        "combat_modifier",
+        "land_access"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/s/SunderingEruption.java",
+      "notes": "MDFC: destroys a land (its controller may fetch a basic) and grounders cannot block; or the land Volcanic Fissure."
+    },
+    "Swords to Plowshares": {
+      "roles": [
+        "spot_removal"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/s/SwordsToPlowshares.java",
+      "notes": "One-mana creature exile; its controller gains life."
+    },
+    "Sylvan Caryatid": {
+      "roles": [
+        "board_presence",
+        "mana_acceleration"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/s/SylvanCaryatid.java",
+      "notes": "Hexproof defender mana creature."
+    },
+    "Talisman of Conviction": {
+      "roles": [
+        "mana_acceleration"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/t/TalismanOfConviction.java",
+      "notes": "Red-white mana rock."
+    },
+    "Talisman of Curiosity": {
+      "roles": [
+        "mana_acceleration"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/t/TalismanOfCuriosity.java",
+      "notes": "Green-blue mana rock."
+    },
+    "Thalia, Guardian of Thraben": {
+      "roles": [
+        "board_presence",
+        "persistent_restriction"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/t/ThaliaGuardianOfThraben.java",
+      "notes": "First-strike Human; noncreature spells cost one more."
+    },
+    "The Wandering Rescuer": {
+      "roles": [
+        "board_presence",
+        "protection",
+        "combat_modifier"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/t/TheWanderingRescuer.java",
+      "notes": "Flash convoke double-strike Human; other tapped creatures (attackers) have hexproof."
+    },
+    "Thopter Token": {
+      "roles": [
+        "board_presence"
+      ],
+      "source": ".mz_engine/Mage/src/main/java/mage/game/permanent/token/ThopterColorlessToken.java",
+      "notes": "1/1 flying Thopter, a non-Human Winota trigger."
+    },
+    "Thorn Mammoth": {
+      "roles": [
+        "board_presence",
+        "spot_removal",
+        "repeatable_engine"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/t/ThornMammoth.java",
+      "notes": "Fights an opposing creature whenever it or another own creature enters."
+    },
+    "Tidespout Tyrant": {
+      "roles": [
+        "board_presence",
+        "tempo_interaction",
+        "repeatable_engine"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/t/TidespoutTyrant.java",
+      "notes": "Flying body; every own spell bounces a permanent."
+    },
+    "Touch the Spirit Realm": {
+      "roles": [
+        "spot_removal",
+        "tempo_interaction",
+        "protection"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/t/TouchTheSpiritRealm.java",
+      "notes": "Exiles an artifact or creature while it remains; channel flickers one (removal-lite or protection)."
+    },
+    "Treasure Token": {
+      "roles": [
+        "mana_acceleration"
+      ],
+      "source": ".mz_engine/Mage/src/main/java/mage/game/permanent/token/TreasureToken.java",
+      "notes": "Sacrifice for one mana of any colour."
+    },
+    "Treasure Vault": {
+      "roles": [
+        "land_access",
+        "mana_acceleration"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/t/TreasureVault.java",
+      "notes": "Land that cashes in for X Treasure."
+    },
+    "Trophy Mage": {
+      "roles": [
+        "board_presence",
+        "tutor"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/t/TrophyMage.java",
+      "notes": "Finds a mana-value-3 artifact (Basalt Monolith)."
+    },
+    "Unstoppable Plan": {
+      "roles": [
+        "deck_synergy",
+        "mana_acceleration"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/u/UnstoppablePlan.java",
+      "notes": "Untaps all its controller's nonland permanents at its end step."
+    },
+    "Urn of Godfire": {
+      "roles": [
+        "mana_acceleration",
+        "spot_removal"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/u/UrnOfGodfire.java",
+      "notes": "Filter rock that later destroys a creature or enchantment."
+    },
+    "Vineglimmer Snarl": {
+      "roles": [
+        "land_access"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/v/VineglimmerSnarl.java",
+      "notes": "Green-blue snarl land."
+    },
+    "Volatile Stormdrake": {
+      "roles": [
+        "board_presence",
+        "tempo_interaction",
+        "spot_removal"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/v/VolatileStormdrake.java",
+      "notes": "Flier that exchanges itself for an opposing creature; that creature is sacrificed unless energy pays for it."
+    },
+    "Volcanic Fissure": {
+      "roles": [
+        "land_access"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/s/SunderingEruption.java",
+      "notes": "Land face of Sundering Eruption."
+    },
+    "Walking Ballista": {
+      "roles": [
+        "board_presence",
+        "direct_reach",
+        "spot_removal",
+        "deck_synergy"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/w/WalkingBallista.java",
+      "notes": "Counter-based pinger; with infinite mana it is a finisher."
+    },
+    "Wandering Archaic": {
+      "roles": [
+        "board_presence",
+        "persistent_restriction",
+        "deck_synergy"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/w/WanderingArchaic.java",
+      "notes": "MDFC/adventure body that copies opposing instants and sorceries unless they pay two."
+    },
+    "Waterlogged Grove": {
+      "roles": [
+        "land_access",
+        "card_draw"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/w/WaterloggedGrove.java",
+      "notes": "Painland for green and blue that cashes in for a card."
+    },
+    "Winota, Joiner of Forces": {
+      "roles": [
+        "board_presence",
+        "repeatable_engine",
+        "recursion_cheating",
+        "deck_synergy"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/w/WinotaJoinerOfForces.java",
+      "notes": "Commander. Each non-Human attacker digs six cards and puts a Human onto the battlefield attacking and indestructible: the deck's central engine."
+    },
+    "Yavimaya Coast": {
+      "roles": [
+        "land_access"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/y/YavimayaCoast.java",
+      "notes": "Painland for green and blue."
+    },
+    "Yuffie, Materia Hunter": {
+      "roles": [
+        "board_presence",
+        "tempo_interaction",
+        "spot_removal"
+      ],
+      "source": ".mz_engine/Mage.Sets/src/mage/cards/y/YuffieMateriaHunter.java",
+      "notes": "Human with ninjutsu that steals a noncreature artifact while it stays."
+    }
   }
 }

@@ -1,6 +1,7 @@
 """Install the source overlay into an explicitly supplied XMage checkout.
 
-This edits only new policy classes. Existing XMage/MCTS classes are untouched.
+It adds the policy classes and applies the small engine fixes in patches/
+(each a git diff against the pinned fork; already-applied patches are skipped).
 Run the normal engine build afterward; the separate PolicyGames entrypoint
 does not invoke the old generator. Pin matches the fork reviewed for this change.
 """
@@ -28,6 +29,12 @@ def install(root):
             raise ValueError("source target escaped the explicitly supplied checkout")
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(file, destination)
+    for patch in sorted((source.parent / "patches").glob("*.patch")):
+        applied = subprocess.run(["git", "-C", str(root), "apply", "--reverse", "--check", "--ignore-whitespace", str(patch)],
+                                 capture_output=True).returncode == 0
+        if not applied:
+            subprocess.run(["git", "-C", str(root), "apply", "--ignore-whitespace", str(patch)], check=True)
+            print(f"Applied {patch.name}")
     for filename in ("mz-policy.bat", "mz-policy.sh"):
         destination = root / "Mage.MageZero" / "release" / filename
         destination.parent.mkdir(parents=True, exist_ok=True)

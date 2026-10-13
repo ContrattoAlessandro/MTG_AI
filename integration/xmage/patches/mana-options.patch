@@ -1,0 +1,57 @@
+diff --git a/Mage/src/main/java/mage/abilities/mana/ManaOptions.java b/Mage/src/main/java/mage/abilities/mana/ManaOptions.java
+index ee9b2ec0..febb180b 100644
+--- a/Mage/src/main/java/mage/abilities/mana/ManaOptions.java
++++ b/Mage/src/main/java/mage/abilities/mana/ManaOptions.java
+@@ -227,6 +227,7 @@ public class ManaOptions extends LinkedHashSet<Mana> {
+             }
+         }
+ 
++        limitOptions();
+         if (logger.isTraceEnabled() && this.size() > 30) {
+             logger.trace("ManaOptionsCosts " + this.size());
+             logger.trace("Abilities: " + abilities.toString());
+@@ -379,7 +380,7 @@ public class ManaOptions extends LinkedHashSet<Mana> {
+                 && onlyManaCosts
+                 && manaToAdd.countColored() > 0;
+         boolean canHaveBetterValues;
+-        int maxRepeat = manaAbility.getMaxMoreActivationsThisTurn(game);
++        int maxRepeat = Math.min(manaAbility.getMaxMoreActivationsThisTurn(game), MAX_SIMULATED_REPEATS);
+ 
+         Mana possibleMana = new Mana();
+         Mana improvedMana = new Mana();
+@@ -387,6 +388,9 @@ public class ManaOptions extends LinkedHashSet<Mana> {
+         // simulate multiple calls of mana abilities and replace mana pool by better values
+         // example: {G}: Add one mana of any color
+         for (Mana possiblePay : ManaOptions.getPossiblePayCombinations(cost, startingMana)) {
++            if (this.size() > 4 * MAX_OPTIONS) {
++                limitOptions();
++            }
+             improvedMana.setToMana(startingMana);
+             int currentAttempt = 0;
+             do {
+@@ -506,6 +510,25 @@ public class ManaOptions extends LinkedHashSet<Mana> {
+         return payCombinations;
+     }
+ 
++    // MageZero patch: with many mana abilities that cost mana (Kinnan with filter rocks)
++    // the options grew without bound and one getManaAvailable call took minutes, ignoring
++    // interrupts. Options are an affordability estimate, so keep the largest ones.
++    private static final int MAX_OPTIONS = 64;
++    private static final int MAX_SIMULATED_REPEATS = 4;
++
++    private void limitOptions() {
++        if (this.size() <= MAX_OPTIONS) {
++            return;
++        }
++        removeFullyIncludedVariations();
++        if (this.size() > MAX_OPTIONS) {
++            List<Mana> kept = new ArrayList<>(this);
++            kept.sort(Comparator.comparingInt((Mana mana) -> mana.count()).reversed());
++            this.clear();
++            this.addAll(kept.subList(0, MAX_OPTIONS));
++        }
++    }
++
+     public boolean removeEqualMana(Mana manaToRemove) {
+         boolean result = false;
+         for (Iterator<Mana> iterator = this.iterator(); iterator.hasNext(); ) {

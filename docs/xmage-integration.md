@@ -2,7 +2,36 @@
 
 The Python policy uses a new entity/history protocol. The original XMage binary sends sparse features and requests MCTS priors, so disabling a search budget in the old YAML is insufficient. This adapter adds a direct `PolicyPlayer`, encoder/watcher, standalone game runner, and catalog exporter.
 
-The reviewed engine is [WillWroble/mage](https://github.com/WillWroble/mage), commit `cb7e9c6fe2dcbe2f650a77dd98a87771e730f22f`. Source is maintained in `integration/xmage/src` because XMage is a separate repository. `install.py` verifies the commit and copies the new classes/launchers into that checkout. It does not alter the original MCTS implementation. Human play uses a separate server configuration (below), not a client change.
+The reviewed engine is [WillWroble/mage](https://github.com/WillWroble/mage), commit `cb7e9c6fe2dcbe2f650a77dd98a87771e730f22f`. Source is maintained in `integration/xmage/src` because XMage is a separate repository. `install.py` verifies the commit, copies the new classes/launchers into that checkout, and applies the engine fixes in `integration/xmage/patches/` (git diffs; already-applied ones are skipped). It does not alter the original MCTS implementation. Human play uses a separate server configuration (below), not a client change.
+
+Engine patches:
+
+| Patch | Why |
+|---|---|
+| `computer-player.patch` (1) | `ComputerPlayer` auto-payment recursed without end when mana abilities that cost mana (Prismite, Energy Refractor, Urn of Godfire in the Kinnan deck) paid for each other, overflowing the stack inside XMage AI simulations. Payment now gives up below 8 nested mana abilities. |
+| `computer-player.patch` (2) | Every XMage AI player in a JVM shares one pool of 5 search threads, so 16 concurrent gauntlet games queued on it and hit their think-time cap on most decisions. The pool size now reads `-Dxmage.ai.simulationThreads` (default 5); `PolicyGames` sets it to the CPU count unless given. The old value was a compile-time constant inlined into `ComputerPlayer6`, so that class is recompiled into `mage-player-ai-ma` too. |
+| `mana-options.patch` | `ManaOptions` (the "what can this player afford" estimate behind `getPlayable`) simulated repeatable mana abilities that cost mana an unlimited number of times and kept every combination, with quadratic duplicate checks. On a Kinnan board one call ran for over 7 CPU-minutes, ignoring the game's timeout. Repeats are now capped at 4 and the options at the 64 largest. It only affects affordability estimates; actual payment is unchanged. |
+| `ai-activation-cap.patch` | XMage's AI repeated one activated ability for the whole turn (Basalt Monolith's untap with Kinnan, which is a real infinite-mana loop; Freed from the Real), until the per-turn watchdog or the 8,192-event limit killed the game: about 8% of Kinnan games. `ComputerPlayer6` now passes instead of activating the same ability more than 50 times in one turn (`-Dxmage.ai.maxActivationsPerTurn`). Spells are not counted. |
+| `player-fast-fail.patch` | `PlayerImpl`'s copy constructor dropped the fast-fail flag, so the setting below reverted on every state copy. |
+
+Rebuilding after a Java change compiles the overlay plus each patched engine class and updates four jars:
+
+```bash
+ROOT=/c/Users/alexa/Desktop/MTG_AI; OUT="$TEMP/claude/mzjava"; rm -rf "$OUT"; mkdir -p "$OUT"; cd "$ROOT"
+.venv/Scripts/python.exe integration/xmage/install.py .mz_engine
+AI=.mz_engine/Mage.Server.Plugins/Mage.Player.AI/src/main/java/mage/player/ai
+MA=.mz_engine/Mage.Server.Plugins/Mage.Player.AI.MA/src/mage/player/ai
+MO=.mz_engine/Mage/src/main/java/mage/abilities/mana/ManaOptions.java
+PI=.mz_engine/Mage/src/main/java/mage/players/PlayerImpl.java
+javac -nowarn -encoding UTF-8 -cp "xmage/lib/*" -d "$OUT" $(find integration/xmage/src -name '*.java') $AI/ComputerPlayer.java $MA/ComputerPlayer6.java $MO $PI
+cd "$OUT"
+jar uf "$ROOT/xmage/lib/mage-player-ai-1.4.58.jar" mage/player/ai/policy/*.class mage/player/ai/ComputerPlayer.class 'mage/player/ai/ComputerPlayer$PickedCard.class'
+jar uf "$ROOT/xmage/lib/mage-player-ai-ma-1.4.58.jar" mage/player/ai/ComputerPlayer6*.class
+jar uf "$ROOT/xmage/lib/mage-1.4.58.jar" mage/abilities/mana/ManaOptions*.class mage/players/PlayerImpl*.class
+jar uf "$ROOT/xmage/lib/mage-magezero-1.4.58.jar" org/mage/magezero/*.class
+```
+
+Check that no `java.exe` runs from `xmage/lib` first. Backups of the four jars from before the Commander work are in `artifacts/jar-backup-20261012-pre-commander/`.
 
 ## Build a distribution for real decks
 
@@ -36,9 +65,45 @@ Pop-Location
 .venv/Scripts/mz.exe init --catalog artifacts/cards-with-roles.json --output artifacts/initial.pt
 ```
 
-The exporter creates sorted name-based IDs and coarse card semantics. Include all intended decks and sideboards. Extra faces, token definitions, and generated card pools require catalog/adapter extensions. Do not append cards to an existing checkpoint catalog or silently regenerate different IDs. For a changed pool, initialize a fresh policy or implement an explicit embedding/optimizer migration. XMage's H2 database needs local socket access; the launcher and exporter command bind it to localhost.
+The exporter creates sorted name-based IDs and coarse card semantics. Include all intended decks and sideboards (a Commander deck's commander is its sideboard). It also adds every other face of the pool's cards (a transformed planeswalker, an MDFC played as its land) and the tokens the cards can create, under the names XMage gives them on the battlefield (`Goblin Token`, `Treasure Token`; catalog key `xmage-token:`). Tokens are found by walking each card's effects; pass `--sources .mz_engine/Mage.Sets/src` to also scan card sources for tokens built inside custom effects (Legion Warboss, Loyal Apprentice, Sokenzan). Token copies of cards use the card's own ID. Generated card pools beyond these (random cards, conjured cards) still need extensions. Do not append cards to an existing checkpoint catalog or silently regenerate different IDs. For a changed pool, initialize a fresh policy or implement an explicit embedding/optimizer migration. XMage's H2 database needs local socket access; the launcher and exporter command bind it to localhost.
 
 The bundled role annotations cover the validated simplegreen pool and selected example cards; the UWTempo/MonoB example pool requires additional reviews. Missing annotations fail explicitly. The Java client already reads catalog IDs/names independently of extra metadata, so the statistical-role update uses the existing rebuilt distribution without a Java rebuild. See [the current implementation](statistical-roles-implementation.md).
+
+## Commander Duel
+
+Implemented 13 October 2026 for the single-deck goal in [the plan](next-session-plan.md): the learner pilots **Winota, Joiner of Forces** (`xmage/decks/winota.dck`) and the gauntlet opponent is **Kinnan, Bonder Prodigy** (`xmage/decks/kinnan.dck`) piloted by XMage's AI.
+
+- `game_mode: commander` creates XMage's `CommanderDuel` and `CommanderDuelMatch` (loaded by name, like the AI): 100-card decks, 40 life, seven cards, London mulligan without a free mulligan, 21 combat damage from one commander loses. It matches the server's "Commander Two Player Duel" table. `normal` is unchanged; every other mode is refused.
+- The commander is the deck's sideboard. `GameCommanderImpl` moves it to the command zone; the encoder shows both commanders there (see [the protocol](policy-protocol.md#feature-layout-in-the-java-adapter)).
+- `server.learner_keeps_deck: true` moves the learner's deck with it when seats swap, so the learner always plays player_a's deck. `server.sample: false` makes policy players greedy (evaluation only; unsampled games are never recorded). `opponent_ai.think_seconds` caps XMage's AI search per decision (default 3 s per skill level).
+- Configs: `configs/commander-mirror.yml` (Winota vs Winota, both policy) and `configs/commander-gauntlet.yml` (Winota policy vs Kinnan XMage AI).
+- Deck lists are written as plain text in `decks-src/` and converted with `org.mage.magezero.DeckListConverter list.txt deck.dck` (lines after the first blank line are the sideboard/commander; unknown names fail). Three cards of the user's lists are not in this XMage build and were substituted: Mayor Tong of Chin Village → Ragavan, Nimble Pilferer (Winota); Avatar Sanctuary → Breeding Pool and Tidus, Zanarkand Fayth → Bounding Krasis (Kinnan).
+- Catalog: `artifacts/commander-cards.json` (173 kinds: 158 deck cards, 5 other faces, 10 tokens), roles in `configs/card-roles.json` written by `scripts/commander_roles.py`, annotated catalog `artifacts/commander-cards-roles.json`, fresh checkpoint `artifacts/commander-initial.pt` (seed 20261013).
+
+```powershell
+Push-Location xmage
+java -Xmx8G '-Dh2.bindAddress=127.0.0.1' -cp 'lib/*' org.mage.magezero.PolicyCatalogExporter ../artifacts/commander-cards.json --sources ../.mz_engine/Mage.Sets/src decks/winota.dck decks/kinnan.dck
+Pop-Location
+.venv/Scripts/python.exe scripts/commander_roles.py --catalog artifacts/commander-cards.json
+.venv/Scripts/python.exe scripts/annotate_policy_catalog.py --catalog artifacts/commander-cards.json --annotations configs/card-roles.json --output artifacts/commander-cards-roles.json
+.venv/Scripts/mz.exe init --catalog artifacts/commander-cards-roles.json --config configs/policy-final.yml --output artifacts/commander-initial.pt --seed 20261013
+```
+
+Engine fixes found by the Commander smoke games (all in `PolicyPlayer` unless noted):
+
+| Symptom | Fix |
+|---|---|
+| Phyrexian Revoker's "name a card" offered every card in XMage (over 2,048 candidates) | Oversized named choices are restricted to the names in the card catalog. |
+| Sanctum Prelate's "choose a number" is 0 to 2³¹ | Amount ranges above the candidate limit offer their smallest 256 values. |
+| XMage lists some abilities as playable that then fail during payment, which aborted the game | A refused activation is treated as no action (as XMage's AI does) and is not offered again in that priority window. |
+| The failed activation restored a saved state, including the history watcher, so events were sent twice | The event sequence counter and the "already sent" mark are shared by every copy of `PolicyHistory`. |
+| `chooseReplacementEffect` parsed effect IDs as numbers | It returns the index in XMage's map order. |
+| Infinite mana-payment recursion in XMage AI simulations, a 5-thread AI search pool, and minutes-long affordability estimates (all from the Kinnan deck) | Engine patches above. |
+| XMage's AI looped one action (Kinnan untapping a mana rock) for the whole turn; the single 15-minute interrupt then held the entire batch, and the AI clears interrupts while it waits for its search | `PolicyGames` checks every second and keeps interrupting once a game exceeds `training.max_minutes` or one turn exceeds `training.max_turn_seconds` (default 120). Such games count as timeouts and are discarded. |
+| "AI can't find good blocker combination" ended games: players run in XMage's test mode, where that check (and errors inside AI simulations) throw instead of skipping the block as in a real game | `PolicyGames`/`PolicyArena` turn off `fastFailInTestMode` for every player (with `player-fast-fail.patch`). |
+| A Kinnan turn emitted more than 1,024 history events between two policy decisions, which the service refuses to truncate | `model.max_events` is 8,192 in `configs/policy-final.yml` (a validation limit; no weights depend on it). |
+
+The engine log ends each game with a summary line (`policy game N TERMINAL: turn T; PlayerA (policy) won life 35 poison 0 commander damage 0 ...`), which shows how games end.
 
 ## Collect and train
 
@@ -102,4 +167,4 @@ Sequential combat covers ordinary blocks and creatures that can block additional
 
 Belief bounds assume an announced main deck and track public locations of its original cards. Public returns to hand are remembered conservatively. A complete knowledge system for reveals, stolen cards, face-down exile permissions, generated/copy cards, and transformed names is still required for arbitrary real-deck play. Off-deck hidden hand labels fail rather than expanding actor candidates with private information. Test the intended deck pool for these mechanics before large runs.
 
-Aborted and turn/time-limited games produce no PPO data. Monitor their rate, since excluding them can bias learning. The standalone runner supports constructed two-player normal games; draft, Commander, GUI play, and the old `.mz` export format are outside this adapter. The complete distribution and simple real-card loop were validated; complex deck pools and competitive playing strength still need dedicated experiments.
+Aborted and turn/time-limited games produce no PPO data. Monitor their rate, since excluding them can bias learning. The standalone runner supports two-player constructed games and Commander Duel; draft, multiplayer Commander, and the old `.mz` export format are outside this adapter. The complete distribution and simple real-card loop were validated; complex deck pools and competitive playing strength still need dedicated experiments.
