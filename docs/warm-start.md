@@ -44,6 +44,33 @@ mz selfplay --checkpoint artifacts/commander-cloned.pt --reference artifacts/com
 
 `teacher-collect` uses its checkpoint only for the card catalog and limits; it never chooses an action. `selfplay` refuses a positive `reference_kl_coefficient` without `--reference`, and keeps the reference in `run-state.json` across `--resume`. PPO from a cloned checkpoint with `gae_lambda < 1` refuses a `shaping_coefficient` or `gamma` different from the ones the clone was trained with (at λ 1 the critic is only a baseline, so the control arm may differ). Metrics gain `reference_kl`, `reference_kl_coefficient`, `shaping_coefficient` and `gae_lambda`.
 
-## Validation
+## Results: the A5 comparison
 
-A 4-game Commander smoke run (Winota and Kinnan, AI skill 1, 2 s think cap) took 13 s for 4 terminal games and 8 trajectories with 712 recorded decisions. Of the 369 priority decisions, 110 cast or activate; 93 of 163 attack decisions attack. Cloning, followed by PPO generations with the KL term, ran end to end. This shows that the pipeline works, not that it helps. That question needs a controlled comparison of the cloned start against a fresh initialization at equal PPO budget, evaluated against XMage's AI.
+Three arms of 25 PPO generations (64 games each, half of them against XMage's AI with Kinnan at skill 1) separate the warm start from the credit-assignment settings:
+
+| Arm | Start | λ / shaping / KL |
+|---|---|---|
+| a | fresh `mz init` checkpoint | 1 / 0 / 0 |
+| b | behaviour-cloned checkpoint | 0.95 / 0.5 / 0.05 (`configs/policy-final.yml`) |
+| c | behaviour-cloned checkpoint | 1 / 0 / 0 (`configs/experiments/policy-compare-control.yml`) |
+
+The teacher data were 2,000 games of XMage's AI at skill 1 playing both decks (3,987 trajectories, 418,521 decisions). The clone reached 92.3% held-out accuracy (NLL 0.216): 98.5% on passes, 71.0% on casts, 62.7% on activations, 96.9% on attacks and 81.6% on blocks. After training, every checkpoint below played 256 fresh sampled games per opponent deck against XMage's AI at skill 3, with `mz evaluate`. b2 and c2 are second runs of b and c. Scores count a win as 1 and a draw or truncation as ½, with Wilson 95% intervals of the win rate:
+
+| Checkpoint | vs XMage AI, Winota (mirror) | vs XMage AI, Kinnan |
+|---|---|---|
+| clone, no PPO | 0.42 [0.36–0.49] | 0.56 [0.48–0.61] |
+| a | 0.24 [0.19–0.29] | 0.36 [0.29–0.40] |
+| b | 0.54 [0.48–0.60] | 0.63 [0.56–0.68] |
+| b2 | 0.51 [0.45–0.57] | 0.59 [0.52–0.64] |
+| c | 0.44 [0.38–0.50] | 0.67 [0.60–0.72] |
+| c2 | 0.50 [0.44–0.56] | 0.62 [0.55–0.67] |
+
+- **The warm start is decisive at this budget.** The clone with no PPO at all outscores 25 generations of PPO from a fresh checkpoint on both matchups.
+- **PPO improves on the clone, modestly:** by about 0.05 to 0.10 after 25 generations, in all four cloned runs.
+- **λ, shaping and the KL term made no measurable difference.** Averaged over the two runs, the new settings lead on the mirror (0.52 against 0.47) and trail against Kinnan (0.61 against 0.64), and two runs of the same settings differ by up to 0.06. `configs/policy-final.yml` keeps them, since the decaying KL term is meant to prevent drift from the clone over thousands of generations, which a 25-generation comparison cannot test.
+
+The scripts of this comparison are in `notes/a5/`.
+
+## Pipeline check
+
+A 4-game Commander smoke run (Winota and Kinnan, AI skill 1, 2 s think cap) took 13 s for 4 terminal games and 8 trajectories with 712 recorded decisions. Of the 369 priority decisions, 110 cast or activate; 93 of 163 attack decisions attack. Cloning, followed by PPO generations with the KL term, ran end to end. This showed that the pipeline works; the comparison above shows that it helps.

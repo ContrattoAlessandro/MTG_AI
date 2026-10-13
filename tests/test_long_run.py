@@ -247,6 +247,43 @@ def _mock_results(monkeypatch, scores):
     monkeypatch.setattr(runner, "collect_results", results)
 
 
+def test_standalone_evaluation_scores_every_checkpoint_against_each_deck(components, tmp_path, monkeypatch):
+    model, critic, catalog = components
+    checkpoints = [tmp_path / name for name in ("clone.pt", "trained.pt")]
+    for path in checkpoints:
+        save_checkpoint(path, model, critic, catalog)
+    script = tmp_path / "engine.bat"
+    script.write_text("rem fake")
+    learner, kinnan = tmp_path / "winota.dck", tmp_path / "kinnan.dck"
+    for deck in (learner, kinnan):
+        deck.write_text("1 Forest")
+    game = tmp_path / "game.yml"
+    game.write_text(yaml.safe_dump({
+        "player_a": {"deckPath": str(learner), "type": "policy"},
+        "player_b": {"deckPath": str(learner), "type": "policy"},
+        "training": {"games": 4, "threads": 2, "max_turns": 50, "max_minutes": 5}}))  # fmt: skip
+    monkeypatch.setattr(runner, "Collector", _FakeCollector)
+    monkeypatch.setattr(runner, "ServicePool", lambda *args: _FakeServices())
+    _mock_results(monkeypatch, iter([0.25, 0.75, 0.5, 1.0]))
+    _FakeCollector.configs, _FakeCollector.fail_next = [], 0
+    output = tmp_path / "evaluation"
+
+    entries = runner.evaluate_checkpoints(
+        checkpoints, game, script, output, gauntlet=[kinnan], games=8, ai_skill=3, engine_threads=4, greedy=True
+    )
+
+    assert [entry["score"] for entry in entries] == [pytest.approx(0.5), pytest.approx(0.75)]
+    assert set(entries[0]["report"]) == {"xmage-ai", "xmage-ai:kinnan"}
+    lines = (output / "evaluations.jsonl").read_text(encoding="utf-8").splitlines()
+    assert [json.loads(line)["checkpoint"] for line in lines] == [str(path.resolve()) for path in checkpoints]
+    configs = [config for _, config in _FakeCollector.configs]
+    assert len(configs) == 4 and all(config["training"]["games"] == 8 for config in configs)
+    assert all(config["training"]["threads"] == 4 and config["server"]["sample"] is False for config in configs)
+    assert all(config["opponent_ai"] == {"skill": 3} and config["player_b"]["type"] == "xmage-ai"
+               for config in configs)  # fmt: skip
+    assert configs[1]["player_b"]["deckPath"] == str(kinnan.resolve())
+
+
 def test_runner_retries_resumes_prunes_and_keeps_the_best(components, tmp_path, monkeypatch):
     model, critic, catalog = components
     initial = tmp_path / "initial.pt"

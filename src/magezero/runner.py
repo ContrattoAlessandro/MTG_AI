@@ -146,6 +146,97 @@ def primary_score(report: dict) -> float | None:
     return sum(scores) / len(scores) if scores else None
 
 
+def load_game_config(game_yaml, engine_threads: int | None = None) -> dict:
+    """The base game YAML with both seats piloted by the policy and absolute deck paths."""
+    base = yaml.safe_load(Path(game_yaml).read_text(encoding="utf-8"))
+    for player in ("player_a", "player_b"):
+        if base[player].get("type") != "policy":
+            raise ValueError("v2 self-play requires policy players, never MCTS fallback")
+        for key in ("mcts", "priors", "noise"):
+            if key in base[player]:
+                raise ValueError(f"legacy {key} settings are incompatible with direct policy players")
+        base[player]["deckPath"] = str(Path(base[player]["deckPath"]).resolve())
+        if not Path(base[player]["deckPath"]).is_file():
+            raise ValueError(f"deck is missing: {base[player]['deckPath']}")
+    if engine_threads is not None:
+        base["training"]["threads"] = engine_threads
+    return base
+
+
+def evaluate_checkpoints(
+    checkpoints,
+    game_yaml,
+    engine_script,
+    output,
+    *,
+    gauntlet=(),
+    games: int = 256,
+    ai_skill: int = 3,
+    engine_threads: int | None = None,
+    greedy: bool = False,
+    actor_device: str = "cpu",
+    actor_threads: int = 1,
+) -> list[dict]:
+    """Score checkpoints against XMage's AI without training them.
+
+    Each checkpoint plays its deck (player_a of the game YAML) against XMage's AI
+    with player_b's deck ("xmage-ai") and with each gauntlet deck
+    ("xmage-ai:<deck>"): the same games as a self-play run's evaluation. One line
+    per checkpoint is appended to output/evaluations.jsonl, and the batch
+    configurations and logs go to one folder per checkpoint.
+    """
+    script = Path(engine_script).resolve()
+    if not script.is_file():
+        raise ValueError("XMage engine launcher is missing; see docs/xmage-integration.md")
+    if games < 1 or not 1 <= ai_skill <= 10:
+        raise ValueError("games must be positive and the AI skill in 1..10")
+    if engine_threads is not None and not 1 <= engine_threads <= 16:
+        raise ValueError("engine threads must be between 1 and 16")
+    decks = [Path(deck).resolve() for deck in gauntlet]
+    if any(not deck.is_file() for deck in decks):
+        raise ValueError(f"gauntlet deck is missing: {[str(d) for d in decks if not d.is_file()]}")
+    base = load_game_config(game_yaml, engine_threads)
+    benchmarks = [("xmage-ai", None, None)] + [(f"xmage-ai:{deck.stem}", None, deck) for deck in decks]
+    root = Path(output).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    actor_ports = [BASE_PORT]
+    collector = Collector(script, root, ServicePool(root, actor_device, actor_threads))
+    entries = []
+    try:
+        for index, checkpoint in enumerate(map(Path, checkpoints)):
+            checkpoint = checkpoint.resolve()
+            _, _, catalog, data = load_checkpoint(checkpoint)
+            folder = root / f"{index}-{checkpoint.parent.name}-{checkpoint.stem}"
+            folder.mkdir(exist_ok=True)
+            report = evaluate(
+                collector,
+                base,
+                folder,
+                checkpoint,
+                data["policy_version"],
+                benchmarks,
+                games,
+                ai_skill,
+                actor_ports,
+                catalog.digest,
+                greedy,
+            )
+            entry = {
+                "checkpoint": str(checkpoint),
+                "score": primary_score(report),
+                "games": games,
+                "ai_skill": ai_skill,
+                "greedy": greedy,
+                "report": report,
+            }
+            with (root / "evaluations.jsonl").open("a", encoding="utf-8") as stream:
+                stream.write(json.dumps(entry) + "\n")
+            entries.append(entry)
+    finally:
+        collector.close()
+    return entries
+
+
 class SelfPlayRun:
     """One resumable self-play run in an output directory (see run_selfplay)."""
 
@@ -208,7 +299,7 @@ class SelfPlayRun:
             raise ValueError("gauntlet fraction must be in (0, 1], its AI skill in 1..10 and think time >= 0")
         raw = yaml.safe_load(Path(policy_yaml).read_text(encoding="utf-8"))
         self.training = PPOConfig(**raw.get("training", {}))
-        self.base = self._load_game(game_yaml, engine_threads)
+        self.base = load_game_config(game_yaml, engine_threads)
         self.iterations, self.games, self.device, self.actor_device = iterations, games, device, actor_device
         self.max_seconds, self.snapshot_every, self.keep_episodes = max_seconds, snapshot_every, keep_episodes
         self.eval_every, self.eval_games, self.eval_ai_skill = eval_every, eval_games, eval_ai_skill
@@ -236,23 +327,6 @@ class SelfPlayRun:
         self.session_durations: list[float] = []
         self.actor_ports = [BASE_PORT + 2 * i for i in range(actor_shards)]
         self.collector = Collector(self.script, self.root, ServicePool(self.root, actor_device, actor_threads))
-
-    @staticmethod
-    def _load_game(game_yaml, engine_threads) -> dict:
-        """The base game YAML with both seats piloted by the policy and absolute deck paths."""
-        base = yaml.safe_load(Path(game_yaml).read_text(encoding="utf-8"))
-        for player in ("player_a", "player_b"):
-            if base[player].get("type") != "policy":
-                raise ValueError("v2 self-play requires policy players, never MCTS fallback")
-            for key in ("mcts", "priors", "noise"):
-                if key in base[player]:
-                    raise ValueError(f"legacy {key} settings are incompatible with direct policy players")
-            base[player]["deckPath"] = str(Path(base[player]["deckPath"]).resolve())
-            if not Path(base[player]["deckPath"]).is_file():
-                raise ValueError(f"deck is missing: {base[player]['deckPath']}")
-        if engine_threads is not None:
-            base["training"]["threads"] = engine_threads
-        return base
 
     def _load_state(self, checkpoint, resume: bool, league_path, reference) -> dict:
         if self.state_file.exists() and not resume:

@@ -14,7 +14,7 @@ This repository is a redesign of [WillWroble/MageZero](https://github.com/WillWr
 | Actor | Card embeddings plus static card semantics → relation messages → Transformer over entities with a pooling token. New events are pooled per decision into an event GRU, and a decision GRU carries the memory. Every legal candidate is scored against the actor context, with pointers to its source and target entities. | [Architecture](docs/architecture.md) |
 | Hidden hand | A closed-form without-replacement (hypergeometric) prior over the opponent's hand from public bounds, plus the probability of holding each of 20 reviewed, overlapping card roles. A learned constrained hand-count model is available as an alternative mode. | [Statistical roles](docs/statistical-roles-implementation.md) |
 | Learning | Recurrent PPO on one player's complete trajectories with GAE, a public value head, and a privileged critic that sees the true hand during training only. Optional potential-based reward shaping. | [Architecture](docs/architecture.md#learning-and-collection) |
-| Warm start | Behaviour cloning from XMage's AI recorded over the policy's own candidate lists, then PPO with a decaying KL penalty towards the cloned policy (as in AlphaStar). | [Warm start](docs/warm-start.md) |
+| Warm start | Behaviour cloning from XMage's AI recorded over the policy's own candidate lists, then PPO with a decaying KL penalty towards the cloned policy (as in AlphaStar). Against XMage's AI, the cloned policy alone outscores 25 generations of PPO from a random start. | [Warm start](docs/warm-start.md#results-the-a5-comparison) |
 | Training runs | Resumable self-play generations with a historical league, a gauntlet piloted by XMage's AI, crash recovery, disk retention and periodic evaluation with best-checkpoint selection. | [Long runs](docs/long-run.md) |
 | Engine adapter | Java classes and small engine patches for the pinned XMage fork: the policy player, observation encoder, history watcher, teacher recorder, batch game runner and catalog exporter. | [XMage integration](docs/xmage-integration.md) |
 
@@ -97,11 +97,16 @@ mz selfplay --checkpoint artifacts/commander-cloned.pt --reference artifacts/com
     --keep-every 100 --min-free-gb 30
 # After any interruption: the same command with --resume.
 
-# 6. Play against the agent in the XMage client ("Computer - monte carlo" seat).
+# 6. Score candidate checkpoints on fresh games against XMage's AI (no training).
+mz evaluate --checkpoint artifacts/commander-run/best.pt artifacts/commander-cloned.pt \
+    --gauntlet xmage/decks/kinnan.dck --engine-script $ENGINE --output artifacts/final-evaluation \
+    --games 400 --ai-skill 3 --engine-threads 16 --greedy
+
+# 7. Play against the agent in the XMage client ("Computer - monte carlo" seat).
 mz play --checkpoint artifacts/commander-run/best.pt --greedy
 ```
 
-`mz <command> --help` lists every option. [Long runs](docs/long-run.md) explains the run folder (`run-state.json`, `metrics.json` per generation, `evaluations.jsonl`, `best.pt`). `best.pt` is selected on evaluation scores, so confirm a final choice with a fresh, larger evaluation.
+`mz <command> --help` lists every option. [Long runs](docs/long-run.md) explains the run folder (`run-state.json`, `metrics.json` per generation, `evaluations.jsonl`, `best.pt`). `best.pt` is selected on evaluation scores, so its own score is optimistic: confirm the final choice with `mz evaluate` on fresh games.
 
 ## Documentation
 

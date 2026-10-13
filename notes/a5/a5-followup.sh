@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
 # A5 follow-up: score the clone with no PPO and re-score the arms' final checkpoints
-# over 256 fresh games per deck, then a second run of arms b and c. Resumable.
+# over 256 fresh games per deck (run then with scripts/evaluate.py, now mz evaluate),
+# then a second run of arms b and c. Resumable.
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 MZ=.venv/Scripts/mz.exe
 OUT=artifacts/a5
 
 if [ ! -f "$OUT/rescore/evaluations.jsonl" ]; then
     echo "== rescore $(date)"
-    .venv/Scripts/python.exe scripts/evaluate.py "$OUT/rescore" artifacts/commander-cloned.pt \
+    "$MZ" evaluate --output "$OUT/rescore" --checkpoint artifacts/commander-cloned.pt \
         "$OUT/a/generation_0024/policy.pt" "$OUT/b/generation_0024/policy.pt" "$OUT/c/generation_0024/policy.pt" \
+        --gauntlet xmage/decks/kinnan.dck --engine-script xmage/mz-policy.bat --engine-threads 16 \
         --games 256 >> "$OUT/rescore.log" 2>&1
 fi
 
@@ -26,5 +28,5 @@ arm() {  # name checkpoint config [extra args]
 }
 
 arm b2 artifacts/commander-cloned.pt configs/policy-final.yml --reference artifacts/commander-cloned.pt
-arm c2 artifacts/commander-cloned.pt configs/policy-compare-control.yml
+arm c2 artifacts/commander-cloned.pt configs/experiments/policy-compare-control.yml
 echo "== done $(date)"

@@ -51,7 +51,7 @@ After an interruption, rerun the same command with `--resume`. The gauntlet frac
 
 - XMage's AI searches simulated copies of the game. It is the opponent XMage players usually face, but it is not guaranteed to respect hidden information, so it is a practical yardstick rather than a fair-information baseline.
 - Without `--eval-greedy`, evaluation samples from the policy as in training.
-- `best.pt` is selected on evaluation results, so its score is optimistically biased. Confirm the final choice with a fresh, larger evaluation.
+- `best.pt` is selected on evaluation results, so its score is optimistically biased. Confirm the final choice with a fresh, larger evaluation: `mz evaluate` plays the same benchmark games for any list of checkpoints without training them, and appends one line per checkpoint to `evaluations.jsonl` in its output folder.
 - The truncation bootstrap gives the final recorded decision zero advantage, because no following observation exists. Keep `max_turns` high enough that truncation stays rare.
 - Resuming deletes nothing that reached a checkpoint. A partial generation's logs are kept and its trajectories are deleted.
 

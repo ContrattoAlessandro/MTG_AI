@@ -4,6 +4,7 @@
     mz teacher-collect record XMage's AI as behaviour-cloning trajectories
     mz clone           behaviour-clone a checkpoint (warm start)
     mz selfplay        self-play PPO training runs
+    mz evaluate        score checkpoints against XMage's AI without training
     mz train           one PPO update from trajectory files
     mz serve           the policy inference service
     mz play            play against a checkpoint in the XMage client
@@ -85,6 +86,19 @@ def cmd_selfplay(args: argparse.Namespace) -> None:
         gauntlet_fraction=args.gauntlet_fraction, gauntlet_ai_skill=args.gauntlet_ai_skill,
         gauntlet_ai_think=args.gauntlet_ai_think, eval_greedy=args.eval_greedy, reference=args.reference,
     )  # fmt: skip
+
+
+def cmd_evaluate(args: argparse.Namespace) -> None:
+    from .runner import evaluate_checkpoints
+
+    entries = evaluate_checkpoints(
+        args.checkpoint, args.game, args.engine_script, args.output, gauntlet=args.gauntlet or (),
+        games=args.games, ai_skill=args.ai_skill, engine_threads=args.engine_threads, greedy=args.greedy,
+        actor_device=args.device, actor_threads=args.torch_threads,
+    )  # fmt: skip
+    for entry in entries:
+        scores = {name: result.get("score") for name, result in entry["report"].items()}
+        print(f"{entry['checkpoint']}: mean score {entry['score']}; {json.dumps(scores)}")
 
 
 def cmd_train(args: argparse.Namespace) -> None:
@@ -263,6 +277,24 @@ def build_parser() -> argparse.ArgumentParser:
         "--reference", help="frozen behaviour-cloned checkpoint for the KL term (training.reference_kl_coefficient)"
     )
     p.set_defaults(func=cmd_selfplay)
+
+    p = sub.add_parser("evaluate", help="score checkpoints against XMage's AI without training them")
+    p.add_argument("--checkpoint", nargs="+", required=True)
+    p.add_argument("--output", required=True, help="folder for evaluations.jsonl, batch configs and logs")
+    p.add_argument(
+        "--game",
+        default="configs/commander-mirror.yml",
+        help="game YAML; the checkpoint plays player_a's deck, XMage's AI player_b's deck",
+    )
+    p.add_argument("--gauntlet", nargs="+", metavar="DECK", help="further decks for XMage's AI")
+    p.add_argument("--engine-script", required=True)
+    p.add_argument("--games", type=int, default=256, help="games per opponent deck, seats and starts alternating")
+    p.add_argument("--ai-skill", type=int, default=3, help="XMage AI skill (1-10)")
+    p.add_argument("--engine-threads", type=int, help="parallel XMage games (1-16); overrides training.threads")
+    p.add_argument("--greedy", action="store_true", help="play the most likely action instead of sampling")
+    p.add_argument("--device", default="cpu", help="inference device")
+    p.add_argument("--torch-threads", type=int, default=1, help="torch intra-op threads of the policy service")
+    p.set_defaults(func=cmd_evaluate)
 
     p = sub.add_parser("train", help="one recurrent PPO update on fresh on-policy trajectories")
     p.add_argument("--checkpoint", required=True)
