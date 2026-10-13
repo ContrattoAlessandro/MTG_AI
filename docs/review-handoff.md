@@ -69,6 +69,22 @@ Format 4 is better on every held-out total (best NLL 0.434 vs 0.485, accuracy 0.
 
 Finding 5's concrete bug (opponent hand cards seen through `visibleChoices` not updating `knownHand`) cannot occur in Winota vs Kinnan: neither list has a card that shows or picks from the opponent's hand. It stays open for other decks. Vineglimmer Snarl's self-reveal belongs to the separate generic-reveal gap.
 
+### Open review items closed (13 October, fourth session)
+
+- **`mz clone` streamed from disk.** It loaded every teacher trajectory and kept all collated chunks on the GPU. At 600 trajectories the process held 8.1 GB of RAM, so the 2,000-game set (~4,000 trajectories, ~450,000 decisions) would have exceeded this machine's 31 GB and 12 GB VRAM right after collection. `_TeacherGames` now indexes files once (validation, byte offsets, return targets) and parses and collates one minibatch at a time, with the next one prefetched on a thread. Same 600 trajectories, 4 epochs: peak RSS 2.0 GB and VRAM 4.5 GB, independent of the data size; about 70 s per epoch, so roughly 80 min for the full 10-epoch clone. Clone metrics now include `hand_nll_per_card`.
+- **Finding 5, belief ablation by cloning** (same 600 teacher trajectories, fresh format-4 initializations with seed 20261013, 4 epochs, 15% of games held out, belief weight 0.1 where trained):
+
+  | Variant | Held-out NLL | Accuracy | Value MSE | Hand NLL per card | Time |
+  |---|---|---|---|---|---|
+  | Fixed hypergeometric prior (current) | 0.394 | 0.847 | 0.535 | 0.187 | 243 s |
+  | Learned belief fed to the actor (`belief_mode: learned`, DouZero+) | 0.389 | 0.852 | 0.508 | 0.169 | 548 s |
+  | Prior + auxiliary hand loss (`auxiliary_belief: true`) | 0.394 | 0.848 | 0.510 | 0.169 | 401 s |
+
+  A learned predictor beats the prior on the actual hand by about 10%, so play history does carry hand information. Feeding it to the actor changed imitation by 0.005 NLL, within what one seed can resolve, at 2.3× the training time; the learned mode also drops the role-presence features. Decision: keep `statistical_roles` for A5 and the final run. Whether the better hand estimate matters for winning (not for imitating a teacher that never models hands) can only be measured with PPO arms; add one to `scripts/a5-extra-arms.sh` if A5 leaves time. The visibleChoices bug stays open for other decks (not reachable with these lists).
+- **Failed activations measured:** in recorded policy games 2 of 877 decisions (0.23%; 0.9% of chosen casts/activations) were refused by the engine (`rejected`). Each is a no-op step with near-zero gradient. Masking needs a Java protocol change and a jar rebuild; deferred until no run uses the jars.
+- **Rules-text bins: not changed.** Within the fixed 174-card pool every candidate already carries its card identity (learned embedding) and, for modes and named choices, its printed order; bins only need to separate abilities of the same card. Text embeddings mostly help unseen cards, and any change to the candidate features changes observations, which would discard the teacher data.
+- **Learning-rate arm:** `configs/policy-final-lr1e4.yml` (policy-final with PPO learning rate 1e-4) and `scripts/a5-extra-arms.sh`, which waits for `== done` in `artifacts/a5-chain.log` and then runs arm (d) with the same budget and evaluation. Start it with `bash scripts/a5-extra-arms.sh > artifacts/a5-extra.log 2>&1` (it is a separate script because a running bash script must not be edited).
+
 ## Remaining work, in order
 
 ### A. Before the final run
@@ -76,7 +92,7 @@ Finding 5's concrete bug (opponent hand cards seen through `visibleChoices` not 
 1. **Commit** the working tree, after reading the diff. The `PolicyPlayer` refactor onto `PolicyCandidates` is meant to preserve behaviour: same candidate order, ids and features. Check it in review.
 2. ~~Decide what `artifacts/commander-initial.pt` is.~~ Resolved: it is a fresh initialization (`updates: 0`, no optimizer state, no metrics; `mz init`, seed 20261013, model section of `configs/policy-final.yml`, which is unchanged). No weights were trained on the old input meanings, so it is valid both as the clone's source and as the from-scratch baseline.
 3. **Teacher data at scale.** Run `mz teacher-collect --games 2000 --engine-threads 16 --ai-skill 1` (see `docs/warm-start.md`). Record games/hour, decisions per game, the label mix (`inspect_teacher.py`-style summary: share of casts/activations among priority decisions, attacks among attack decisions) and disk use (about 8.5 KB per decision). Decide the AI skill: skill 1 is fast, higher skills are stronger teachers but slower. `--ai-think` caps seconds per decision.
-4. **Clone.** (Format 4: `commander-initial.pt` was re-created before cloning; see above.) Run `mz clone` with the `clone:` section of `configs/policy-final.yml` (10 epochs, 10% of games held out). Report held-out NLL/accuracy overall and by action type (`accuracy_by_type`). Watch for over-sharp priority heads: in the smoke, the clone predicted "pass" on every priority decision, though 712 decisions is far too few to judge.
+4. **Clone.** (Streams from disk now, ~80 min for 2,000 games; format 4: `commander-initial.pt` was re-created before cloning; see above.) Run `mz clone` with the `clone:` section of `configs/policy-final.yml` (10 epochs, 10% of games held out). Report held-out NLL/accuracy overall and by action type (`accuracy_by_type`). Watch for over-sharp priority heads: in the smoke, the clone predicted "pass" on every priority decision, though 712 decisions is far too few to judge.
 5. **The controlled comparison (the important one).** At equal PPO budget, evaluated against XMage's AI on Winota vs Kinnan:
    - (a) the old setup: `commander-initial.pt`, λ 1.0, shaping 0, KL 0;
    - (b) cloned start with the new settings;
@@ -99,10 +115,9 @@ Findings 6–9, the final LayerNorm, the phase encoding and the policy-layer ini
 
 | # | Severity | Finding | Where | Suggested fix |
 |---|---|---|---|---|
-| 5 | Medium | Belief is a fixed hypergeometric prior that ignores the opponent's behaviour; DouZero+ / ReBeL use posteriors. **Concrete bug:** opponent hand cards seen through `visibleChoices` (Thoughtseize-style effects) become entities but never update `knownHand`, so the belief contradicts the visible input. Not reachable with the Winota/Kinnan lists | `src/magezero/policy/statistics.py`; `PolicyEncoder.observation` (`visibleChoices`) and `PolicyHistory.knownHand` | First fix the bug: mark opponent-hand cards revealed by a choice as known. Then train the hand predictor from memory and feed its prediction to the actor (DouZero+), with an ablation |
-| – | Low | Rules text in 13 hashed word bins (heavy collisions) | `PolicyCandidates.describe` | Pretrained text embeddings in the card catalog |
-| – | Low | Learning rate 3e-4 after cloning is a from-scratch value; a lower rate (1e-4) is more usual when fine-tuning a cloned policy | `configs/policy-final.yml` | Tune in A5 (an extra arm) rather than guess |
-| – | Low | Failed activations stay in trajectories as no-op decisions | `PolicyPlayer.priority` (`rejected`) | Mask them from the policy loss, or drop the step |
+| 5 | Low here | Bug: opponent hand cards seen through `visibleChoices` never update `knownHand`. Unreachable with Winota/Kinnan. The belief ablation is done (above) | `PolicyEncoder.observation`, `PolicyHistory.knownHand` | Fix with the next Java rebuild; optional PPO arm with `belief_mode: learned` |
+| – | Low | Failed activations stay in trajectories as no-op decisions (0.23% of decisions) | `PolicyPlayer.priority` (`rejected`) | With the next Java rebuild: report the refused step to the service and mask it from the policy loss |
+| – | Low | Rules text in 13 hashed word bins | `PolicyCandidates.describe` | Only if the card pool grows (would need new teacher data) |
 
 Further changes to the model's layers again need a new checkpoint format and a fresh `mz init` before cloning; changes to the Java observation need re-collected teacher data.
 

@@ -5,7 +5,7 @@ Implemented 13 October 2026, from the architecture review (findings 3 and 4). Al
 | Piece | Where | What it does |
 |---|---|---|
 | Teacher recording | `integration/xmage/src-ma/mage/player/ai/TeacherPlayer.java`, `POST /record` | XMage's Mad AI (ComputerPlayer7) plays; each decision becomes a label over the policy's own candidate list (`PolicyCandidates`, shared with `PolicyPlayer`), with the observation the policy would have seen. |
-| Behaviour cloning | `src/magezero/policy/teacher.py`, `mz clone` | Cross-entropy on the teacher's choices, memory rebuilt from step zero as in PPO; both value heads pre-trained on the games' shaped outcomes. Keeps the epoch with the lowest held-out NLL (whole games held out). |
+| Behaviour cloning | `src/magezero/policy/teacher.py`, `mz clone` | Cross-entropy on the teacher's choices, memory rebuilt from step zero as in PPO; both value heads pre-trained on the games' shaped outcomes. Keeps the epoch with the lowest held-out NLL (whole games held out). Streams from disk: files are indexed once (byte offsets, return targets) and one minibatch is parsed and collated at a time, so memory does not grow with the number of games. |
 | Regularized PPO | `learner.py`, `shaping.py` | `reference_kl_coefficient` × KL(cloned ‖ policy) over legal candidates, decayed per update; potential-based shaping; `gae_lambda` 0.95. |
 
 ## How the teacher's decisions are mapped
