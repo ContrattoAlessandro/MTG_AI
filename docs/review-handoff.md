@@ -27,6 +27,48 @@ Tests: 47 pass (`.venv/Scripts/python.exe -m pytest -q`), including 7 new ones i
 
 The smoke outputs are under the session scratchpad and are throwaway: `teacher-smoke/`, `cloned-smoke.pt`, `ppo-smoke/`.
 
+### Format-4 architecture (13 October, third session)
+
+A second review confirmed the GAE recursion, PPO clipping and KL estimator, the reference-KL masking, the hypergeometric prior and role presence, the shaping potential (every feature index matches `PolicyEncoder.java`) and the recurrent batching. It found no math errors. Findings 6–9 and the low-priority model items were then implemented together as checkpoint **format 4**. Format 2/3 files no longer load (`mz init` creates a new one). `artifacts/commander-initial.pt` was re-created as format 4 with the same command and seed, while it was still an untrained initialization; the format-3 file is kept as `artifacts/commander-initial-v3.pt`. The teacher data is unaffected: it stores observations, not weights, and no observation changed.
+
+| Change | Where |
+|---|---|
+| Finding 6: each decision's new events are pooled with attention (PMA block: per-event residual MLP, learned query, log2 recency embedding, log count); the event GRU steps once per decision with events | `model.py` `EventPool`, `_encode`, the three forwards |
+| Finding 7: actor and privileged critic gradients clipped separately | `learner.py` `clip_gradients` (PPO and `teacher.py` cloning) |
+| Finding 8: pooled entities concatenated into the actor context | `model.py` `context_encoder` (4·d input) |
+| Finding 9: entropy bonus divided by log(legal candidates); `entropy` (raw) and `normalized_entropy` both logged | `learner.py` |
+| Final LayerNorm on the pre-norm entity transformer | `model.py` `entity_attention` |
+| Turn step one-hot into the global encoder (decoded from `globals[9]` in Python, no Java change), global state layer-normalized | `model.py` `global_encoder`, `global_norm` |
+| Small init of the last policy layer | `model.py` `action_scorer` |
+| Mean instead of summed relation messages | `model.py` `_encode` |
+| KL early stopping per minibatch (1.5 × `target_kl`, before the step; 0 disables) instead of after a whole epoch; `early_stopped` metric | `learner.py` |
+| PPO from a clone with `gae_lambda < 1` refuses a `shaping_coefficient`/`gamma` different from the clone's | `learner.py` `check_warm_start` |
+
+Verified: 52 tests pass, including `tests/test_architecture_review.py` (stepwise, sequence and multi-trajectory forwards identical with 0 to 300 events per decision; pooling unaffected by batch padding; separate clipping; early stop; warm-start check; format-2/3 rejection). On real teacher games, live and learner forwards agree to 5e-10 in the logits. The three decision-GRU inputs now have equal scale (L2 norm 16 each; before, the entity summary was 10.2 against 1.2 for global features). Learner forward+backward on CUDA: 3,400–4,400 decisions/s against 2,400 for format 3, at the same peak memory (3.4 GiB for 48 games). With four 8,000-event bursts in one 16-trajectory batch: 1.5 s and 2.1 GiB against 27.5 s and 21.3 GiB (format 3 overflowed the 12 GB card).
+
+Behaviour cloning on the same 300 teacher games (4 epochs, 15% held out, seed 7), format 4 against format 3:
+
+```text
+format 4 (new)
+epoch 0: held-out nll 0.5742 acc 0.759 value mse 0.6904
+epoch 1: held-out nll 0.4709 acc 0.820 value mse 0.5985
+epoch 2: held-out nll 0.4342 acc 0.835 value mse 0.5611
+epoch 3: held-out nll 0.4364 acc 0.829 value mse 0.5504
+by type: {'pass': 0.984, 'cast': 0.536, 'activate': 0.403, 'target': 0.895, 'use': 0.41, 'attack': 0.832, 'block': 0.671, 'order': 0.973, 'amount': 0.1, 'mulligan': 1.0, 'choose': 0.571}
+510 train / 90 held-out trajectories, 76 s
+format 3 (old)
+epoch 0: held-out nll 0.5933 acc 0.750 value mse 0.7514
+epoch 1: held-out nll 0.5484 acc 0.788 value mse 0.6495
+epoch 2: held-out nll 0.5071 acc 0.814 value mse 0.6734
+epoch 3: held-out nll 0.4847 acc 0.815 value mse 0.7255
+by type: {'pass': 0.972, 'cast': 0.522, 'activate': 0.42, 'target': 0.866, 'use': 0.378, 'attack': 0.78, 'block': 0.67, 'order': 0.932, 'amount': 0.308, 'mulligan': 1.0, 'choose': 0.502}
+510 train / 90 held-out trajectories, 82 s
+```
+
+Format 4 is better on every held-out total (best NLL 0.434 vs 0.485, accuracy 0.835 vs 0.815, value MSE 0.55 vs 0.67) and per type except `amount` (0.10 vs 0.31) and slightly `activate`. Amount decisions are rare, so this is noisy, but it is worth checking in the full clone's `accuracy_by_type`: amounts are candidates whose only distinguishing feature is slot 0. One seed and 300 games: evidence that format 4 learns at least as well, not a measured strength gain.
+
+Finding 5's concrete bug (opponent hand cards seen through `visibleChoices` not updating `knownHand`) cannot occur in Winota vs Kinnan: neither list has a card that shows or picks from the opponent's hand. It stays open for other decks. Vineglimmer Snarl's self-reveal belongs to the separate generic-reveal gap.
+
 ## Remaining work, in order
 
 ### A. Before the final run
@@ -34,7 +76,7 @@ The smoke outputs are under the session scratchpad and are throwaway: `teacher-s
 1. **Commit** the working tree, after reading the diff. The `PolicyPlayer` refactor onto `PolicyCandidates` is meant to preserve behaviour: same candidate order, ids and features. Check it in review.
 2. ~~Decide what `artifacts/commander-initial.pt` is.~~ Resolved: it is a fresh initialization (`updates: 0`, no optimizer state, no metrics; `mz init`, seed 20261013, model section of `configs/policy-final.yml`, which is unchanged). No weights were trained on the old input meanings, so it is valid both as the clone's source and as the from-scratch baseline.
 3. **Teacher data at scale.** Run `mz teacher-collect --games 2000 --engine-threads 16 --ai-skill 1` (see `docs/warm-start.md`). Record games/hour, decisions per game, the label mix (`inspect_teacher.py`-style summary: share of casts/activations among priority decisions, attacks among attack decisions) and disk use (about 8.5 KB per decision). Decide the AI skill: skill 1 is fast, higher skills are stronger teachers but slower. `--ai-think` caps seconds per decision.
-4. **Clone.** Run `mz clone` with the `clone:` section of `configs/policy-final.yml` (10 epochs, 10% of games held out). Report held-out NLL/accuracy overall and by action type (`accuracy_by_type`). Watch for over-sharp priority heads: in the smoke, the clone predicted "pass" on every priority decision, though 712 decisions is far too few to judge.
+4. **Clone.** (Format 4: `commander-initial.pt` was re-created before cloning; see above.) Run `mz clone` with the `clone:` section of `configs/policy-final.yml` (10 epochs, 10% of games held out). Report held-out NLL/accuracy overall and by action type (`accuracy_by_type`). Watch for over-sharp priority heads: in the smoke, the clone predicted "pass" on every priority decision, though 712 decisions is far too few to judge.
 5. **The controlled comparison (the important one).** At equal PPO budget, evaluated against XMage's AI on Winota vs Kinnan:
    - (a) the old setup: `commander-initial.pt`, λ 1.0, shaping 0, KL 0;
    - (b) cloned start with the new settings;
@@ -53,20 +95,16 @@ The smoke outputs are under the session scratchpad and are throwaway: `teacher-s
 
 ### C. Review findings not yet addressed
 
+Findings 6–9, the final LayerNorm, the phase encoding and the policy-layer init are done (format 4, above).
+
 | # | Severity | Finding | Where | Suggested fix |
 |---|---|---|---|---|
-| 5 | Medium | Belief is a fixed hypergeometric prior that ignores the opponent's behaviour; DouZero+ / ReBeL use posteriors. **Concrete bug:** opponent hand cards seen through `visibleChoices` (Thoughtseize-style effects) become entities but never update `knownHand`, so the belief contradicts the visible input | `src/magezero/policy/statistics.py`; `PolicyEncoder.observation` (`visibleChoices`) and `PolicyHistory.knownHand` | First fix the bug: mark opponent-hand cards revealed by a choice as known. Then train the hand predictor from memory and feed its prediction to the actor (DouZero+), with an ablation |
-| 6 | Medium | The event GRU steps over every raw event (up to 8,192 between decisions; Kinnan loops), so BPTT through tens of thousands of steps | `model.py` `forward`, `forward_sequence`, `forward_episodes` | Pool each decision's events with attention (a small set transformer), then one recurrent step per decision. Keep `forward` / `forward_episodes` equivalence (test `test_multi_episode_forward_matches_separate_sequences`) and the log-prob replay check |
-| 7 | Medium | One gradient-clip norm over actor and critic together, so a large critic loss shrinks policy steps | `learner.py` (clip before `optimizer.step()`; same in `teacher.py` `_pass`) | Clip the two parameter groups separately, or use two optimizers |
-| 8 | Medium | Action head sees the current state only through the GRU, global features and pointers | `model.py` `_head` (`context_encoder`) | Concatenate `encoded.pooled` into the context input (a shape change: needs a fresh checkpoint or an upgrade hook) |
-| 9 | Medium | Entropy bonus not normalized by candidate count (256-option amounts vs binary choices) | `learner.py` entropy term | Divide per-decision entropy by log(number of legal candidates) |
-| – | Low | No final LayerNorm after the pre-norm transformer | `model.py` `entity_attention` | Add `norm=nn.LayerNorm(d)` to `TransformerEncoder` |
-| – | Low | Turn phase as a scalar ordinal (`ordinal()/32`) | `PolicyEncoder.java` `global[9]` | Phase embedding or one-hot |
+| 5 | Medium | Belief is a fixed hypergeometric prior that ignores the opponent's behaviour; DouZero+ / ReBeL use posteriors. **Concrete bug:** opponent hand cards seen through `visibleChoices` (Thoughtseize-style effects) become entities but never update `knownHand`, so the belief contradicts the visible input. Not reachable with the Winota/Kinnan lists | `src/magezero/policy/statistics.py`; `PolicyEncoder.observation` (`visibleChoices`) and `PolicyHistory.knownHand` | First fix the bug: mark opponent-hand cards revealed by a choice as known. Then train the hand predictor from memory and feed its prediction to the actor (DouZero+), with an ablation |
 | – | Low | Rules text in 13 hashed word bins (heavy collisions) | `PolicyCandidates.describe` | Pretrained text embeddings in the card catalog |
-| – | Low | Default final-layer init on the policy/value heads | `model.py` | Small init of the last policy layer (Andrychowicz et al. 2021); fresh runs only |
+| – | Low | Learning rate 3e-4 after cloning is a from-scratch value; a lower rate (1e-4) is more usual when fine-tuning a cloned policy | `configs/policy-final.yml` | Tune in A5 (an extra arm) rather than guess |
 | – | Low | Failed activations stay in trajectories as no-op decisions | `PolicyPlayer.priority` (`rejected`) | Mask them from the policy loss, or drop the step |
 
-Changes to findings 6 and 8, the LayerNorm and the init change the model's state dict: plan them as a new checkpoint generation, not a mid-run change. The phase-embedding item changes what the observation means, as fixes 1 and 2 did.
+Further changes to the model's layers again need a new checkpoint format and a fresh `mz init` before cloning; changes to the Java observation need re-collected teacher data.
 
 ## Rebuilding after Java changes
 
