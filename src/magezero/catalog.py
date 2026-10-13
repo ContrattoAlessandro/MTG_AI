@@ -1,14 +1,20 @@
-"""Immutable card identity/semantic catalog shared with the engine."""
+"""The immutable card catalog shared by the engine and the model.
 
-from dataclasses import dataclass
+Card IDs are contiguous and start at 1 (0 means unknown, hidden or padding).
+Each card has a stable key, a display name, 32 static semantic features and,
+in format 2, its reviewed overlapping roles (see roles.py). The SHA-256 digest
+of the canonical JSON identifies the catalog in checkpoints and observations.
+"""
+
 import hashlib
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 import torch
 
-from .schema import CARD_FEATURES, _vector
 from .roles import ROLE_NAMES, validate_roles
+from .schema import CARD_FEATURES, numeric_vector
 
 
 @dataclass(frozen=True)
@@ -19,8 +25,12 @@ class CardCatalog:
 
     @classmethod
     def from_dict(cls, data: dict) -> "CardCatalog":
-        if (not isinstance(data, dict) or isinstance(data.get("format_version"), bool)
-                or data.get("format_version") not in (1, 2)):
+        """Validate a catalog in format 1 (features only) or 2 (features and roles)."""
+        if (
+            not isinstance(data, dict)
+            or isinstance(data.get("format_version"), bool)
+            or data.get("format_version") not in (1, 2)
+        ):
             raise ValueError("expected card catalog format_version 1 or 2")
         version = data["format_version"]
         fields = {"format_version", "cards"} | ({"role_names"} if version == 2 else set())
@@ -39,7 +49,7 @@ class CardCatalog:
             if not isinstance(card["name"], str) or not card["name"]:
                 raise ValueError("card names must be nonempty strings")
             keys.add(card["key"])
-            _vector(card["features"], CARD_FEATURES, "card.features")
+            numeric_vector(card["features"], CARD_FEATURES, "card.features")
             if version == 2:
                 validate_roles(card["roles"])
         canonical = json.dumps(data, sort_keys=True, separators=(",", ":"), allow_nan=False)
@@ -55,15 +65,19 @@ class CardCatalog:
             result["role_names"] = list(ROLE_NAMES)
         return json.loads(json.dumps(result))
 
-    def tensor(self):
+    def tensor(self) -> torch.Tensor:
+        """Static card features, [num_cards, CARD_FEATURES]; row 0 is the zero padding card."""
         return torch.tensor([[0.0] * CARD_FEATURES] + [card["features"] for card in self.cards])
 
-    def role_tensor(self):
+    def role_tensor(self) -> torch.Tensor:
+        """Binary role membership, [num_cards, len(ROLE_NAMES)]; row 0 is empty."""
         if self.format_version != 2:
             raise ValueError("statistical_roles requires a v2 role catalog; run scripts/annotate_policy_catalog.py")
-        return torch.tensor([[0.0] * len(ROLE_NAMES)] + [
-            [float(role in card["roles"]) for role in ROLE_NAMES] for card in self.cards])
+        return torch.tensor(
+            [[0.0] * len(ROLE_NAMES)] + [[float(role in card["roles"]) for role in ROLE_NAMES] for card in self.cards]
+        )
 
     @property
-    def num_cards(self):
-        return len(self.cards) + 1  # 0 is unknown/hidden/padding, never a real card
+    def num_cards(self) -> int:
+        """Embedding rows: every card plus ID 0 (unknown, hidden or padding)."""
+        return len(self.cards) + 1

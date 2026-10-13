@@ -204,7 +204,7 @@ def test_clone_and_runner_configuration_checks(components, tmp_path):
 
 def test_teacher_games_are_indexed_on_disk_and_loaded_per_trajectory(components, tmp_path):
     """mz clone keeps only offsets and returns in memory; several trajectories may share a file."""
-    from magezero.teacher import _TeacherGames, _split
+    from magezero.teacher import TeacherGames, split_games
     model, critic, catalog = components
     service = PolicyService(model, catalog, "start", tmp_path / "teacher")
     for game in range(3):
@@ -213,12 +213,12 @@ def test_teacher_games_are_indexed_on_disk_and_loaded_per_trajectory(components,
     files = sorted((tmp_path / "teacher").rglob("*.jsonl"))
     combined = tmp_path / "combined.jsonl"
     combined.write_bytes(b"".join(f.read_bytes().rstrip(b"\r\n") + b"\n" for f in files) + b"\n")
-    games = _TeacherGames([combined], model.config, CloneConfig(shaping_coefficient=0.2))
+    games = TeacherGames([combined], model.config, CloneConfig(shaping_coefficient=0.2))
     assert len(games) == 6
     for i, path in enumerate(files):
         assert games.load(i) == json.loads(path.read_text(encoding="utf-8"))
     assert all(len(entry.returns) == 6 and entry.valued for entry in games.entries)
-    train, held = _split(games, 1 / 3, seed=0)
+    train, held = split_games(games, 1 / 3, seed=0)
     assert len(held) == 2 and len({games.entries[i].game_id for i in held}) == 1  # both seats of one game
     with pytest.raises(ValueError, match="duplicate"):
-        _TeacherGames([combined, files[0]], model.config, CloneConfig())
+        TeacherGames([combined, files[0]], model.config, CloneConfig())

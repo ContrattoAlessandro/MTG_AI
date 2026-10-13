@@ -1,22 +1,27 @@
-"""A recurrent policy service with idempotent player/game sessions.
+"""The policy inference service: a recurrent policy with idempotent player/game sessions.
+
+Endpoints: POST /act (choose a candidate), /record (store XMage's AI decision
+for behaviour cloning), /finish (end a session and write its trajectory),
+/reload (opt-in checkpoint swap); GET /healthz, /catalog, /stats. See
+docs/policy-protocol.md.
 
 Training labels enter only /finish, after action selection has completed. They
 are written to trajectories, never forwarded to the actor. /act is search-free.
 """
 
-from collections import OrderedDict
-from dataclasses import dataclass, field
 import hashlib
 import json
 import os
-from pathlib import Path
 import queue
 import threading
 import time
 import uuid
+from collections import OrderedDict
+from dataclasses import dataclass, field
+from pathlib import Path
 
-from flask import Flask, jsonify, request
 import torch
+from flask import Flask, jsonify, request
 
 from .checkpoint import architecture_name, load_checkpoint
 from .model import PolicyMemory
@@ -26,6 +31,8 @@ from .schema import SCHEMA_VERSION, collate_observations, validate_labels, valid
 
 @dataclass
 class Session:
+    """One player's game: recurrent memory, the last answered step, and its recorded decisions."""
+
     memory: PolicyMemory | None = None
     step: int = -1
     event_cursor: int = -1
@@ -45,6 +52,8 @@ TEACHER_VERSION = "xmage-teacher"
 
 @dataclass
 class _Job:
+    """A decision waiting for the inference worker."""
+
     key: tuple[str, str]
     session: Session
     observation: dict
@@ -63,6 +72,7 @@ class _Job:
 
 
 def canonical_json(value: dict) -> str:
+    """Key-sorted, compact JSON: the basis of retry fingerprints."""
     return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
 
@@ -77,9 +87,9 @@ class PolicyService:
     runs them as one forward pass. There is no wait timer: an idle service answers
     a lone request immediately, and batches grow only under concurrent load.
     """
-    def __init__(self, model, catalog, policy_version, output_dir=None,
-                 max_sessions=64, session_ttl=3600, max_steps=10000, max_batch=32,
-                 include_belief=True):
+    def __init__(self, model, catalog, policy_version: str, output_dir=None, max_sessions: int = 64,
+                 session_ttl: float = 3600, max_steps: int = 10000, max_batch: int = 32,
+                 include_belief: bool = True):
         if isinstance(max_batch, bool) or not isinstance(max_batch, int) or max_batch < 1:
             raise ValueError("max_batch must be a positive integer")
         self.model = model.eval()
@@ -104,6 +114,7 @@ class PolicyService:
         threading.Thread(target=self._worker, name="policy-inference", daemon=True).start()
 
     def stats(self) -> dict:
+        """Request and inference counters, and the game outcomes since start or reload."""
         with self.lock:
             stats = dict(self.counters)
             stats["results"] = dict(self.results)
@@ -113,6 +124,7 @@ class PolicyService:
         return stats
 
     def act(self, payload: dict) -> dict:
+        """Choose a candidate for {observation, sample}; retries of a decision are idempotent."""
         started = time.monotonic()
         try:
             return self._act(payload)
@@ -340,6 +352,7 @@ class PolicyService:
             self.results = dict.fromkeys(self.results, 0)
 
     def finish(self, payload: dict) -> dict:
+        """End a session; write its trajectory with labels when recording a finished game."""
         allowed = {"game_id", "player_id", "result", "terminal", "labels"}
         # "truncated" is optional: an error-free game stopped by the turn limit.
         if not isinstance(payload, dict) or set(payload) - {"truncated"} != allowed:
@@ -405,7 +418,8 @@ class PolicyService:
             return response
 
 
-def create_app(service: PolicyService, allow_reload=False) -> Flask:
+def create_app(service: PolicyService, allow_reload: bool = False) -> Flask:
+    """The Flask application exposing `service` over HTTP."""
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
 
@@ -457,9 +471,11 @@ def create_app(service: PolicyService, allow_reload=False) -> Flask:
     return app
 
 
-def serve(checkpoint, host="127.0.0.1", port=50052, output_dir=None, device="auto", max_batch=32,
-          include_belief=True, torch_threads=1, allow_reload=False):
+def serve(checkpoint, host: str = "127.0.0.1", port: int = 50052, output_dir=None, device: str = "auto",
+          max_batch: int = 32, include_belief: bool = True, torch_threads: int = 1, allow_reload: bool = False) -> None:
+    """Serve a checkpoint with waitress until interrupted."""
     import waitress
+
     torch.set_num_threads(torch_threads)
     model, _, catalog, data = load_checkpoint(checkpoint, device)
     service = PolicyService(model, catalog, data["policy_version"], output_dir, max_batch=max_batch,

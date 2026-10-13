@@ -13,28 +13,39 @@ The teacher plays deterministically and its search fixes some choices in advance
 recorded, so teacher trajectories can skip decisions a policy game would contain.
 """
 
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, dataclass
 import json
 import math
-from pathlib import Path
 import random
 import time
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import asdict, dataclass
+from pathlib import Path
 
 import torch
 import yaml
 
 from .belief import constrained_hand_belief
 from .checkpoint import load_checkpoint, resolve_device, save_checkpoint
-from .engine import PersistentEngine
-from .learner import _carry, _join, _prepare_chunks, _windows, clip_gradients, validate_episode
+from .engine import RESULT_FIELDS, PersistentEngine, batch_timeout, game_config
+from .learner import (
+    carry_memory,
+    chunk_windows,
+    clip_gradients,
+    join_chunks,
+    prepare_chunks,
+    set_learning_modes,
+    validate_episode,
+)
 from .schema import ACTION_TYPES
 from .service import TEACHER_VERSION
+from .service_client import OUTCOMES, ServiceProcess, collect_results
 from .shaping import shaped_rewards
 
 
 @dataclass(frozen=True)
 class CloneConfig:
+    """The `clone:` section of a policy YAML."""
+
     learning_rate: float = 3e-4
     epochs: int = 10
     episodes_per_batch: int = 16
@@ -90,7 +101,7 @@ class _Entry:
     valued: bool
 
 
-class _TeacherGames:
+class TeacherGames:
     """Teacher trajectories indexed on disk; a minibatch is parsed and collated when used.
 
     2,000 Commander games are about 450,000 decisions (~8 GB of JSON). Parsed and
@@ -99,7 +110,8 @@ class _TeacherGames:
     prefetched) is resident at a time.
     """
     def __init__(self, files, model_config, config: CloneConfig):
-        self.entries, keys = [], set()
+        self.entries: list[_Entry] = []
+        keys = set()
         for path in map(Path, files):
             with path.open("rb") as stream:
                 offset = 0
@@ -121,17 +133,18 @@ class _TeacherGames:
         if not self.entries:
             raise ValueError("no completed teacher episodes were found")
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.entries)
 
     def load(self, index: int) -> dict:
+        """Parse trajectory `index` from disk."""
         entry = self.entries[index]
         with entry.path.open("rb") as stream:
             stream.seek(entry.offset)
             return json.loads(stream.readline())
 
 
-def _split(games: _TeacherGames, fraction, seed) -> tuple[list[int], list[int]]:
+def split_games(games: TeacherGames, fraction: float, seed: int) -> tuple[list[int], list[int]]:
     """Indices of training and held-out trajectories; whole games (both seats) are held out."""
     names = sorted({entry.game_id for entry in games.entries})
     random.Random(seed).shuffle(names)
@@ -141,7 +154,7 @@ def _split(games: _TeacherGames, fraction, seed) -> tuple[list[int], list[int]]:
     return train, validation
 
 
-def _pass(model, critic, games: _TeacherGames, indices, config: CloneConfig, optimizer=None):
+def _pass(model, critic, games: TeacherGames, indices, config: CloneConfig, optimizer=None):
     """One sweep over `indices`; trains when an optimizer is given. Returns summed statistics."""
     length = config.sequence_length
     trains_belief = model.config.belief_mode == "learned" or model.config.auxiliary_belief
@@ -156,7 +169,7 @@ def _pass(model, critic, games: _TeacherGames, indices, config: CloneConfig, opt
               for start in range(0, len(order), config.episodes_per_batch)]
 
     def prepare(group):
-        return {i: _prepare_chunks(games.load(i), model, length) for i in group}
+        return {i: prepare_chunks(games.load(i), model, length) for i in group}
     with ThreadPoolExecutor(1) as loader:  # parse and collate the next minibatch meanwhile
         pending = loader.submit(prepare, groups[0]) if groups else None
         for position, group in enumerate(groups):
@@ -168,9 +181,9 @@ def _pass(model, critic, games: _TeacherGames, indices, config: CloneConfig, opt
                 optimizer.zero_grad(set_to_none=True)
             memory, previous = None, group
             with torch.set_grad_enabled(optimizer is not None):
-                for window, members in _windows(group, prepared):
-                    memory = _carry(memory, previous, members)
-                    joined = _join([prepared[i][window] for i in members])
+                for window, members in chunk_windows(group, prepared):
+                    memory = carry_memory(memory, previous, members)
+                    joined = join_chunks([prepared[i][window] for i in members])
                     sizes = [len(prepared[i][window].actions) for i in members]
                     rows = slice(window * length, window * length + length)
                     returns = torch.cat([games.entries[i].returns[rows] for i in members]).to(device)
@@ -219,7 +232,8 @@ def _pass(model, critic, games: _TeacherGames, indices, config: CloneConfig, opt
     return totals, by_type
 
 
-def _summary(totals, by_type):
+def _summary(totals: dict, by_type: dict) -> dict:
+    """Per-decision averages of one sweep's summed statistics."""
     choices = max(totals["choices"], 1)
     return {"nll": totals["nll"] / choices, "accuracy": totals["correct"] / choices,
             "choice_decisions": totals["choices"],
@@ -228,23 +242,24 @@ def _summary(totals, by_type):
             "accuracy_by_type": {name: hits / count for name, (hits, count) in by_type.items() if count}}
 
 
-def behavior_cloning(checkpoint_path, episode_paths, output_path, config=CloneConfig(), device="auto"):
-    """Fit the checkpoint's policy (and value heads) to teacher trajectories; save the best epoch."""
+def behavior_cloning(checkpoint_path, episode_paths, output_path, config: CloneConfig | None = None,
+                     device: str = "auto") -> dict:
+    """Fit the checkpoint's policy (and value heads) to teacher trajectories; save the best epoch.
+
+    The best epoch has the lowest held-out NLL (training NLL without a held-out set).
+    """
+    config = config or CloneConfig()
     torch.manual_seed(config.seed)
     random.seed(config.seed)
     model, critic, catalog, checkpoint = load_checkpoint(checkpoint_path, resolve_device(device))
     files = []
     for path in map(Path, episode_paths):
         files += sorted(path.rglob("*.jsonl")) if path.is_dir() else [path]
-    games = _TeacherGames(files, model.config, config)
-    train_ids, validation_ids = _split(games, config.validation_fraction, config.seed)
+    games = TeacherGames(files, model.config, config)
+    train_ids, validation_ids = split_games(games, config.validation_fraction, config.seed)
     if not train_ids:
         raise ValueError("no teacher games left for training after the validation split")
-    # As in PPO: deterministic attention, training-mode GRUs for cuDNN backward.
-    model.eval()
-    model.event_memory.train()
-    model.decision_memory.train()
-    critic.train()
+    set_learning_modes(model, critic)  # as in PPO
     optimizer = torch.optim.AdamW(list(model.parameters()) + list(critic.parameters()),
                                   lr=config.learning_rate, weight_decay=0.0)
     history, best = [], None
@@ -275,29 +290,27 @@ def teacher_game_config(base: dict, games: int, port: int, ai_skill: int, ai_thi
     """Both seats (or only player_a's deck) played by recording XMage AI teachers."""
     if seats not in ("both", "a"):
         raise ValueError("teacher seats must be 'both' or 'a'")
-    from .runner import _game_config
-    config = _game_config(base, games, [port], [port], keep_deck=True)
+    config = game_config(base, games, [port], [port], keep_deck=True)
     config["player_a"]["type"] = "xmage-teacher"
     config["player_b"]["type"] = "xmage-teacher" if seats == "both" else "xmage-ai"
     config["opponent_ai"] = {"skill": ai_skill, **({"think_seconds": ai_think} if ai_think else {})}
     return config
 
 
-def collect_teacher_games(checkpoint, game_config, engine_script, output, games, *, batch_games=32,
-                          engine_threads=None, ai_skill=1, ai_think=0, seats="both", port=50060,
-                          max_retries=3):
+def collect_teacher_games(checkpoint, game_yaml, engine_script, output, games: int, *, batch_games: int = 32,
+                          engine_threads: int | None = None, ai_skill: int = 1, ai_think: int = 0,
+                          seats: str = "both", port: int = 50060, max_retries: int = 3) -> dict:
     """Play `games` teacher games into output/episodes; resumable by counting what is there.
 
     The checkpoint only supplies the card catalog and validation limits for the
     service; it never chooses an action.
     """
-    from .runner import _await_server, _batch_timeout, _launch_server, _results, _stop_server
     script = Path(engine_script).resolve()
     if not script.is_file():
         raise ValueError("XMage engine launcher is missing; see docs/xmage-integration.md")
     if games < 1 or batch_games < 1 or not 1 <= ai_skill <= 10 or ai_think < 0:
         raise ValueError("games and batch size must be positive, AI skill 1..10, think time >= 0")
-    base = yaml.safe_load(Path(game_config).read_text(encoding="utf-8"))
+    base = yaml.safe_load(Path(game_yaml).read_text(encoding="utf-8"))
     for player in ("player_a", "player_b"):
         base[player]["deckPath"] = str(Path(base[player]["deckPath"]).resolve())
         if not Path(base[player]["deckPath"]).is_file():
@@ -313,12 +326,12 @@ def collect_teacher_games(checkpoint, game_config, engine_script, output, games,
         "ai_skill": ai_skill, "ai_think": ai_think, "seats": seats}
     version = load_checkpoint(checkpoint)[3]["policy_version"]
     engine = server = None
-    counted = dict.fromkeys(("win", "loss", "draw", "truncated", "aborted"), 0)  # service totals so far
+    counted = dict.fromkeys(OUTCOMES, 0)  # service totals so far
 
     def start():
         nonlocal engine, server, counted
-        server = _launch_server(checkpoint, port, episodes, "cpu", root / "teacher-service.log")
-        _await_server(server, version)
+        server = ServiceProcess(checkpoint, port, episodes, "cpu", root / "teacher-service.log")
+        server.wait_ready(version)
         counted = dict.fromkeys(counted, 0)
         engine = PersistentEngine(script, root / "teacher-engine.log")
 
@@ -328,7 +341,7 @@ def collect_teacher_games(checkpoint, game_config, engine_script, output, games,
             engine.kill()
             engine = None
         if server is not None:
-            _stop_server(server)
+            server.stop()
             server = None
 
     try:
@@ -342,16 +355,16 @@ def collect_teacher_games(checkpoint, game_config, engine_script, output, games,
                     if engine is None:
                         start()
                     started = time.perf_counter()
-                    result = engine.run(config_file, _batch_timeout(config))
+                    result = engine.run(config_file, batch_timeout(config))
                     break
                 except (RuntimeError, TimeoutError, OSError) as error:
                     print(f"Teacher batch failed (attempt {attempt + 1}): {error}; restarting engine and service")
                     stop()
                     if attempt == max_retries:
                         raise
-            outcome = dict(zip(("terminal", "requested", "truncated", "errors", "timeouts"), result))
+            outcome = dict(zip(RESULT_FIELDS, result))
             # Per-recorder outcomes of this batch: the service counts since its start.
-            totals = _results([port])
+            totals = collect_results([port])
             outcome["recorders"] = {key: totals[key] - counted[key] for key in counted}
             counted = totals
             outcome["seconds"] = time.perf_counter() - started

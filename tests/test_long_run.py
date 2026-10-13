@@ -10,7 +10,7 @@ import yaml
 
 from magezero import runner
 from magezero.checkpoint import load_checkpoint, save_checkpoint
-from magezero.learner import (PPOConfig, _carry, _join, _prepare_chunks, _windows,
+from magezero.learner import (PPOConfig, carry_memory, join_chunks, prepare_chunks, chunk_windows,
                                      ppo_update, validate_episode)
 from magezero.schema import collate_observations
 from magezero.service import PolicyService
@@ -55,7 +55,7 @@ def test_multi_episode_forward_matches_separate_sequences(components):
                     _varied_trajectory(model.config, 5, "c", events=False)]
     episodes = [{"steps": [{"observation": o, "action_id": o["actions"][0]["id"], "log_probability": 0.0,
                             "labels": {"opponent_hand_counts": [1, 1, 1]}} for o in t]} for t in trajectories]
-    prepared = [_prepare_chunks(e, model, 3) for e in episodes]
+    prepared = [prepare_chunks(e, model, 3) for e in episodes]
     with torch.no_grad():
         expected = []
         for steps in trajectories:
@@ -63,9 +63,9 @@ def test_multi_episode_forward_matches_separate_sequences(components):
             expected.append(out)
         memory, previous, rows = None, [0, 1, 2], {i: [] for i in range(3)}
         final = {}
-        for window, members in _windows([0, 1, 2], prepared):
-            memory = _carry(memory, previous, members)
-            joined = _join([prepared[i][window] for i in members])
+        for window, members in chunk_windows([0, 1, 2], prepared):
+            memory = carry_memory(memory, previous, members)
+            joined = join_chunks([prepared[i][window] for i in members])
             sizes = [len(prepared[i][window].actions) for i in members]
             out = model.forward_episodes(joined.batch, sizes, memory)
             # The learner's sync-free path (CPU event counts) must agree exactly.
@@ -152,9 +152,9 @@ def test_wilson_interval_and_selection_metric():
     low, high = runner.wilson_interval(149, 200)
     assert abs(low - 0.680) < 0.002 and abs(high - 0.800) < 0.002
     assert runner.wilson_interval(0, 0) is None
-    assert runner._primary_score({"xmage-ai": {"score": 0.4}, "anchor:a": {"score": 0.9}}) == 0.4
-    assert runner._primary_score({"anchor:a": {"score": 0.5}, "anchor:b": {"score": 0.7}}) == pytest.approx(0.6)
-    assert runner._primary_score({"xmage-ai": {"score": 0.4}, "xmage-ai:kinnan": {"score": 0.2},
+    assert runner.primary_score({"xmage-ai": {"score": 0.4}, "anchor:a": {"score": 0.9}}) == 0.4
+    assert runner.primary_score({"anchor:a": {"score": 0.5}, "anchor:b": {"score": 0.7}}) == pytest.approx(0.6)
+    assert runner.primary_score({"xmage-ai": {"score": 0.4}, "xmage-ai:kinnan": {"score": 0.2},
                                   "anchor:a": {"score": 0.9}}) == pytest.approx(0.3)
 
 
@@ -221,7 +221,7 @@ def _mock_results(monkeypatch, scores):
     def results(ports):
         win = int(100 * next(scores)) if _FakeCollector.last_config.startswith("eval-") else 50
         return {"win": win, "loss": 100 - win, "draw": 0, "truncated": 0, "aborted": 0}
-    monkeypatch.setattr(runner, "_results", results)
+    monkeypatch.setattr(runner, "collect_results", results)
 
 
 def test_runner_retries_resumes_prunes_and_keeps_the_best(components, tmp_path, monkeypatch):
@@ -241,8 +241,8 @@ def test_runner_retries_resumes_prunes_and_keeps_the_best(components, tmp_path, 
         "training": {"games": 4, "threads": 2, "max_turns": 50, "max_minutes": 5}}))
     policy = tmp_path / "policy.yml"
     policy.write_text(yaml.safe_dump({"training": {"epochs": 1}}))
-    monkeypatch.setattr(runner, "_Collector", _FakeCollector)
-    monkeypatch.setattr(runner, "_ServicePool", lambda *args: _FakeServices())
+    monkeypatch.setattr(runner, "Collector", _FakeCollector)
+    monkeypatch.setattr(runner, "ServicePool", lambda *args: _FakeServices())
     monkeypatch.setattr(runner, "train_from_files", _fake_train)
     scores = iter([0.30, 0.55, 0.45, 0.70])
     _mock_results(monkeypatch, scores)
@@ -297,8 +297,8 @@ def test_gauntlet_generations_pin_the_learner_deck(components, tmp_path, monkeyp
         "training": {"games": 4, "threads": 2, "max_turns": 50, "max_minutes": 5}}))
     policy = tmp_path / "policy.yml"
     policy.write_text(yaml.safe_dump({"training": {"epochs": 1}}))
-    monkeypatch.setattr(runner, "_Collector", _FakeCollector)
-    monkeypatch.setattr(runner, "_ServicePool", lambda *args: _FakeServices())
+    monkeypatch.setattr(runner, "Collector", _FakeCollector)
+    monkeypatch.setattr(runner, "ServicePool", lambda *args: _FakeServices())
     trained = []
     monkeypatch.setattr(runner, "train_from_files",
                         lambda current, shards, *rest, **options: trained.append(list(shards)) or _fake_train(current, shards, *rest, **options))

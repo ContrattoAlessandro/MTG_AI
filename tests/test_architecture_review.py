@@ -5,7 +5,7 @@ import copy
 import pytest
 import torch
 
-from magezero.learner import (PPOConfig, _carry, _join, _prepare_chunks, _windows, check_warm_start,
+from magezero.learner import (PPOConfig, carry_memory, join_chunks, prepare_chunks, chunk_windows, check_warm_start,
                                      clip_gradients, ppo_update)
 from magezero.schema import EVENT_TYPES, collate_observations
 from magezero.service import PolicyService
@@ -51,11 +51,11 @@ def test_event_pooling_is_identical_stepwise_sequenced_and_batched(components):
             torch.testing.assert_close(out.memory.events, memory.events, atol=1e-5, rtol=1e-5)
         episodes = [{"steps": [{"observation": o, "action_id": o["actions"][0]["id"], "log_probability": 0.0,
                                 "labels": LABELS} for o in t]} for t in trajectories]
-        prepared = [_prepare_chunks(e, model, 3) for e in episodes]
+        prepared = [prepare_chunks(e, model, 3) for e in episodes]
         memory, previous, rows = None, [0, 1, 2], {i: [] for i in range(3)}
-        for window, members in _windows([0, 1, 2], prepared):
-            memory = _carry(memory, previous, members)
-            joined = _join([prepared[i][window] for i in members])
+        for window, members in chunk_windows([0, 1, 2], prepared):
+            memory = carry_memory(memory, previous, members)
+            joined = join_chunks([prepared[i][window] for i in members])
             sizes = [len(prepared[i][window].actions) for i in members]
             out = model.forward_episodes(joined.batch, sizes, memory, joined.event_counts)
             for i, logits in zip(members, out.logits.split(sizes)):

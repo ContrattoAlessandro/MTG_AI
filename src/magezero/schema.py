@@ -1,12 +1,18 @@
-"""Versioned, player-relative observations. Privileged labels are separate.
+"""Versioned, player-relative observations and their tensor collation.
 
-Opaque entity/action IDs are references only; they never become model features.
-The engine is responsible for deriving observations from its visibility rules.
+An observation is what one player may see at one decision: visible entities and
+their relations, public global features, the events since that player's previous
+decision, the legal candidate actions, and the publicly known opponent deck with
+count bounds. Privileged training labels (the true opponent hand) are validated
+separately and never enter an observation.
+
+Opaque entity and action IDs are references only; they never become model
+features. The engine derives observations from its own visibility rules; see
+docs/policy-protocol.md for the field layout.
 """
 
-from dataclasses import dataclass
 import math
-from typing import Any
+from dataclasses import dataclass
 
 import torch
 from torch import Tensor
@@ -24,12 +30,14 @@ EVENT_TYPES = ("draw", "reveal", "zone_change", "cast", "activate", "resolve",
 
 
 def _integer(value, label: str, minimum: int, maximum: int) -> int:
+    """Return `value` if it is a (non-boolean) integer in [minimum, maximum]."""
     if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum:
         raise ValueError(f"{label} must be an integer in [{minimum}, {maximum}]")
     return value
 
 
-def _vector(value, size: int, label: str) -> list[float]:
+def numeric_vector(value, size: int, label: str) -> list[float]:
+    """Return `value` as floats if it is a list of `size` finite numbers."""
     if not isinstance(value, list) or len(value) != size:
         raise ValueError(f"{label} must contain {size} numeric features")
     if any(isinstance(x, bool) or not isinstance(x, (int, float)) or not math.isfinite(x)
@@ -39,6 +47,13 @@ def _vector(value, size: int, label: str) -> list[float]:
 
 
 def validate_observation(obs: dict, config) -> dict:
+    """Check an observation against schema v2 and the model's limits; return it unchanged.
+
+    Raises ValueError for unknown fields (labels cannot enter the actor), a
+    different card catalog, limits that would require truncation, dangling
+    references, hidden information in hidden zones, non-incremental events, and
+    public count bounds that cannot explain the opponent's hand size.
+    """
     allowed = {"schema_version", "catalog_digest", "game_id", "player_id", "step",
                "entities", "relations", "globals", "events", "actions", "opponent_deck",
                "opponent_hand_size"}
@@ -68,7 +83,7 @@ def validate_observation(obs: dict, config) -> dict:
         _integer(entity["zone"], "zone", 0, 7)
         _integer(entity["owner"], "owner", 0, 2)
         _integer(entity["controller"], "controller", 0, 2)
-        features = _vector(entity["features"], ENTITY_FEATURES, "entity.features")
+        features = numeric_vector(entity["features"], ENTITY_FEATURES, "entity.features")
         if entity["visibility"] not in ("public", "own", "hidden"):
             raise ValueError("invalid visibility")
         if entity["visibility"] == "own" and entity["owner"] != 0:
@@ -88,7 +103,7 @@ def validate_observation(obs: dict, config) -> dict:
             if ref is not None and ref not in entity_ids:
                 raise ValueError("action references a missing entity")
         _integer(action["card_id"], "action.card_id", 0, config.num_cards - 1)
-        _vector(action["features"], ACTION_FEATURES, "action.features")
+        numeric_vector(action["features"], ACTION_FEATURES, "action.features")
     action_ids = [a["id"] for a in actions]
     if any(not isinstance(x, str) or not x for x in action_ids) or len(set(action_ids)) != len(action_ids):
         raise ValueError("legal action ids must be unique nonempty strings")
@@ -103,7 +118,7 @@ def validate_observation(obs: dict, config) -> dict:
         _integer(relation["type"], "relation.type", 0, 7)
     if len(obs.get("relations", [])) > config.max_relations:
         raise ValueError("too many relations")
-    _vector(obs["globals"], GLOBAL_FEATURES, "globals")
+    numeric_vector(obs["globals"], GLOBAL_FEATURES, "globals")
     events = obs["events"]
     if not isinstance(events, list) or len(events) > config.max_events:
         raise ValueError("too many incremental events; history must not be silently truncated")
@@ -119,7 +134,7 @@ def validate_observation(obs: dict, config) -> dict:
             raise ValueError("unsupported event type")
         _integer(event["actor"], "event.actor", 0, 2)
         _integer(event["card_id"], "event.card_id", 0, config.num_cards - 1)
-        _vector(event["features"], EVENT_FEATURES, "event.features")
+        numeric_vector(event["features"], EVENT_FEATURES, "event.features")
         if event["type"] == "draw" and event["actor"] != 0 and event["card_id"] != 0:
             raise ValueError("opponent draw identities are private; emit a separate reveal event if public")
     deck = obs["opponent_deck"]
@@ -134,7 +149,7 @@ def validate_observation(obs: dict, config) -> dict:
             raise ValueError("duplicate deck card kind")
         seen.add(cid)
         lo = _integer(card["lower"], "lower", 0, config.max_hand_size)
-        hi = _integer(card["upper"], "upper", lo, 10000)
+        _integer(card["upper"], "upper", lo, 10000)
     size = _integer(obs["opponent_hand_size"], "opponent_hand_size", 0, config.max_hand_size)
     if not sum(x["lower"] for x in deck) <= size <= sum(x["upper"] for x in deck):
         raise ValueError("public card-count bounds cannot explain the opponent hand size")
@@ -142,6 +157,11 @@ def validate_observation(obs: dict, config) -> dict:
 
 
 def validate_labels(labels: dict, obs: dict) -> list[int]:
+    """Check the privileged labels of `obs`; return the true opponent hand counts.
+
+    Counts follow the order of `obs["opponent_deck"]`, lie within its public
+    bounds, and sum to the public hand size.
+    """
     if not isinstance(labels, dict) or set(labels) != {"opponent_hand_counts"}:
         raise ValueError("training labels must contain opponent_hand_counts separately from observation")
     counts = labels["opponent_hand_counts"]
@@ -156,6 +176,14 @@ def validate_labels(labels: dict, obs: dict) -> list[int]:
 
 @dataclass
 class ObservationBatch:
+    """Padded tensors for B observations; masks mark the real (unpadded) items.
+
+    Shapes: entities [B, N], relations [B, R, 3] (source, target, type),
+    globals [B, GLOBAL_FEATURES], events [B, E], actions [B, A] with entity
+    pointers (-1 for none), opponent deck [B, K] with public count bounds, and
+    the opponent hand size [B].
+    """
+
     entity_cards: Tensor
     entity_categories: Tensor
     entity_features: Tensor
@@ -180,10 +208,11 @@ class ObservationBatch:
     hand_size: Tensor
 
     def to(self, device) -> "ObservationBatch":
+        """Move every tensor to `device`."""
         return ObservationBatch(**{key: value.to(device) for key, value in vars(self).items()})
 
 
-def pad_cat(tensors: list[Tensor], fill=0) -> Tensor:
+def pad_cat(tensors: list[Tensor], fill: float = 0) -> Tensor:
     """Concatenate along dim 0, padding every other dim to the largest size."""
     shape = [max(t.shape[i] for t in tensors) for i in range(1, tensors[0].dim())]
     padded = []
@@ -210,8 +239,11 @@ def _padded(rows: list[list], width: int, fill, dtype) -> Tensor:
     return torch.tensor([row + [fill] * (width - len(row)) for row in rows], dtype=dtype)
 
 
-def collate_observations(observations: list[dict], config, *, validate=True) -> ObservationBatch:
-    """validate=False only for observations this process has already validated."""
+def collate_observations(observations: list[dict], config, *, validate: bool = True) -> ObservationBatch:
+    """Pad and stack observations into one batch.
+
+    Pass validate=False only for observations this process has already validated.
+    """
     if validate:
         for obs in observations:
             validate_observation(obs, config)

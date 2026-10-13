@@ -1,11 +1,11 @@
-"""Entity attention + per-decision event memory + hand belief + legal-action actor.
+"""The actor: entity attention, per-decision event memory, hand belief and legal-action scoring.
 
 The actor has no API for private training labels. A separate privileged critic
 receives those labels only inside the learner, through detached actor context.
 """
 
-from dataclasses import asdict, dataclass
 import math
+from dataclasses import asdict, dataclass
 
 import torch
 from torch import Tensor, nn
@@ -14,9 +14,17 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from .belief import HandBelief, constrained_hand_belief
 from .roles import ROLE_NAMES
+from .schema import (
+    ACTION_FEATURES,
+    ACTION_TYPES,
+    CARD_FEATURES,
+    ENTITY_FEATURES,
+    EVENT_FEATURES,
+    EVENT_TYPES,
+    GLOBAL_FEATURES,
+    ObservationBatch,
+)
 from .statistics import role_statistics, statistical_hand_belief
-from .schema import (ACTION_FEATURES, ACTION_TYPES, CARD_FEATURES, ENTITY_FEATURES,
-                     EVENT_FEATURES, EVENT_TYPES, GLOBAL_FEATURES, ObservationBatch)
 
 # globals[9] is the turn step's enum ordinal / 32 (PolicyEncoder.java); also given one-hot.
 PHASE_SLOT, PHASES = 9, 32
@@ -26,6 +34,13 @@ EVENT_RECENCY_BUCKETS = 16
 
 @dataclass(frozen=True)
 class ModelConfig:
+    """Architecture and input limits; stored in every checkpoint.
+
+    belief_mode "statistical_roles" (the default) feeds the actor a fixed
+    without-replacement hand prior and role-presence probabilities; "learned"
+    trains a hand-count head from memory instead.
+    """
+
     num_cards: int = 4096
     catalog_digest: str = ""
     width: int = 256
@@ -59,21 +74,25 @@ class ModelConfig:
         if not isinstance(self.catalog_digest, str) or not self.catalog_digest:
             raise ValueError("a fixed card catalog digest is required")
 
-    def to_dict(self):
+    def to_dict(self) -> dict:
         return asdict(self)
 
 
 @dataclass
 class PolicyMemory:
+    """Recurrent state, one row per session: event GRU and decision GRU hidden states."""
+
     events: Tensor
     decisions: Tensor
 
-    def detach(self):
+    def detach(self) -> "PolicyMemory":
         return PolicyMemory(self.events.detach(), self.decisions.detach())
 
 
 @dataclass
 class PolicyOutput:
+    """Masked candidate logits, public value, hand belief, next memory and actor context."""
+
     logits: Tensor
     value: Tensor
     belief: HandBelief
@@ -98,6 +117,7 @@ class _Encoded:
 
 
 def mlp(input_size: int, width: int, output_size: int) -> nn.Sequential:
+    """Two-layer SiLU perceptron."""
     return nn.Sequential(nn.Linear(input_size, width), nn.SiLU(),
                          nn.Linear(width, output_size))
 
@@ -147,6 +167,13 @@ class EventPool(nn.Module):
 
 
 class EntityBeliefPolicy(nn.Module):
+    """The search-free actor with a public value head (see docs/architecture.md).
+
+    Inference calls forward() once per decision with the session's memory; the
+    learner replays whole trajectories with forward_episodes(). Both paths
+    compute the same outputs.
+    """
+
     def __init__(self, config: ModelConfig, card_features: Tensor | None = None,
                  card_roles: Tensor | None = None):
         super().__init__()
@@ -212,15 +239,21 @@ class EntityBeliefPolicy(nn.Module):
         self.value_head = mlp(d, d, 1)
 
     def initial_memory(self, batch_size: int, device=None) -> PolicyMemory:
+        """Zero memory for `batch_size` new sessions."""
         zero = self.pool_token.new_zeros(batch_size, self.config.width, device=device)
         return PolicyMemory(zero, zero.clone())
 
     def embed_card(self, ids: Tensor) -> Tensor:
+        """Learned identity embedding plus a projection of the static catalog features."""
         return self.card_ids(ids) + self.card_semantics(self.card_features[ids])
 
-    def forward(self, batch: ObservationBatch, memory: PolicyMemory | None = None,
-                reset: Tensor | None = None) -> PolicyOutput:
-        """One decision for each of B independent sessions (live inference)."""
+    def forward(
+        self, batch: ObservationBatch, memory: PolicyMemory | None = None, reset: Tensor | None = None
+    ) -> PolicyOutput:
+        """One decision for each of B independent sessions (live inference).
+
+        reset optionally marks rows [B] whose memory starts afresh.
+        """
         b = batch.entity_cards.shape[0]
         if memory is None:
             memory = self.initial_memory(b, batch.entity_cards.device)
@@ -327,7 +360,10 @@ class EntityBeliefPolicy(nn.Module):
         return self._head(batch, encoded, hidden, PolicyMemory(final_events, final[0]))
 
     def _encode(self, batch: ObservationBatch, event_counts: Tensor | None = None) -> _Encoded:
-        """event_counts: optional per-row event counts on the CPU (no host sync)."""
+        """Memory-independent encodings of every row.
+
+        event_counts: optional per-row event counts on the CPU (no host sync).
+        """
         b = batch.entity_cards.shape[0]
         d = self.config.width
         entity = self.embed_card(batch.entity_cards) + self.entity_numeric(batch.entity_features)
@@ -381,8 +417,8 @@ class EntityBeliefPolicy(nn.Module):
                                                 action * (source_vectors + target_vectors)], -1))
         return _Encoded(pooled, global_state, events, counts > 0, action)
 
-    def _head(self, batch: ObservationBatch, encoded: _Encoded, hidden: Tensor,
-              memory: PolicyMemory) -> PolicyOutput:
+    def _head(self, batch: ObservationBatch, encoded: _Encoded, hidden: Tensor, memory: PolicyMemory) -> PolicyOutput:
+        """Belief features, actor context, candidate logits and value from the decision memory."""
         global_state = encoded.global_state
         cards = self.embed_card(batch.deck_cards)
         role_presence = role_expected = auxiliary_logits = None
@@ -423,7 +459,12 @@ class EntityBeliefPolicy(nn.Module):
 
 
 class PrivilegedCritic(nn.Module):
-    """Training-only baseline. Its card embeddings are independent of the actor."""
+    """Training-only value baseline that sees the true opponent hand.
+
+    Its card embeddings are independent of the actor, and it reads the actor
+    context detached, so privileged information never trains the actor.
+    """
+
     def __init__(self, config: ModelConfig):
         super().__init__()
         self.cards = nn.Embedding(config.num_cards, config.width, padding_idx=0)

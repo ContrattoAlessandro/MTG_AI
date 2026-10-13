@@ -1,4 +1,4 @@
-"""Vectorized without-replacement prior; no learned counts or count DP.
+"""A vectorized without-replacement hand prior; no learned counts and no count DP.
 
 Public lower bounds denote individually known copies in hand. Upper bounds
 count all copies still possible in hand/library, including those known copies.
@@ -13,6 +13,7 @@ from .belief import HandBelief
 
 
 def log_choose(n: Tensor, k: Tensor) -> Tensor:
+    """log C(n, k) in float64; -inf where the binomial coefficient is zero."""
     n, k = n.double(), k.double()
     value = (torch.lgamma(n.clamp(min=0) + 1) - torch.lgamma(k.clamp(min=0) + 1)
              - torch.lgamma((n - k).clamp(min=0) + 1))
@@ -31,10 +32,14 @@ def _validate(lower, upper, hand_size, classes):
         raise ValueError("hand size cannot be represented by these bounds/count classes")
 
 
-def statistical_hand_belief(lower: Tensor, upper: Tensor, hand_size: Tensor,
-                            classes: int, *, validate: bool = True) -> HandBelief:
-    """validate=False skips the host-synchronizing checks for bounds that
-    validate_observation already enforced (the model's forward pass)."""
+def statistical_hand_belief(
+    lower: Tensor, upper: Tensor, hand_size: Tensor, classes: int, *, validate: bool = True
+) -> HandBelief:
+    """Exact per-card count marginals of the hypergeometric hand prior.
+
+    validate=False skips the host-synchronizing checks for bounds that
+    validate_observation already enforced (the model's forward pass).
+    """
     if validate:
         _validate(lower, upper, hand_size, classes)
     remaining = upper - lower

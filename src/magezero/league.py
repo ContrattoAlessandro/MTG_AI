@@ -1,4 +1,7 @@
-"""Small league for historical opponents; sampling is not a Nash guarantee."""
+"""A small league of historical opponents for self-play.
+
+Sampling follows prioritized fictitious self-play; it carries no Nash guarantee.
+"""
 
 from dataclasses import asdict, dataclass
 import json
@@ -8,30 +11,35 @@ import random
 
 @dataclass
 class OpponentRecord:
+    """A league snapshot and the learner's score against it."""
+
     checkpoint: str
     wins: float = 0.0
     games: int = 0
 
 
 class League:
-    def __init__(self, opponents=None):
+    def __init__(self, opponents: list[OpponentRecord] | None = None):
         self.opponents = opponents or []
 
-    def add(self, checkpoint):
+    def add(self, checkpoint) -> None:
+        """Add a snapshot checkpoint (once)."""
         path = str(Path(checkpoint).resolve())
         if not Path(path).is_file():
             raise ValueError("league snapshot checkpoint does not exist")
         if path not in {x.checkpoint for x in self.opponents}:
             self.opponents.append(OpponentRecord(path))
 
-    def record(self, checkpoint, result):
+    def record(self, checkpoint, result: int) -> None:
+        """Count one game against `checkpoint`; result is -1, 0 or 1 for the learner."""
         if result not in (-1, 0, 1):
             raise ValueError("league result must be from the learner's perspective")
         record = next(x for x in self.opponents if x.checkpoint == str(Path(checkpoint).resolve()))
         record.games += 1
         record.wins += (result + 1) / 2
 
-    def sample(self, rng=None):
+    def sample(self, rng=None) -> str:
+        """Draw an opponent checkpoint, favouring those the learner has not beaten."""
         if not self.opponents:
             raise ValueError("league is empty")
         rng = rng or random
@@ -43,12 +51,12 @@ class League:
         probabilities = [0.2 / len(weights) + 0.8 * w / total for w in weights]
         return rng.choices(self.opponents, weights=probabilities, k=1)[0].checkpoint
 
-    def save(self, path):
+    def save(self, path) -> None:
         Path(path).write_text(json.dumps({"format_version": 1,
             "opponents": [asdict(x) for x in self.opponents]}, indent=2), encoding="utf-8")
 
     @classmethod
-    def load(cls, path):
+    def load(cls, path) -> "League":
         data = json.loads(Path(path).read_text(encoding="utf-8"))
         if data["format_version"] != 1:
             raise ValueError("incompatible league format")

@@ -16,12 +16,15 @@ NEG = -1e9  # finite sentinel avoids undefined derivatives at unreachable DP cel
 
 @dataclass
 class HandBelief:
+    """Per-card count marginals of the opponent's hand."""
+
     probabilities: Tensor  # [batch, card kinds, count classes]
-    expected_counts: Tensor
-    log_partition: Tensor
-    scores: Tensor
+    expected_counts: Tensor  # [batch, card kinds]
+    log_partition: Tensor  # [batch]
+    scores: Tensor  # [batch, card kinds, count classes], unnormalized log factors
 
     def nll(self, counts: Tensor) -> Tensor:
+        """Joint negative log-likelihood of the true counts [batch, card kinds]."""
         selected = self.scores.gather(-1, counts.long().unsqueeze(-1)).squeeze(-1)
         return self.log_partition - selected.sum(-1)
 
