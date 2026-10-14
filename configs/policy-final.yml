@@ -3,8 +3,10 @@
 # 1.0 from a random start with an untrained critic. This run starts from a
 # behaviour-cloned warm start whose value heads were pre-trained on the teacher
 # games (mz clone, the clone: section below), so it bootstraps (lambda 0.95) with
-# potential-based shaping and a KL term towards the cloned policy. These three are
-# new and untested at scale: compare against lambda 1.0 / shaping 0 / KL 0 early.
+# potential-based shaping and a KL term towards the cloned policy. In the A5
+# comparison (docs/warm-start.md) these three matched lambda 1.0 / shaping 0 / KL 0
+# over 25 generations; they are kept for the KL term's protection against drift
+# over a long run, which that comparison could not test.
 model:
   belief_mode: statistical_roles
   auxiliary_belief: false
