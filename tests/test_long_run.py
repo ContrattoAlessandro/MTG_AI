@@ -155,6 +155,37 @@ def test_truncated_games_are_recorded_bootstrapped_and_counted(components, tmp_p
         validate_episode(both, model.config, "v")
 
 
+def test_refused_activations_keep_memory_but_get_no_policy_gradient(components, tmp_path):
+    model, critic, catalog = components
+    service = PolicyService(model, catalog, "v", tmp_path)
+    steps = [observation(model.config, t, game_id="refused") for t in range(4)]
+    for obs in steps:
+        service.act({"observation": obs, "sample": True})
+    finish = {
+        "game_id": "refused",
+        "player_id": "player",
+        "result": 1,
+        "terminal": True,
+        "labels": [{"opponent_hand_counts": [1, 1, 1]}] * 4,
+    }
+    with pytest.raises(ValueError, match="index recorded"):
+        service.finish({**finish, "rejected_steps": [4]})
+    response = service.finish({**finish, "rejected_steps": [1, 2]})
+    episode = json.loads(Path(response["episode_file"]).read_text(encoding="utf-8"))
+    assert [step.get("rejected", False) for step in episode["steps"]] == [False, True, True, False]
+    validate_episode(episode, model.config, "v")
+    expected = [len(o["actions"]) > 1 and t not in (1, 2) for t, o in enumerate(steps)]
+    choice = torch.cat([chunk.choice for chunk in prepare_chunks(episode, model, 2)]).tolist()
+    assert choice == expected
+    optimizer = torch.optim.AdamW(list(model.parameters()) + list(critic.parameters()), lr=1e-4)
+    metrics = ppo_update(model, critic, optimizer, [episode], PPOConfig(epochs=1, sequence_length=2), "v")
+    assert metrics["decisions"] == 4 and metrics["choice_decisions"] == sum(expected)
+    flagged = copy.deepcopy(episode)
+    flagged["steps"][0]["rejected"] = False
+    with pytest.raises(ValueError, match="rejected must be true"):
+        validate_episode(flagged, model.config, "v")
+
+
 def test_service_outcome_counters_reset_on_reload(components, tmp_path):
     model, _, catalog = components
     service = PolicyService(model, catalog, "v")

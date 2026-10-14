@@ -388,7 +388,8 @@ class PolicyService:
         """End a session; write its trajectory with labels when recording a finished game."""
         allowed = {"game_id", "player_id", "result", "terminal", "labels"}
         # "truncated" is optional: an error-free game stopped by the turn limit.
-        if not isinstance(payload, dict) or set(payload) - {"truncated"} != allowed:
+        # "rejected_steps" is optional: steps of activations the engine refused.
+        if not isinstance(payload, dict) or set(payload) - {"truncated", "rejected_steps"} != allowed:
             raise ValueError("/finish requires game_id, player_id, result, terminal, and labels")
         truncated = payload.get("truncated", False)
         if not isinstance(truncated, bool) or (truncated and (payload["terminal"] is True or payload["result"] != 0)):
@@ -397,6 +398,10 @@ class PolicyService:
             raise ValueError("game_id and player_id must be nonempty strings")
         if not isinstance(payload["labels"], list):
             raise ValueError("labels must be a list")
+        rejected = payload.get("rejected_steps", [])
+        if not isinstance(rejected, list) or any(isinstance(s, bool) or not isinstance(s, int) for s in rejected):
+            raise ValueError("rejected_steps must be a list of step indices")
+        rejected = set(rejected)
         key = (payload["game_id"], payload["player_id"])
         digest = fingerprint(payload)
         if (
@@ -421,6 +426,8 @@ class PolicyService:
                 labels = payload["labels"]
                 if not isinstance(labels, list) or len(labels) != len(session.records):
                     raise ValueError("one label record is required for every player decision")
+                if any(not 0 <= s < len(session.records) for s in rejected):
+                    raise ValueError("rejected_steps must index recorded decisions")
                 steps = []
                 for i, (record, label) in enumerate(zip(session.records, labels)):
                     observation = json.loads(record["payload_json"])["observation"]
@@ -432,6 +439,7 @@ class PolicyService:
                             "log_probability": record["log_probability"],
                             "labels": label,
                             "reward": payload["result"] if i == len(session.records) - 1 else 0,
+                            **({"rejected": True} if i in rejected else {}),
                         }
                     )
                 version = TEACHER_VERSION if session.teacher else self.policy_version

@@ -141,8 +141,11 @@ def validate_episode(episode: dict, config, policy_version: str, max_steps: int 
         raise ValueError("invalid trajectory length")
     key, cursor = None, -1
     for t, step in enumerate(steps):
-        if set(step) != {"observation", "action_id", "log_probability", "reward", "labels"}:
+        # "rejected" (optional, always true): an activation the engine refused.
+        if set(step) - {"rejected"} != {"observation", "action_id", "log_probability", "reward", "labels"}:
             raise ValueError("invalid transition fields")
+        if step.get("rejected", True) is not True:
+            raise ValueError("rejected must be true when present")
         obs = validate_observation(step["observation"], config)
         new_key = (obs["game_id"], obs["player_id"])
         if key is not None and key != new_key:
@@ -239,8 +242,12 @@ def prepare_chunks(episode: dict, model: EntityBeliefPolicy, length: int) -> lis
                 labels.to(device),
                 torch.tensor(actions, device=device),
                 torch.tensor([float(step["log_probability"]) for step in steps], device=device),
-                # A single legal action carries no policy gradient, entropy, or KL.
-                torch.tensor([len(o["actions"]) > 1 for o in observations], device=device),
+                # A single legal action carries no policy gradient, entropy, or KL; nor
+                # does an activation the engine refused and rolled back.
+                torch.tensor(
+                    [len(s["observation"]["actions"]) > 1 and not s.get("rejected", False) for s in steps],
+                    device=device,
+                ),
                 batch.deck_mask.sum(1).clamp(min=1).to(device),
                 batch.event_mask.sum(-1),
             )

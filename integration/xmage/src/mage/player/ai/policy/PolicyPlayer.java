@@ -36,6 +36,10 @@ public final class PolicyPlayer extends ComputerPlayer implements RecordingPlaye
     // current priority window; they are not offered again until the game moves on.
     private Set<String> rejected = new HashSet<>();
     private String rejectedWindow = "";
+    // Trajectory steps of refused activations (the priority choice and any choices
+    // made while XMage tried to activate). The engine rolled them back, so the
+    // learner keeps them for memory and values but gives them no policy gradient.
+    private List<Integer> rejectedSteps = new ArrayList<>();
 
     public PolicyPlayer(String name, RangeOfInfluence range, String endpoint) {
         this(name, range, endpoint, true, true);
@@ -80,6 +84,7 @@ public final class PolicyPlayer extends ComputerPlayer implements RecordingPlaye
         this.mulligans = other.mulligans;
         this.rejected = other.rejected;
         this.rejectedWindow = other.rejectedWindow;
+        this.rejectedSteps = other.rejectedSteps;
     }
 
     @Override public PolicyPlayer copy() { return new PolicyPlayer(this); }
@@ -95,6 +100,7 @@ public final class PolicyPlayer extends ComputerPlayer implements RecordingPlaye
         encoder = new PolicyEncoder(getId(), opponent, client, game);
         encodedGame = game.getId();
         labels = new ArrayList<>();
+        rejectedSteps = new ArrayList<>();
         mulligans = 0;
     }
 
@@ -149,7 +155,8 @@ public final class PolicyPlayer extends ComputerPlayer implements RecordingPlaye
         int result = !terminal || draw ? 0 : hasWon() ? 1 : hasLost() ? -1 : 0;
         client.request("POST", "/finish", PolicyEncoder.map("game_id", encoder.gameId(),
             "player_id", getId().toString(), "result", result, "terminal", terminal, "truncated", truncated,
-            "labels", terminal || truncated ? labels : Collections.emptyList()));
+            "labels", terminal || truncated ? labels : Collections.emptyList(),
+            "rejected_steps", terminal || truncated ? rejectedSteps : Collections.emptyList()));
     }
 
     @Override public boolean priority(Game game) {
@@ -159,6 +166,7 @@ public final class PolicyPlayer extends ComputerPlayer implements RecordingPlaye
         String window = game.getTurnNum() + ":" + game.getTurnStepType() + ":" + game.getStack().size()
             + ":" + game.getBattlefield().getAllPermanents().size() + ":" + getHand().size();
         if (!window.equals(rejectedWindow)) { rejected.clear(); rejectedWindow = window; }
+        int firstStep = encoder == null ? 0 : encoder.decisions();
         ActivatedAbility chosen = select(game, PolicyCandidates.priority(this, game, client, rejected));
         game.setLastPriority(getId());
         if (chosen == null) { pass(game); return false; }
@@ -167,6 +175,7 @@ public final class PolicyPlayer extends ComputerPlayer implements RecordingPlaye
             // choices (the state is rolled back). Like its own AI, treat that as no
             // action, and drop the ability from this priority window's candidates.
             rejected.add(PolicyCandidates.abilityKey(chosen));
+            for (int step = firstStep; step < encoder.decisions(); step++) rejectedSteps.add(step);
         }
         return true;
     }

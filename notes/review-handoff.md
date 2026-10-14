@@ -148,7 +148,7 @@ Findings 6–9, the final LayerNorm, the phase encoding and the policy-layer ini
 | # | Severity | Finding | Where | Suggested fix |
 |---|---|---|---|---|
 | 5 | Low here | Bug: opponent hand cards seen through `visibleChoices` never update `knownHand`. Unreachable with Winota/Kinnan. The belief ablation is done (above) | `PolicyEncoder.observation`, `PolicyHistory.knownHand` | Bug fixed 14 October. Open: optional PPO arm with `belief_mode: learned` |
-| – | Low | Failed activations stay in trajectories as no-op decisions (0.23% of decisions) | `PolicyPlayer.priority` (`rejected`) | With the next Java rebuild: report the refused step to the service and mask it from the policy loss |
+| – | Low | Failed activations stay in trajectories as no-op decisions (0.23% of decisions) | `PolicyPlayer.priority` (`rejected`) | Fixed 14 October: `/finish` sends `rejected_steps` (the priority choice and the choices made during the refused activation); those steps get no policy, entropy or KL term |
 | – | Low | Rules text in 13 hashed word bins | `PolicyCandidates.describe` | Only if the card pool grows (would need new teacher data) |
 
 Further changes to the model's layers again need a new checkpoint format and a fresh `mz init` before cloning; changes to the Java observation need re-collected teacher data.
