@@ -77,12 +77,26 @@ def run_once(command: list[str], log_path: Path) -> tuple[int, str]:
         process = subprocess.Popen(
             command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace"
         )
-        for line in process.stdout:
-            sys.stdout.write(line)
-            handle.write(line)
-            handle.flush()
-            tail = [*tail, line][-200:]
+        try:
+            for line in process.stdout:
+                handle.write(line)
+                handle.flush()
+                sys.stdout.write(line)
+                tail = [*tail, line][-200:]
+        except BaseException:
+            # Never leave selfplay running without a reader: its output pipe would fill and block it.
+            kill_tree(process.pid)
+            raise
         return process.wait(), "".join(tail)
+
+
+def kill_tree(pid: int) -> None:
+    """Stop a process and its children (the engine JVM and the policy services)."""
+    if sys.platform == "win32":
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)], capture_output=True)
+    else:
+        subprocess.run(["pkill", "-TERM", "-P", str(pid)], capture_output=True)
+        subprocess.run(["kill", "-TERM", str(pid)], capture_output=True)
 
 
 def main() -> None:
@@ -94,6 +108,8 @@ def main() -> None:
     parser.add_argument("--status-every", type=float, default=1800)
     parser.add_argument("selfplay", nargs=argparse.REMAINDER)
     args = parser.parse_args()
+    # The Windows console codepage cannot print every character the engine emits (e.g. U+FFFD).
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     selfplay = args.selfplay[1:] if args.selfplay[:1] == ["--"] else args.selfplay
     if any(a in ("--output", "--resume") for a in selfplay):
         parser.error("pass --output to the supervisor and leave out --resume")
