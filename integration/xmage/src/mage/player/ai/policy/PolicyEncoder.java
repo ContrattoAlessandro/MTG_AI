@@ -213,8 +213,13 @@ public final class PolicyEncoder {
         // inspect (e.g. own-library searches). Never enumerate an opponent hand.
         if (visibleChoices != null) {
             for (Card card : visibleChoices) {
-                addObject(entities, card, 2, zone(game.getState().getZone(card.getId())),
-                          card.getOwnerId(), observer, "public", game);
+                Zone zone = game.getState().getZone(card.getId());
+                addObject(entities, card, 2, zone(zone), card.getOwnerId(), observer, "public", game);
+                // A choice that shows opponent hand cards (Thoughtseize-style) makes them
+                // known, so the hand belief's lower bounds agree with the visible entities.
+                if (zone == Zone.HAND && !observer.equals(card.getOwnerId()) && !card.isFaceDown(game)) {
+                    history.revealedInHand(card.getId(), client.cardIds.getOrDefault(card.getName(), 0));
+                }
             }
         }
         List<Map<String, Object>> relations = new ArrayList<>();

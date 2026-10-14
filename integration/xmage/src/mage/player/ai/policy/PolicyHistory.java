@@ -119,6 +119,11 @@ public final class PolicyHistory extends Watcher {
         return result;
     }
 
+    /** An opponent hand card the observer was shown (e.g. by a choice); it stays known until it leaves the hand. */
+    public void revealedInHand(UUID identity, int cardId) {
+        if (cardId > 0) knownHand.put(identity, cardId);
+    }
+
     public Map<Integer, Integer> knownHandCounts() {
         Map<Integer, Integer> counts = new HashMap<>();
         for (Integer id : knownHand.values()) counts.put(id, counts.getOrDefault(id, 0) + 1);

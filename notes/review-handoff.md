@@ -99,7 +99,7 @@ by type: {'pass': 0.972, 'cast': 0.522, 'activate': 0.42, 'target': 0.866, 'use'
 
 Format 4 is better on every held-out total (best NLL 0.434 vs 0.485, accuracy 0.835 vs 0.815, value MSE 0.55 vs 0.67) and per type except `amount` (0.10 vs 0.31) and slightly `activate`. Amount decisions are rare, so this is noisy, but it is worth checking in the full clone's `accuracy_by_type`: amounts are candidates whose only distinguishing feature is slot 0. One seed and 300 games: evidence that format 4 learns at least as well, not a measured strength gain.
 
-Finding 5's concrete bug (opponent hand cards seen through `visibleChoices` not updating `knownHand`) cannot occur in Winota vs Kinnan: neither list has a card that shows or picks from the opponent's hand. It stays open for other decks. Vineglimmer Snarl's self-reveal belongs to the separate generic-reveal gap.
+Finding 5's concrete bug (opponent hand cards seen through `visibleChoices` not updating `knownHand`) cannot occur in Winota vs Kinnan: neither list has a card that shows or picks from the opponent's hand. Fixed on 14 October for other decks (`PolicyHistory.revealedInHand`, jar rebuilt; backup in `artifacts/jar-backup-20261014-pre-belief-fix/`). Vineglimmer Snarl's self-reveal belongs to the separate generic-reveal gap.
 
 ### Open review items closed (13 October, fourth session)
 
@@ -147,7 +147,7 @@ Findings 6–9, the final LayerNorm, the phase encoding and the policy-layer ini
 
 | # | Severity | Finding | Where | Suggested fix |
 |---|---|---|---|---|
-| 5 | Low here | Bug: opponent hand cards seen through `visibleChoices` never update `knownHand`. Unreachable with Winota/Kinnan. The belief ablation is done (above) | `PolicyEncoder.observation`, `PolicyHistory.knownHand` | Fix with the next Java rebuild; optional PPO arm with `belief_mode: learned` |
+| 5 | Low here | Bug: opponent hand cards seen through `visibleChoices` never update `knownHand`. Unreachable with Winota/Kinnan. The belief ablation is done (above) | `PolicyEncoder.observation`, `PolicyHistory.knownHand` | Bug fixed 14 October. Open: optional PPO arm with `belief_mode: learned` |
 | – | Low | Failed activations stay in trajectories as no-op decisions (0.23% of decisions) | `PolicyPlayer.priority` (`rejected`) | With the next Java rebuild: report the refused step to the service and mask it from the policy loss |
 | – | Low | Rules text in 13 hashed word bins | `PolicyCandidates.describe` | Only if the card pool grows (would need new teacher data) |
 
