@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MageZero Table</title>
+<style>
+:root {
+  --bg: #0f1612; --felt: #16241c; --felt2: #1b2d23; --panel: #1d2420; --panel2: #252e29;
+  --line: #34413a; --text: #e8eee9; --muted: #9aaba0; --accent: #e0b04a;
+  --you: #5fb3ff; --bot: #ff7a6b; --good: #61d095; --warn: #ffb347;
+  --card-w: 86px; --card-h: 120px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+  font: 14px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+button, select { font: inherit; }
+button { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+  padding: 6px 10px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); color: #1a1406; border-color: var(--accent); font-weight: 600; }
+button:disabled { opacity: .5; cursor: default; }
+select { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 6px; }
+#app { display: grid; grid-template-rows: auto 1fr; height: 100vh; }
+header { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 8px 14px;
+  background: var(--panel); border-bottom: 1px solid var(--line); }
+header h1 { font-size: 16px; margin: 0 8px 0 0; letter-spacing: .5px; }
+header h1 span { color: var(--accent); }
+header label { display: flex; gap: 6px; align-items: center; color: var(--muted); }
+#status { margin-left: auto; color: var(--muted); max-width: 46ch; text-align: right; }
+main { display: grid; grid-template-columns: 1fr 340px; min-height: 0; }
+#table { display: flex; flex-direction: column; min-height: 0; overflow: auto;
+  background: radial-gradient(ellipse at center, var(--felt2), var(--felt)); padding: 8px 12px; gap: 6px; }
+aside { display: flex; flex-direction: column; min-height: 0; background: var(--panel); border-left: 1px solid var(--line); }
+.player { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 6px 10px; border-radius: 8px;
+  background: rgba(0,0,0,.25); border: 1px solid transparent; }
+.player.targetable { border-color: var(--accent); cursor: pointer; box-shadow: 0 0 0 2px rgba(224,176,74,.35); }
+.player .name { font-weight: 700; font-size: 15px; }
+.player.you .name { color: var(--you); } .player.opponent .name { color: var(--bot); }
+.life { font-size: 22px; font-weight: 800; }
+.stat { color: var(--muted); } .stat b { color: var(--text); }
+.zonebtn { padding: 2px 8px; font-size: 12px; }
+.mana span { display: inline-block; min-width: 20px; text-align: center; border-radius: 10px; padding: 0 5px; margin-right: 2px;
+  font-weight: 700; font-size: 12px; color: #111; }
+.m-W { background: #f8f4d8; } .m-U { background: #7cc0ef; } .m-B { background: #a99ba6; } .m-R { background: #f19072; }
+.m-G { background: #7fcf96; } .m-C { background: #cfcfcf; }
+.active-turn { border-color: rgba(255,255,255,.25); }
+.battlefield { display: flex; flex-direction: column; gap: 10px; flex: 1 0 auto; min-height: calc(var(--card-h) + 20px); padding: 4px 0 8px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
+.row:empty { display: none; }
+.middle { display: flex; gap: 10px; align-items: stretch; min-height: 34px; }
+.phase { display: flex; gap: 3px; align-items: center; flex-wrap: wrap; }
+.phase span { font-size: 11px; padding: 2px 6px; border-radius: 4px; background: rgba(0,0,0,.3); color: var(--muted); }
+.phase span.on { background: var(--accent); color: #1a1406; font-weight: 700; }
+#stack { flex: 1; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.stackitem { background: rgba(0,0,0,.45); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; max-width: 320px; font-size: 12px; }
+.stackitem.you { border-color: var(--you); } .stackitem.opponent { border-color: var(--bot); }
+.stackitem b { display: block; font-size: 13px; }
+.card { position: relative; width: var(--card-w); height: var(--card-h); border-radius: 6px; background: #2b3530;
+  border: 1px solid #000; overflow: hidden; flex: none; cursor: default; transition: transform .12s, box-shadow .12s;
+  box-shadow: 0 2px 4px rgba(0,0,0,.4); }
+.card img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.card .fallback { position: absolute; inset: 0; padding: 5px; font-size: 11px; display: flex; flex-direction: column; gap: 3px;
+  background: linear-gradient(#3b4741, #222a26); }
+.card .fallback b { font-size: 11.5px; line-height: 1.15; }
+.card .fallback i { color: var(--muted); font-size: 10px; font-style: normal; }
+.card.phased { opacity: .35; filter: grayscale(1); }
+.card.tapped { transform: rotate(14deg) translateY(6px); opacity: .82; }
+.card.actionable { box-shadow: 0 0 0 3px var(--accent), 0 0 12px rgba(224,176,74,.6); cursor: pointer; }
+.card.actionable:hover { transform: translateY(-4px); }
+.card.tapped.actionable:hover { transform: rotate(14deg) translateY(2px); }
+.card.attacking { box-shadow: 0 0 0 3px var(--bot); }
+.card.blocking { box-shadow: 0 0 0 3px var(--you); }
+.card.marked { outline: 3px dashed var(--accent); outline-offset: 1px; }
+.badge { position: absolute; font-size: 11px; font-weight: 800; padding: 1px 5px; border-radius: 8px; background: rgba(0,0,0,.82); }
+.pt { right: 3px; bottom: 3px; }
+.pt.hurt { color: #ff9b8f; }
+.count { left: 3px; top: 3px; background: var(--accent); color: #1a1406; }
+.counters { left: 3px; bottom: 3px; color: var(--good); max-width: 60%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sick { right: 3px; top: 3px; color: var(--warn); }
+.attach { left: 3px; top: 22px; color: #cdb8ff; }
+.handrow { min-height: calc(var(--card-h) + 8px); padding-top: 4px; border-top: 1px solid rgba(255,255,255,.08); }
+.label-sm { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); }
+#decision { padding: 12px; border-bottom: 1px solid var(--line); }
+#decision h2 { font-size: 13px; margin: 0 0 6px; color: var(--accent); text-transform: uppercase; letter-spacing: .8px; }
+#prompt { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
+#options { display: flex; flex-direction: column; gap: 5px; max-height: 38vh; overflow: auto; }
+#options button { text-align: left; }
+#options button.pass { border-style: dashed; }
+#amount { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+#amount input[type=number] { width: 90px; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px; font: inherit; }
+#amount input[type=range] { flex: 1; }
+#revealed { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+#controls { padding: 10px 12px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
+#controls .btns { display: flex; gap: 6px; flex-wrap: wrap; }
+#controls label { display: flex; gap: 6px; align-items: flex-start; color: var(--muted); font-size: 12.5px; }
+#log { flex: 1; overflow: auto; padding: 8px 12px; font-size: 12.5px; color: #c8d3cc; min-height: 120px; }
+#log div { padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,.04); }
+#log div.turn { color: var(--accent); font-weight: 700; margin-top: 4px; }
+#preview { position: fixed; z-index: 30; pointer-events: none; display: none; width: 260px; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 10px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,.6); }
+#preview img { width: 100%; display: block; }
+#preview .text { padding: 8px 10px; font-size: 12px; white-space: pre-wrap; }
+#preview .text b { font-size: 13px; }
+#menu { position: fixed; z-index: 40; display: none; background: var(--panel); border: 1px solid var(--accent);
+  border-radius: 8px; padding: 6px; flex-direction: column; gap: 4px; min-width: 200px; box-shadow: 0 8px 24px rgba(0,0,0,.6); }
+#menu button { text-align: left; }
+#modal { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.6); display: none; align-items: center; justify-content: center; }
+#modal .box { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; max-width: min(900px, 92vw);
+  max-height: 80vh; overflow: auto; }
+#modal .box h3 { margin: 0 0 10px; }
+#modal .cards { display: flex; flex-wrap: wrap; gap: 6px; }
+#banner { position: fixed; left: 50%; top: 40%; transform: translate(-50%, -50%); z-index: 45; display: none; text-align: center;
+  background: var(--panel); border: 2px solid var(--accent); border-radius: 14px; padding: 22px 34px; box-shadow: 0 20px 60px rgba(0,0,0,.7); }
+#banner h2 { margin: 0 0 6px; font-size: 28px; }
+#banner p { color: var(--muted); margin: 0 0 14px; }
+.empty { color: var(--muted); font-style: italic; padding: 30px; text-align: center; }
+.waiting { color: var(--muted); font-style: italic; }
+@media (max-width: 900px) {
+  main { grid-template-columns: 1fr; }
+  aside { border-left: 0; border-top: 1px solid var(--line); }
+  :root { --card-w: 62px; --card-h: 87px; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Mage<span>Zero</span> table</h1>
+    <label>You play <select id="humanDeck"></select></label>
+    <label>Bot plays <select id="botDeck"></select></label>
+    <label>First <select id="starts"><option value="random">random</option><option value="you">you</option><option value="bot">bot</option></select></label>
+    <label title="Unchecked: the bot samples from its policy, so it plays more varied but weaker moves"><input type="checkbox" id="greedy" checked> bot plays its strongest move</label>
+    <button class="primary" id="newGame">New game</button>
+    <button id="concede">Concede</button>
+    <div id="status">Connecting…</div>
+  </header>
+  <main>
+    <section id="table">
+      <div class="player opponent" id="oppPanel"></div>
+      <div class="battlefield" id="oppField"></div>
+      <div class="middle"><div class="phase" id="phase"></div><div id="stack"></div></div>
+      <div class="battlefield" id="myField"></div>
+      <div class="player you" id="myPanel"></div>
+      <div><div class="label-sm">Your hand</div><div class="row handrow" id="hand"></div></div>
+    </section>
+    <aside>
+      <div id="decision"><h2>Decision</h2><div id="prompt" class="waiting">No game yet.</div><div id="options"></div><div id="revealed"></div></div>
+      <div id="controls">
+        <div class="btns">
+          <button id="passTurn" title="Pass priority until the end of this turn">Pass to end of turn</button>
+          <button id="passMine" title="Pass priority until your next main phase">Pass until my turn</button>
+        </div>
+        <label><input type="checkbox" id="autoEmpty" checked> Auto-pass priority on an empty stack, except in my main phases</label>
+        <label><input type="checkbox" id="autoOwn" checked> Auto-pass when my own spell or ability is on top of the stack</label>
+        <div id="passing" class="label-sm"></div>
+      </div>
+      <div class="label-sm" style="padding:8px 12px 0">Game log</div>
+      <div id="log"></div>
+    </aside>
+  </main>
+</div>
+<div id="preview"></div>
+<div id="menu"></div>
+<div id="modal"><div class="box"><h3 id="modalTitle"></h3><div class="cards" id="modalCards"></div></div></div>
+<div id="banner"><h2 id="bannerTitle"></h2><p id="bannerText"></p><button class="primary" id="bannerNew">Play again</button> <button id="bannerClose">Look at the board</button></div>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const STEPS = [["UNTAP","Untap"],["UPKEEP","Upkeep"],["DRAW","Draw"],["PRECOMBAT_MAIN","Main 1"],["BEGIN_COMBAT","Combat"],
+  ["DECLARE_ATTACKERS","Attack"],["DECLARE_BLOCKERS","Block"],["FIRST_COMBAT_DAMAGE","1st dmg"],["COMBAT_DAMAGE","Damage"],
+  ["END_COMBAT","End combat"],["POSTCOMBAT_MAIN","Main 2"],["END_TURN","End"],["CLEANUP","Cleanup"]];
+const MAIN = new Set(["PRECOMBAT_MAIN", "POSTCOMBAT_MAIN"]);
+let view = null, version = null, answered = new Set(), passUntil = null, passTurn = null, bannerShown = 0;
+let byId = new Map();
+
+function store(key, value) { try { localStorage.setItem("mz." + key, JSON.stringify(value)); } catch (e) {} }
+function load(key, fallback) { try { const v = localStorage.getItem("mz." + key); return v == null ? fallback : JSON.parse(v); } catch (e) { return fallback; } }
+
+// ---- card images (Scryfall), throttled to stay well under its rate limit
+const images = new Map(); const queue = []; let pumping = false;
+function imageFor(name, cb) {
+  let entry = images.get(name);
+  if (!entry) { entry = { url: undefined, waiters: [] }; images.set(name, entry); queue.push(name); pump(); }
+  if (entry.url !== undefined) cb(entry.url); else entry.waiters.push(cb);
+}
+async function pump() {
+  if (pumping) return; pumping = true;
+  while (queue.length) {
+    const name = queue.shift(), entry = images.get(name);
+    let url = null;
+    try {
+      const r = await fetch("https://api.scryfall.com/cards/named?exact=" + encodeURIComponent(name));
+      if (r.ok) {
+        const card = await r.json();
+        if (card.image_uris) url = card.image_uris.normal;
+        else if (card.card_faces) {
+          const face = card.card_faces.find((f) => f.name === name) || card.card_faces[0];
+          url = face.image_uris ? face.image_uris.normal : null;
+        }
+      }
+    } catch (e) { url = null; }
+    entry.url = url; entry.waiters.splice(0).forEach((cb) => cb(url));
+    await new Promise((r) => setTimeout(r, 110));
+  }
+  pumping = false;
+}
+
+// ---- server
+async function post(path, body) {
+  const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || r.statusText);
+  return data;
+}
+async function poll() {
+  for (;;) {
+    try {
+      const r = await fetch("/api/state" + (version == null ? "" : "?since=" + version));
+      const next = await r.json();
+      if (next.version !== version || version == null) { view = next; version = next.version; render(); autoPass(); }
+    } catch (e) { $("status").textContent = "Lost the server; retrying…"; await new Promise((r) => setTimeout(r, 1500)); }
+  }
+}
+async function answer(optionId) {
+  const d = view && view.decision; if (!d || answered.has(d.decision)) return;
+  answered.add(d.decision); hideMenu();
+  try { await post("/api/answer", { decision: d.decision, action_id: optionId }); }
+  catch (e) { answered.delete(d.decision); $("status").textContent = e.message; }
+}
+
+// ---- auto-pass
+function isPriority(d) { return d && d.options.length && d.options[0].type === "pass"; }
+function autoPass() {
+  const d = view.decision, s = view.state;
+  if (!isPriority(d) || !s || answered.has(d.decision)) { showPassing(); return; }
+  if (passTurn != null && s.turn !== passTurn) passTurn = null;
+  if (passUntil && s.active === "you" && MAIN.has(s.step) && s.stack.length === 0) passUntil = null;
+  let pass = false;
+  if (passUntil || passTurn != null) pass = true;
+  else if (s.stack.length) pass = $("autoOwn").checked && s.stack[0].controller === "you";
+  else pass = $("autoEmpty").checked && !(s.active === "you" && MAIN.has(s.step));
+  showPassing();
+  if (pass) setTimeout(() => { if (view.decision && view.decision.decision === d.decision) answer(d.options[0].id); }, 120);
+}
+function showPassing() {
+  $("passing").textContent = passUntil ? "Passing until your turn…" : passTurn != null ? "Passing to the end of the turn…" : "";
+}
+
+// ---- rendering
+function index(s) {
+  byId = new Map();
+  const add = (c) => { if (c && c.id) byId.set(c.id, c); };
+  s.battlefield.forEach(add); s.hand.forEach(add); s.stack.forEach(add); s.revealed.forEach(add);
+  s.players.forEach((p) => { byId.set(p.id, { id: p.id, name: p.name, player: true }); p.graveyard.forEach(add); p.exile.forEach(add); p.command.forEach(add); });
+}
+function optionsFor(ids) {
+  const d = view && view.decision; if (!d) return [];
+  const set = new Set(ids);
+  let hits = d.options.filter((o) => o.target && set.has(o.target));
+  if (!hits.length) hits = d.options.filter((o) => o.source && set.has(o.source) && o.type !== "pass" && !(["attack", "block"].includes(o.type) && !o.target));
+  return hits;
+}
+function cardView(c, opts = {}) {
+  const ids = opts.ids || [c.id];
+  const node = el("div", "card");
+  if (c.tapped) node.classList.add("tapped");
+  if (c.phased_out) { node.classList.add("phased"); node.title = "Phased out"; }
+  if (c.attacking) node.classList.add("attacking");
+  if (c.blocking) node.classList.add("blocking");
+  const fb = el("div", "fallback");
+  fb.append(el("b", null, c.name), el("i", null, c.cost || ""), el("i", null, c.types || ""));
+  node.append(fb);
+  if (!c.face_down && !c.token && c.name !== "Face-down card") {
+    imageFor(c.name, (url) => { if (url) { const img = el("img"); img.src = url; img.alt = c.name; img.loading = "lazy"; fb.replaceWith(img); } });
+  }
+  if (c.creature && c.power != null) {
+    const hurt = c.damage > 0;
+    node.append(el("span", "badge pt" + (hurt ? " hurt" : ""), `${c.power}/${c.toughness - (c.damage || 0)}` + (hurt ? "" : "")));
+  }
+  if (opts.count > 1) node.append(el("span", "badge count", "×" + opts.count));
+  const counters = Object.entries(c.counters || {}).map(([k, v]) => `${v} ${k}`).join(", ");
+  if (counters) node.append(el("span", "badge counters", counters));
+  if (c.sick) node.append(el("span", "badge sick", "zz"));
+  if (c.attached_to && byId.get(c.attached_to)) node.append(el("span", "badge attach", "→ " + byId.get(c.attached_to).name));
+  const hits = opts.noActions ? [] : optionsFor(ids);
+  if (hits.length) {
+    node.classList.add("actionable");
+    node.addEventListener("click", (ev) => { ev.stopPropagation(); hits.length === 1 ? answer(hits[0].id) : showMenu(hits, ev); });
+  }
+  node.addEventListener("mouseenter", (ev) => showPreview(c, ev));
+  node.addEventListener("mousemove", movePreview);
+  node.addEventListener("mouseleave", hidePreview);
+  node.dataset.ids = ids.join(" ");
+  return node;
+}
+function groupKey(c) {
+  if (!(c.land || c.token) || c.attacking || c.blocking || c.attached_to) return null;
+  return [c.name, c.tapped, c.sick, c.damage, JSON.stringify(c.counters), c.power, c.toughness].join("|");
+}
+function fieldRows(cards, s) {
+  const attached = new Map();
+  cards.forEach((c) => { if (c.attached_to) { (attached.get(c.attached_to) || attached.set(c.attached_to, []).get(c.attached_to)).push(c); } });
+  const creatures = el("div", "row"), others = el("div", "row"), lands = el("div", "row");
+  const groups = new Map(); const order = [];
+  cards.forEach((c) => {
+    const key = groupKey(c);
+    if (key) { if (!groups.has(key)) { groups.set(key, []); order.push({ key }); } groups.get(key).push(c); }
+    else order.push({ card: c });
+  });
+  order.forEach((o) => {
+    const list = o.key ? groups.get(o.key) : [o.card];
+    const c = list[0];
+    const node = cardView(c, { ids: list.map((x) => x.id), count: list.length });
+    (c.land && !c.creature ? lands : c.creature ? creatures : others).append(node);
+  });
+  const wrap = el("div"); wrap.style.display = "contents";
+  return [creatures, others, lands];
+}
+function playerPanel(p, s, active) {
+  const box = el("div");
+  box.append(el("span", "name", p.side === "you" ? "You" : "MageZero (bot)"));
+  const life = el("span", "life", p.life); box.append(life);
+  const stat = (k, v) => { const e = el("span", "stat"); e.innerHTML = `${k} <b>${v}</b>`; return e; };
+  box.append(stat("hand", p.hand), stat("library", p.library));
+  if (p.poison) box.append(stat("poison", p.poison));
+  if (p.commander_damage) box.append(stat("commander dmg taken", p.commander_damage + "/21"));
+  const mana = el("span", "mana");
+  Object.entries(p.mana).forEach(([k, v]) => { if (v) mana.append(el("span", "m-" + k, v)); });
+  if (mana.childNodes.length) box.append(mana);
+  p.command.forEach((c) => { const b = el("button", "zonebtn", "Command: " + c.name); b.onclick = () => showZone("Command zone", p.command); b.onmouseenter = (ev) => showPreview(c, ev); b.onmouseleave = hidePreview; box.append(b); });
+  const gy = el("button", "zonebtn", `Graveyard ${p.graveyard.length}`); gy.onclick = () => showZone((p.side === "you" ? "Your" : "Bot's") + " graveyard", p.graveyard);
+  const ex = el("button", "zonebtn", `Exile ${p.exile.length}`); ex.onclick = () => showZone((p.side === "you" ? "Your" : "Bot's") + " exile", p.exile);
+  box.append(gy, ex);
+  return box;
+}
+function render() {
+  const s = view.state, d = view.decision;
+  $("status").textContent = view.message || view.status;
+  $("newGame").disabled = view.status === "starting" || view.status === "error" && !s;
+  $("concede").disabled = view.status !== "playing";
+  if (!s) {
+    $("oppPanel").replaceChildren(); $("myPanel").replaceChildren(); $("phase").replaceChildren(); $("stack").replaceChildren();
+    $("oppField").replaceChildren(el("div", "empty", view.status === "playing" ? "Shuffling and drawing…" : "Choose the decks above and press New game."));
+    $("myField").replaceChildren(); $("hand").replaceChildren(); $("log").replaceChildren();
+  } else {
+    index(s);
+    const me = s.players.find((p) => p.side === "you"), opp = s.players.find((p) => p.side === "opponent");
+    for (const [panel, p] of [[$("oppPanel"), opp], [$("myPanel"), me]]) {
+      panel.replaceChildren(...playerPanel(p, s).childNodes);
+      panel.classList.toggle("active-turn", s.active === p.side);
+      const hits = optionsFor([p.id]);
+      panel.classList.toggle("targetable", hits.length > 0);
+      panel.onclick = hits.length ? (ev) => (hits.length === 1 ? answer(hits[0].id) : showMenu(hits, ev)) : null;
+    }
+    const phase = $("phase"); phase.replaceChildren(el("span", null, `Turn ${s.turn} · ${s.active === "you" ? "yours" : "bot's"}`));
+    STEPS.forEach(([k, label]) => { const e = el("span", k === s.step ? "on" : null, label); phase.append(e); });
+    const stack = $("stack"); stack.replaceChildren();
+    if (s.stack.length) stack.append(el("span", "label-sm", "Stack (top first)"));
+    s.stack.forEach((o) => {
+      const item = el("div", "stackitem " + o.controller);
+      item.append(el("b", null, o.name));
+      const rule = (o.rules || [])[0]; if (rule) item.append(el("div", null, rule.replace(/<[^>]+>/g, "")));
+      if (o.targets && o.targets.length) item.append(el("div", "stat", "→ " + o.targets.map((t) => (byId.get(t) || { name: "?" }).name).join(", ")));
+      item.addEventListener("mouseenter", (ev) => showPreview(o, ev)); item.addEventListener("mousemove", movePreview); item.addEventListener("mouseleave", hidePreview);
+      stack.append(item);
+    });
+    $("oppField").replaceChildren(...fieldRows(s.battlefield.filter((c) => c.controller === "opponent"), s).reverse());
+    $("myField").replaceChildren(...fieldRows(s.battlefield.filter((c) => c.controller === "you"), s));
+    $("hand").replaceChildren(...s.hand.map((c) => cardView(c)));
+    const log = $("log"); const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+    log.replaceChildren(...s.log.map((line) => el("div", /^Turn \d+/.test(line) ? "turn" : null, line)));
+    if (atBottom) log.scrollTop = log.scrollHeight;
+  }
+  // decision panel
+  const prompt = $("prompt"), options = $("options"), revealed = $("revealed");
+  options.replaceChildren(); revealed.replaceChildren();
+  document.querySelectorAll(".card.marked").forEach((n) => n.classList.remove("marked"));
+  if (d) {
+    prompt.className = ""; prompt.textContent = d.prompt;
+    const amounts = d.options.filter((o) => o.type === "amount");
+    if (amounts.length > 12 && amounts.length === d.options.length) {
+      // A long number range: a slider and a box instead of hundreds of buttons.
+      const values = amounts.map((o) => Number(o.label)), lo = Math.min(...values), hi = Math.max(...values);
+      const box = el("div"); box.id = "amount";
+      const range = el("input"); range.type = "range"; range.min = lo; range.max = Math.min(hi, lo + 40); range.value = lo;
+      const num = el("input"); num.type = "number"; num.min = lo; num.max = hi; num.value = lo;
+      range.oninput = () => { num.value = range.value; }; num.oninput = () => { range.value = num.value; };
+      const ok = el("button", "primary", "OK");
+      ok.onclick = () => { const o = amounts.find((a) => Number(a.label) === Number(num.value)); if (o) answer(o.id); else $("status").textContent = `Choose a number from ${lo} to ${hi}`; };
+      num.onkeydown = (ev) => { if (ev.key === "Enter") ok.onclick(); };
+      box.append(range, num, ok); options.append(box);
+    } else d.options.forEach((o) => {
+      const b = el("button", o.type === "pass" || (!o.target && ["attack", "block", "target"].includes(o.type)) ? "pass" : null, o.label);
+      b.onclick = () => answer(o.id);
+      const ref = o.target || o.source;
+      b.onmouseenter = () => mark(ref, true); b.onmouseleave = () => mark(ref, false);
+      options.append(b);
+    });
+    if (s && s.revealed.length) {
+      revealed.append(el("div", "label-sm", "Cards you may look at")); s.revealed.forEach((c) => revealed.append(cardView(c)));
+    }
+  } else {
+    prompt.className = "waiting";
+    prompt.textContent = view.status === "playing" ? (s ? "The bot is thinking…" : "Starting the game…") : view.status === "over" ? "Game over." : "No game in progress.";
+  }
+  // game over banner
+  if (view.status === "over" && view.result && bannerShown !== view.game) {
+    bannerShown = view.game;
+    const r = view.result;
+    $("bannerTitle").textContent = r === "won" ? "You win!" : r === "lost" ? "MageZero wins" : r === "draw" ? "Draw" : "Game ended";
+    $("bannerText").textContent = r === "won" || r === "lost" || r === "draw" ? `After ${s ? s.turn : "?"} turns.` : "Result: " + r;
+    $("banner").style.display = "block";
+  }
+  if (view.status !== "over") $("banner").style.display = "none";
+}
+function mark(id, on) {
+  if (!id) return;
+  document.querySelectorAll(".card").forEach((n) => { if ((n.dataset.ids || "").split(" ").includes(id)) n.classList.toggle("marked", on); });
+}
+
+// ---- preview, menus, zones
+function showPreview(c, ev) {
+  const box = $("preview"); box.replaceChildren();
+  const text = el("div", "text"); text.append(el("b", null, c.name));
+  if (c.cost) text.append(document.createTextNode("  " + c.cost));
+  if (c.types) text.append(el("div", "stat", c.types));
+  (c.rules || []).forEach((r) => text.append(el("div", null, r.replace(/<[^>]+>/g, ""))));
+  if (c.creature && c.power != null) text.append(el("div", "stat", `${c.power}/${c.toughness}` + (c.damage ? `, ${c.damage} damage` : "")));
+  if (!c.token && !c.face_down && c.name !== "Face-down card") {
+    imageFor(c.name, (url) => { if (url && box.contains(text)) { const img = el("img"); img.src = url; box.prepend(img); } });
+  }
+  box.append(text); box.style.display = "block"; movePreview(ev);
+}
+function movePreview(ev) {
+  const box = $("preview"); const w = 270, h = box.offsetHeight || 400;
+  let x = ev.clientX + 18, y = ev.clientY - 60;
+  if (x + w > innerWidth) x = ev.clientX - w - 18;
+  y = Math.max(8, Math.min(y, innerHeight - h - 8));
+  box.style.left = x + "px"; box.style.top = y + "px";
+}
+function hidePreview() { $("preview").style.display = "none"; }
+function showMenu(hits, ev) {
+  const menu = $("menu"); menu.replaceChildren();
+  hits.forEach((o) => { const b = el("button", null, o.label); b.onclick = (e) => { e.stopPropagation(); answer(o.id); }; menu.append(b); });
+  menu.style.display = "flex";
+  menu.style.left = Math.min(ev.clientX, innerWidth - 260) + "px"; menu.style.top = Math.min(ev.clientY, innerHeight - menu.offsetHeight - 10) + "px";
+}
+function hideMenu() { $("menu").style.display = "none"; }
+document.addEventListener("click", hideMenu);
+function showZone(title, cards) {
+  $("modalTitle").textContent = title;
+  $("modalCards").replaceChildren(...(cards.length ? cards.map((c) => cardView(c, { noActions: true })) : [el("div", "empty", "Empty")]));
+  $("modal").style.display = "flex";
+}
+$("modal").onclick = () => { $("modal").style.display = "none"; hidePreview(); };
+
+// ---- controls
+async function loadDecks() {
+  const { decks } = await (await fetch("/api/decks")).json();
+  for (const [sel, pref, key] of [[$("humanDeck"), "kinnan", "human"], [$("botDeck"), "winota", "bot"]]) {
+    sel.replaceChildren(...decks.map((d) => { const o = el("option", null, `${d.name} (${d.cards})`); o.value = d.name; return o; }));
+    const saved = load(key + "Deck", pref);
+    if (decks.some((d) => d.name === saved)) sel.value = saved; else if (decks.some((d) => d.name === pref)) sel.value = pref;
+  }
+  $("starts").value = load("starts", "random"); $("greedy").checked = load("greedy", true);
+  $("autoEmpty").checked = load("autoEmpty", true); $("autoOwn").checked = load("autoOwn", true);
+}
+async function newGame() {
+  const body = { human_deck: $("humanDeck").value, bot_deck: $("botDeck").value, starts: $("starts").value, greedy: $("greedy").checked };
+  store("humanDeck", body.human_deck); store("botDeck", body.bot_deck); store("starts", body.starts); store("greedy", body.greedy);
+  passUntil = null; passTurn = null; $("banner").style.display = "none";
+  $("status").textContent = "Starting a new game…";
+  try { await post("/api/new", body); } catch (e) { $("status").textContent = e.message; }
+}
+$("newGame").onclick = newGame;
+$("bannerNew").onclick = newGame;
+$("bannerClose").onclick = () => { $("banner").style.display = "none"; };
+$("concede").onclick = async () => { if (confirm("Concede this game? MageZero wins it.")) { try { await post("/api/concede"); } catch (e) { $("status").textContent = e.message; } } };
+$("passTurn").onclick = () => { if (view && view.state) { passTurn = view.state.turn; autoPass(); } };
+$("passMine").onclick = () => { passUntil = true; autoPass(); };
+for (const id of ["autoEmpty", "autoOwn"]) $(id).onchange = () => { store(id, $(id).checked); autoPass(); };
+document.addEventListener("keydown", (ev) => {
+  if (ev.target.tagName === "SELECT" || ev.target.tagName === "INPUT") return;
+  const d = view && view.decision;
+  if ((ev.key === " " || ev.key === "Enter") && isPriority(d)) { ev.preventDefault(); answer(d.options[0].id); }
+});
+loadDecks().catch(() => {});
+poll();
+</script>
+</body>
+</html>

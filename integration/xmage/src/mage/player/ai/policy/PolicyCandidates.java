@@ -65,6 +65,9 @@ public final class PolicyCandidates<T> {
             if (!word.isEmpty()) values[3 + Math.floorMod(word.hashCode(), 13)] += 1;
         }
         for (int i = 3; i < 16; i++) values[i] = Math.tanh(values[i] / 4.0);
+        // Display text for a person choosing (WebPlayer); PolicyEncoder removes it
+        // before an observation is sent, so it never reaches the policy.
+        action.put("text", String.valueOf(text));
         return action;
     }
 

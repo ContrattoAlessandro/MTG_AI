@@ -8,6 +8,7 @@
     mz train           one PPO update from trajectory files
     mz serve           the policy inference service
     mz play            play against a checkpoint in the XMage client
+    mz web             play against a checkpoint in the browser
 
 Heavy imports happen inside each command, so `mz --help` stays fast.
 """
@@ -157,6 +158,14 @@ def cmd_play(args: argparse.Namespace) -> None:
         pass
     finally:
         service.stop()
+
+
+def cmd_web(args: argparse.Namespace) -> None:
+    """Play against the policy in a browser."""
+    from .webplay import run
+
+    run(args.checkpoint, xmage=args.xmage, port=args.port, policy_port=args.policy_port, device=args.device,
+        heap=args.heap, torch_threads=args.torch_threads, open_browser=not args.no_browser)  # fmt: skip
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -329,6 +338,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--server-config", default="integration/xmage/server-config.xml")
     p.add_argument("--heap", default="4G", help="XMage server Java heap")
     p.set_defaults(func=cmd_play)
+
+    p = sub.add_parser("web", help="play against a policy checkpoint in the browser")
+    p.add_argument("--checkpoint", required=True)
+    p.add_argument("--port", type=int, default=8765, help="web server port (localhost only)")
+    p.add_argument("--policy-port", type=int, default=50071, help="the bot's policy service port")
+    p.add_argument("--device", default="cpu")
+    p.add_argument("--torch-threads", type=int, default=2)
+    p.add_argument("--xmage", default="xmage", help="XMage distribution with the patched lib/ jars")
+    p.add_argument("--heap", default="4G", help="engine Java heap")
+    p.add_argument("--no-browser", action="store_true", help="do not open a browser window")
+    p.set_defaults(func=cmd_web)
     return parser
 
 

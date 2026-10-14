@@ -10,6 +10,7 @@ import mage.game.mulligan.Mulligan;
 import mage.game.mulligan.MulliganType;
 import mage.player.ai.policy.PolicyPlayer;
 import mage.player.ai.policy.RecordingPlayer;
+import mage.player.ai.policy.WebPlayer;
 import mage.players.Player;
 import mage.util.RandomUtil;
 import org.yaml.snakeyaml.Yaml;
@@ -38,6 +39,8 @@ public final class PolicyGames {
     // XMage's AI playing while its decisions are recorded for behaviour cloning.
     static final String TEACHER = "xmage-teacher";
     static final String COMMANDER = "commander";
+    // A person in a browser (WebPlayer); server.web_endpoint names the `mz web` server.
+    static final String WEB = "web";
     private static final ScheduledExecutorService WATCHDOG = Executors.newSingleThreadScheduledExecutor(runnable -> {
         Thread thread = new Thread(runnable, "policy-game-watchdog");
         thread.setDaemon(true);
@@ -96,9 +99,9 @@ public final class PolicyGames {
         Map<String, Object> raw = rawConfig(configPath);
         String typeA = Config.INSTANCE.playerA.type, typeB = Config.INSTANCE.playerB.type;
         if (!("policy".equals(typeA) || TEACHER.equals(typeA))
-                || !("policy".equals(typeB) || XMAGE_AI.equals(typeB) || TEACHER.equals(typeB))) {
+                || !("policy".equals(typeB) || XMAGE_AI.equals(typeB) || TEACHER.equals(typeB) || WEB.equals(typeB))) {
             throw new IllegalArgumentException("player_a must be type policy or " + TEACHER
-                + ", player_b policy, " + XMAGE_AI + " or " + TEACHER);
+                + ", player_b policy, " + XMAGE_AI + ", " + TEACHER + " or " + WEB);
         }
         if (!"normal".equals(Config.INSTANCE.gameMode) && !COMMANDER.equals(Config.INSTANCE.gameMode)) {
             throw new IllegalArgumentException("policy games support game_mode normal (two-player constructed) or "
@@ -134,6 +137,10 @@ public final class PolicyGames {
         // A single turn running longer than this is a loop (XMage's AI repeating an
         // untap/mana activation forever); the game is stopped as a timeout.
         int turnSeconds = ((Number) section(raw, "training").getOrDefault("max_turn_seconds", 120)).intValue();
+        String webEndpoint = (String) server.get("web_endpoint");
+        if (WEB.equals(typeB) && (webEndpoint == null || Config.INSTANCE.training.games != 1 || alternate)) {
+            throw new IllegalArgumentException("a web game needs server.web_endpoint, one game and no seat alternation");
+        }
         if (turnSeconds < 0) throw new IllegalArgumentException("training.max_turn_seconds must be >= 0 (0 = no limit)");
         // Import lists once; instantiate independent card/deck objects in each game.
         DeckCardLists a = DeckImporter.importDeckFromFile(Config.INSTANCE.playerA.deckPath, true);
@@ -145,7 +152,7 @@ public final class PolicyGames {
             final int port = ports.get(i % ports.size());
             final int opponentPort = opponentPorts.get(i % opponentPorts.size());
             final boolean swap = alternate && i % 2 == 1;
-            games.add(workers.submit(() -> play(a, b, gameNumber, port, opponentPort, typeA, typeB, swap, keepDeck, sample, aiSkill, aiThink, turnSeconds)));
+            games.add(workers.submit(() -> play(a, b, gameNumber, port, opponentPort, typeA, typeB, swap, keepDeck, sample, aiSkill, aiThink, turnSeconds, webEndpoint)));
         }
         workers.shutdown();
         int[] counts = new int[Outcome.values().length];
@@ -243,7 +250,7 @@ public final class PolicyGames {
 
     private static Outcome play(DeckCardLists listA, DeckCardLists listB, int index, int port, int opponentPort,
                                 String learnerType, String opponentType, boolean swap, boolean keepDeck, boolean sample, int aiSkill,
-                                int aiThink, int turnSeconds) throws Exception {
+                                int aiThink, int turnSeconds, String webEndpoint) throws Exception {
         RandomUtil.setSeed(ThreadLocalRandom.current().nextLong());
         Thread self = Thread.currentThread();
         Game game = newGame();
@@ -272,11 +279,13 @@ public final class PolicyGames {
         Match match = newMatch();
         String host = "http://" + Config.INSTANCE.server.host + ":";
         // The learner controller always uses `port`; swapping moves it to seat B.
-        String learnerName = swap ? "PlayerB" : "PlayerA";
+        boolean web = WEB.equals(opponentType);
+        String learnerName = web ? "MageZero" : swap ? "PlayerB" : "PlayerA";
         Player learner = TEACHER.equals(learnerType) ? teacher(learnerName, aiSkill, aiThink, host + port)
             : new PolicyPlayer(learnerName, RangeOfInfluence.ONE, host + port, sample);
-        String opponentName = swap ? "PlayerA" : "PlayerB";
-        Player opponent = XMAGE_AI.equals(opponentType) ? xmageAi(opponentName, aiSkill, aiThink)
+        String opponentName = web ? "Human" : swap ? "PlayerA" : "PlayerB";
+        Player opponent = web ? new WebPlayer(opponentName, RangeOfInfluence.ONE, host + port, webEndpoint)
+            : XMAGE_AI.equals(opponentType) ? xmageAi(opponentName, aiSkill, aiThink)
             : TEACHER.equals(opponentType) ? teacher(opponentName, aiSkill, aiThink, host + opponentPort)
             : new PolicyPlayer(opponentName, RangeOfInfluence.ONE, host + opponentPort, sample);
         Player a = swap ? opponent : learner, b = swap ? learner : opponent;
@@ -344,7 +353,7 @@ public final class PolicyGames {
                 game.getState().getWatcher(mage.watchers.common.CommanderInfoWatcher.class, commander);
             if (watcher != null) commanderDamage = Math.max(commanderDamage, watcher.getDamageToPlayer().getOrDefault(player.getId(), 0));
         }
-        return player.getName() + (player instanceof PolicyPlayer ? " (policy)" : player instanceof RecordingPlayer ? " (teacher)" : "") + " "
+        return player.getName() + (player instanceof WebPlayer ? " (web)" : player instanceof PolicyPlayer ? " (policy)" : player instanceof RecordingPlayer ? " (teacher)" : "") + " "
             + (player.hasWon() ? "won" : player.hasLost() ? "lost" : "-") + " life " + player.getLife()
             + " poison " + player.getCountersCount(mage.counters.CounterType.POISON)
             + " commander damage " + commanderDamage + " library " + player.getLibrary().size();

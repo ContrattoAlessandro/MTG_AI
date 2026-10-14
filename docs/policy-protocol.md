@@ -32,6 +32,8 @@ Entity kinds used by the adapter: `0=player`, `1=permanent`, `2=card`, `3=stack 
 
 Visibility is `public`, `own`, or `hidden`. Own private entities require owner 0. Hidden aggregate entities have card ID 0 and only quantity feature 7. A face-down permanent uses public visibility with identity 0 and its rules-visible attributes. Opponent hand identities do not appear as entities, apart from explicitly inspectable engine choice sets or public information. The Java encoder, not JSON validation alone, must enforce game visibility.
 
+The adapter's candidate lists also carry a display `text` for people choosing in the browser (`mz web`); `PolicyEncoder` removes it, so it never appears in an observation.
+
 Action types are `pass`, `cast`, `activate`, `target`, `use`, `mode`, `attack`, `block`, `order`, `amount`, `mulligan`, `mana`, `discard`, `choose`. Event types are `draw`, `reveal`, `zone_change`, `cast`, `activate`, `resolve`, `attack`, `block`, `damage`, `life`, `pass`, `shuffle`, `choice`. Opponent/neutral draw events must have card ID 0. Not all accepted types are emitted by the initial adapter.
 
 ## Feature layout in the Java adapter

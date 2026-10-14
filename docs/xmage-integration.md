@@ -6,7 +6,7 @@ The adapter targets [WillWroble/mage](https://github.com/WillWroble/mage) at com
 
 | Path | Contents |
 |---|---|
-| `src/mage/player/ai/policy/` | `PolicyPlayer` (the policy as an XMage player), `PolicyEncoder`, `PolicyHistory`, `PolicyCandidates`, `PolicyClient`, `HandSummary`, `RecordingPlayer` |
+| `src/mage/player/ai/policy/` | `PolicyPlayer` (the policy as an XMage player), `PolicyEncoder`, `PolicyHistory`, `PolicyCandidates`, `PolicyClient`, `HandSummary`, `RecordingPlayer`, `WebPlayer` (a person in the browser, `mz web`) |
 | `src-ma/mage/player/ai/TeacherPlayer.java` | XMage's Mad AI with every decision recorded over the policy's candidate list (behaviour cloning) |
 | `src/org/mage/magezero/` | `PolicyGames` (batch runner), `PolicyArena` (fixed-opponent arena), `PolicyCatalogExporter`, `DeckListConverter` |
 | `patches/` | Engine fixes, as git diffs against the pinned commit |
@@ -130,6 +130,20 @@ mz play --checkpoint artifacts/commander-run/best.pt --greedy   # --device cuda 
 1. Open an XMage client of the server's version (1.4.58) and connect to `localhost`, port 17171.
 2. Create a table (Commander Two Player Duel for the Commander agent) and add a **Computer - monte carlo** player.
 3. Give the policy a deck from its card pool and play a deck from the same pool yourself. The policy reads its opponent's announced deck list at game start, and every card in that list must be in the checkpoint's catalog.
+
+### In the browser
+
+`mz web` needs no XMage client:
+
+```bash
+mz web --checkpoint artifacts/anchors/a5-b-gen24.pt     # then open http://127.0.0.1:8765
+```
+
+It starts the bot's policy service (port 50071), an engine (`PolicyGames --serve`) and a web server on `127.0.0.1:8765`, and opens the page. Pick your deck and the bot's (only decks in `xmage/decks/` whose cards are all in the checkpoint's catalog are offered; two 99-card decks play Commander Duel), who goes first, and whether the bot plays its most likely action (default) or samples. One game runs at a time. New game abandons the running one, and Concede ends it as a loss.
+
+Your seat is a `WebPlayer` (game YAML `player_b.type: web`, `server.web_endpoint`). It is a `PolicyPlayer` whose decisions go to the browser instead of the policy service, so you choose among exactly the candidates the policy is offered (`PolicyCandidates`), with readable labels, and XMage pays mana automatically for both players. Decisions with one legal option are not asked. The engine posts each decision with a snapshot of what you may see (both battlefields, your hand, public zones, hidden counts, the stack, combat and XMage's game log) to `/engine/decide`, and the server holds the request until you click. The board also refreshes at each of your priority passes, so the bot's actions show while they happen. The page auto-passes priority on an empty stack outside your main phases, and when your own spell is on top of the stack; both can be switched off, and Space or Enter passes. Card images come from Scryfall.
+
+`mz web` compiles the adapter into `artifacts/web-engine/classes` (again whenever a source is newer) and puts that folder ahead of `xmage/lib` on the engine's classpath, so it runs the current sources without rebuilding the jars that training uses. Its logs are in a temporary `mz-web-*` folder printed at start.
 
 Games against people are inference only: nothing is recorded, and no privileged labels are sent. `PolicyPlayer` reads its endpoint from `-Dmagezero.policy.endpoint` (or `MAGEZERO_POLICY_ENDPOINT`) and initializes itself in `beginTurn`, which `GameImpl.init` calls for every player before shuffling and opening hands. Each new game of a match starts a new recurrent session. Player copies share the live session, so XMage state restores (failed payments, a human's undo) keep the policy's memory.
 

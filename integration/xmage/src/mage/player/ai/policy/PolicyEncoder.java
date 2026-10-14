@@ -255,6 +255,7 @@ public final class PolicyEncoder {
         // References missing from the visible snapshot are intentionally null.
         // The actor never learns a hidden object identity from a candidate pointer.
         for (Map<String, Object> action : actions) {
+            action.remove("text"); // display text for people (PolicyCandidates.describe), not a policy input
             for (String field : Arrays.asList("source", "target")) {
                 Object reference = action.get(field);
                 if (reference != null && !entities.containsKey(reference.toString())) action.put(field, null);

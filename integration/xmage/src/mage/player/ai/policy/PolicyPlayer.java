@@ -21,7 +21,7 @@ import static mage.player.ai.policy.PolicyCandidates.describe;
 import static mage.player.ai.policy.PolicyCandidates.ordinal;
 
 /** Direct legal-action player. No MCTS node, rollout, search budget, or value search. */
-public final class PolicyPlayer extends ComputerPlayer implements RecordingPlayer {
+public class PolicyPlayer extends ComputerPlayer implements RecordingPlayer {
     private final String endpoint;
     // Self-play records privileged labels and reports the result; server games
     // against people are inference only.
@@ -60,7 +60,7 @@ public final class PolicyPlayer extends ComputerPlayer implements RecordingPlaye
              false, !"false".equalsIgnoreCase(setting("magezero.policy.sample", "MAGEZERO_POLICY_SAMPLE", "true")));
     }
 
-    private PolicyPlayer(String name, RangeOfInfluence range, String endpoint, boolean recording, boolean sample) {
+    protected PolicyPlayer(String name, RangeOfInfluence range, String endpoint, boolean recording, boolean sample) {
         super(name, range);
         this.endpoint = endpoint;
         this.recording = recording;
@@ -69,7 +69,7 @@ public final class PolicyPlayer extends ComputerPlayer implements RecordingPlaye
         this.allowMulligans = true;
     }
 
-    private PolicyPlayer(PolicyPlayer other) {
+    protected PolicyPlayer(PolicyPlayer other) {
         super(other);
         this.endpoint = other.endpoint;
         this.recording = other.recording;
@@ -122,9 +122,22 @@ public final class PolicyPlayer extends ComputerPlayer implements RecordingPlaye
     }
 
     private int select(Game game, List<Map<String, Object>> actions, Collection<Card> visibleChoices) {
+        return select(game, actions, null, visibleChoices);
+    }
+
+    private int select(Game game, List<Map<String, Object>> actions, List<?> options, Collection<Card> visibleChoices) {
         if (Thread.currentThread().isInterrupted()) throw new IllegalStateException("policy game interrupted");
         if (actions.isEmpty()) throw new IllegalStateException("empty legal-action set");
         if (game.isSimulation()) return 0; // rules-engine legality checks only
+        return decide(game, actions, options, visibleChoices);
+    }
+
+    /**
+     * Index of the chosen action. `options` are the engine objects behind the
+     * actions when the decision has them (see PolicyCandidates), else null.
+     * A subclass may take the decision elsewhere (WebPlayer: a person in a browser).
+     */
+    protected int decide(Game game, List<Map<String, Object>> actions, List<?> options, Collection<Card> visibleChoices) {
         if (encoder == null) throw new IllegalStateException("policy player not initialized before game.start");
         if (actions.size() == 1) {
             // Forced: no inference, label, or trajectory step (the observation step
@@ -145,7 +158,7 @@ public final class PolicyPlayer extends ComputerPlayer implements RecordingPlaye
     }
 
     private <T> T select(Game game, PolicyCandidates<T> candidates) {
-        return candidates.options.get(select(game, candidates.actions, candidates.visible));
+        return candidates.options.get(select(game, candidates.actions, candidates.options, candidates.visible));
     }
 
     @Override public void finish(Game game, boolean terminal, boolean truncated) {

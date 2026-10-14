@@ -36,6 +36,7 @@ src/magezero/          Python package (the `mz` command)
   teacher.py             teacher-game collection and behaviour cloning
   league.py, runner.py   historical opponents and resumable self-play runs
   diagnostics.py         hand-prediction evaluation and decision traces
+  webplay.py, web/       `mz web`: play against a checkpoint in the browser
   cli.py                 command-line interface
 integration/xmage/     Java adapter, engine patches, launchers and the human-play server config
 configs/               model, training and game configurations (see configs/README.md)
@@ -102,7 +103,9 @@ mz evaluate --checkpoint artifacts/commander-run/best.pt artifacts/commander-clo
     --gauntlet xmage/decks/kinnan.dck --engine-script $ENGINE --output artifacts/final-evaluation \
     --games 400 --ai-skill 3 --engine-threads 16 --greedy
 
-# 7. Play against the agent in the XMage client ("Computer - monte carlo" seat).
+# 7. Play against the agent in the browser (http://127.0.0.1:8765) ...
+mz web --checkpoint artifacts/commander-run/best.pt
+#    ... or in the XMage client ("Computer - monte carlo" seat).
 mz play --checkpoint artifacts/commander-run/best.pt --greedy
 ```
 

@@ -9,12 +9,22 @@ import java.util.*;
 /** JSON v2 client. A failed policy call fails the game; there is no search fallback. */
 public final class PolicyClient {
     private final String endpoint;
+    private int readTimeout = 30000;
     private final Gson gson = new GsonBuilder().serializeNulls().create();
     public final Map<String, Integer> cardIds = new HashMap<>();
     public final String catalogDigest;
 
     public PolicyClient(String endpoint) {
+        this(endpoint, true);
+    }
+
+    /** handshake=false: a plain JSON client with no catalog (WebPlayer's browser bridge). */
+    public PolicyClient(String endpoint, boolean handshake) {
         this.endpoint = endpoint;
+        if (!handshake) {
+            catalogDigest = "";
+            return;
+        }
         JsonObject health = request("GET", "/healthz", null);
         if (health.get("schema_version").getAsInt() != 2) {
             throw new IllegalStateException("XMage policy player requires a v2 inference service");
@@ -30,13 +40,19 @@ public final class PolicyClient {
         }
     }
 
+    /** Milliseconds a reply may take; 0 waits without limit. */
+    public PolicyClient readTimeout(int milliseconds) {
+        readTimeout = milliseconds;
+        return this;
+    }
+
     public JsonObject request(String method, String path, Object body) {
         HttpURLConnection connection = null;
         try {
             connection = (HttpURLConnection) new URL(endpoint + path).openConnection();
             connection.setRequestMethod(method);
             connection.setConnectTimeout(5000);
-            connection.setReadTimeout(30000);
+            connection.setReadTimeout(readTimeout);
             if (body != null) {
                 connection.setDoOutput(true);
                 connection.setRequestProperty("Content-Type", "application/json");
