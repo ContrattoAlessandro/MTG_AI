@@ -90,7 +90,8 @@ def evaluate(
     benchmarks: (name, anchor checkpoint or None for XMage's AI, opponent deck or
     None for player_b's deck). greedy plays the learner's most likely actions.
     Score = (wins + 0.5 * (draws + truncated)) / scored games; errors are reported,
-    never scored.
+    never scored. score_wilson95 is the interval of the score itself (half points
+    as half successes); win_rate_wilson95 counts only wins.
     """
     report = {}
     for name, anchor, deck in benchmarks:
@@ -125,11 +126,13 @@ def evaluate(
         outcome = collect_results(actor_ports)
         scored = outcome["win"] + outcome["loss"] + outcome["draw"] + outcome["truncated"]
         # Unfinished games count as half; errors are reported, never scored.
-        score = (outcome["win"] + 0.5 * (outcome["draw"] + outcome["truncated"])) / scored if scored else None
+        points = outcome["win"] + 0.5 * (outcome["draw"] + outcome["truncated"])
+        score = points / scored if scored else None
         report[name] = {
             **outcome,
             "engine": counts,
             "score": score,
+            "score_wilson95": wilson_interval(points, scored),
             "win_rate_wilson95": wilson_interval(outcome["win"], scored),
             "seconds": time.perf_counter() - started,
         }

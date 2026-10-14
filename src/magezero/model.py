@@ -447,15 +447,17 @@ class EntityBeliefPolicy(nn.Module):
         cards = self.embed_card(batch.deck_cards)
         role_presence = role_expected = auxiliary_logits = None
         k = cards.shape[1]
-        bounds = torch.stack(
-            [
-                batch.deck_lower.float() / self.config.max_hand_size,
-                batch.deck_upper.float().clamp(max=self.config.max_hand_size) / self.config.max_hand_size,
-                batch.hand_size.float()[:, None].expand(-1, k) / self.config.max_hand_size,
-            ],
-            -1,
-        )
-        count_input = torch.cat([cards, hidden[:, None].expand(-1, k, -1), bounds], -1)
+        if self.config.belief_mode == "learned" or self.config.auxiliary_belief:
+            # [rows, kinds, 2d+3]: hundreds of MB per learner window, so only built when a head reads it.
+            bounds = torch.stack(
+                [
+                    batch.deck_lower.float() / self.config.max_hand_size,
+                    batch.deck_upper.float().clamp(max=self.config.max_hand_size) / self.config.max_hand_size,
+                    batch.hand_size.float()[:, None].expand(-1, k) / self.config.max_hand_size,
+                ],
+                -1,
+            )
+            count_input = torch.cat([cards, hidden[:, None].expand(-1, k, -1), bounds], -1)
         if self.config.belief_mode == "learned":
             count_logits = self.belief_head(count_input)
             belief = constrained_hand_belief(count_logits, batch.deck_lower, batch.deck_upper, batch.hand_size)

@@ -311,10 +311,14 @@ def set_learning_modes(model: EntityBeliefPolicy, critic: PrivilegedCritic) -> N
     critic.train()
 
 
-def clip_gradients(model: EntityBeliefPolicy, critic: PrivilegedCritic, max_norm: float) -> None:
-    """Clip the actor (with its public value head) and the privileged critic separately."""
-    for parameters in (model.parameters(), critic.parameters()):
-        torch.nn.utils.clip_grad_norm_(parameters, max_norm, error_if_nonfinite=True)
+def clip_gradients(model: EntityBeliefPolicy, critic: PrivilegedCritic, max_norm: float) -> bool:
+    """Clip the actor (with its public value head) and the privileged critic separately.
+
+    Returns False when any gradient is not finite; the caller must then skip the
+    optimizer step (the gradients are unusable), not crash a long run.
+    """
+    norms = [torch.nn.utils.clip_grad_norm_(p, max_norm) for p in (model.parameters(), critic.parameters())]
+    return bool(torch.isfinite(torch.stack(norms)).all().item())
 
 
 # ─── PPO ──────────────────────────────────────────────────────────────────────
@@ -352,7 +356,8 @@ def _ppo_targets(model, critic, episodes, prepared, config: PPOConfig, reference
                     reference_memory = anchor.memory
                     for i, rows in zip(members, torch.log_softmax(anchor.logits, -1).split(sizes)):
                         chunk = prepared[i][window]
-                        chunk.reference_log_probability = rows[:, : chunk.batch.action_mask.shape[1]]
+                        # A copy, not a view: a view would keep the whole padded window alive.
+                        chunk.reference_log_probability = rows[:, : chunk.batch.action_mask.shape[1]].clone()
                 actual = out.distribution().log_prob(joined.actions)
                 if (actual - joined.behavior_log_probability).abs().max().item() > config.log_probability_tolerance:
                     raise ValueError(
@@ -444,6 +449,7 @@ def ppo_update(
         "choice_decisions": 0,
         "epochs": 0,
         "optimizer_steps": 0,
+        "nonfinite_steps": 0,
         "early_stopped": False,
         "belief_mode": model.config.belief_mode,
         "belief_loss_coefficient": belief_coefficient,
@@ -529,11 +535,16 @@ def ppo_update(
             if config.target_kl > 0 and group_kl.item() / choice_denominator > 1.5 * config.target_kl:
                 metrics["early_stopped"] = True
                 break
-            clip_gradients(model, critic, config.max_grad_norm)
+            if not clip_gradients(model, critic, config.max_grad_norm):
+                metrics["nonfinite_steps"] += 1
+                print("PPO: skipped an optimizer step with non-finite gradients")
+                continue
             optimizer.step()
             metrics["optimizer_steps"] += 1
         if metrics["early_stopped"]:
             break
+    if metrics["nonfinite_steps"] and not metrics["optimizer_steps"]:
+        raise RuntimeError("every PPO minibatch had non-finite gradients; check the checkpoint and the data")
     sums = {name: value.item() for name, value in sums.items()}
     for name in ("policy_loss", "entropy", "normalized_entropy", "approx_kl", "reference_kl"):
         metrics[name] = sums[name] / max(metrics["choice_decisions"], 1)

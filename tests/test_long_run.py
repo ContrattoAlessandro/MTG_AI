@@ -315,6 +315,26 @@ def test_standalone_evaluation_scores_every_checkpoint_against_each_deck(compone
     assert configs[1]["player_b"]["deckPath"] == str(kinnan.resolve())
 
 
+def test_evaluation_reports_an_interval_of_the_score_with_half_points(tmp_path, monkeypatch):
+    learner = tmp_path / "winota.dck"
+    learner.write_text("1 Forest")
+    base = {
+        "player_a": {"deckPath": str(learner), "type": "policy"},
+        "player_b": {"deckPath": str(learner), "type": "policy"},
+        "training": {"games": 4, "threads": 2, "max_turns": 50, "max_minutes": 5},
+    }
+    outcome = {"win": 40, "loss": 20, "draw": 30, "truncated": 10, "aborted": 0}
+    monkeypatch.setattr(runner, "collect_results", lambda ports: dict(outcome))
+    collector = _FakeCollector(None, tmp_path, _FakeServices())
+    report = runner.evaluate(
+        collector, base, tmp_path, tmp_path / "x.pt", "v", [("xmage-ai", None, None)], 100, 3, [50052], "d"
+    )["xmage-ai"]
+    assert report["score"] == pytest.approx(0.6)
+    assert report["score_wilson95"] == pytest.approx(runner.wilson_interval(60, 100))
+    assert report["win_rate_wilson95"] == pytest.approx(runner.wilson_interval(40, 100))
+    assert report["score_wilson95"][0] > report["win_rate_wilson95"][0]
+
+
 def test_runner_retries_resumes_prunes_and_keeps_the_best(components, tmp_path, monkeypatch):
     model, critic, catalog = components
     initial = tmp_path / "initial.pt"

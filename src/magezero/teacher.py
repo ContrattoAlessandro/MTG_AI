@@ -174,6 +174,7 @@ def _pass(model, critic, games: TeacherGames, indices, config: CloneConfig, opti
         "valued": 0,
         "belief_nll": 0.0,
         "decisions": 0,
+        "nonfinite_steps": 0,
     }
     by_type = {name: [0, 0] for name in ACTION_TYPES}
     order = list(indices)
@@ -254,8 +255,11 @@ def _pass(model, critic, games: TeacherGames, indices, config: CloneConfig, opti
                                 by_type[ACTION_TYPES[kind]][0] += hit
                                 by_type[ACTION_TYPES[kind]][1] += 1
             if optimizer is not None:
-                clip_gradients(model, critic, config.max_grad_norm)
-                optimizer.step()
+                if clip_gradients(model, critic, config.max_grad_norm):
+                    optimizer.step()
+                else:
+                    totals["nonfinite_steps"] += 1
+                    print("clone: skipped an optimizer step with non-finite gradients")
     return totals, by_type
 
 
@@ -269,6 +273,7 @@ def _summary(totals: dict, by_type: dict) -> dict:
         "public_value_mse": totals["value_error"] / max(totals["valued"], 1),
         "hand_nll_per_card": totals["belief_nll"] / max(totals["decisions"], 1),
         "accuracy_by_type": {name: hits / count for name, (hits, count) in by_type.items() if count},
+        "nonfinite_steps": totals["nonfinite_steps"],
     }
 
 

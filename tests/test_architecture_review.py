@@ -7,6 +7,7 @@ import torch
 
 from magezero.learner import (
     PPOConfig,
+    _ppo_targets,
     carry_memory,
     check_warm_start,
     chunk_windows,
@@ -121,11 +122,53 @@ def test_actor_and_critic_gradients_are_clipped_separately(components):
     for parameter in critic.parameters():
         parameter.grad = torch.full_like(parameter, 10.0)
     actor_before = [p.grad.clone() for p in model.parameters()]
-    clip_gradients(model, critic, 1.0)
+    assert clip_gradients(model, critic, 1.0)
     for before, parameter in zip(actor_before, model.parameters()):
         torch.testing.assert_close(parameter.grad, before)  # a large critic gradient no longer shrinks it
     critic_norm = torch.linalg.vector_norm(torch.stack([p.grad.norm() for p in critic.parameters()]))
     assert critic_norm.item() == pytest.approx(1.0, rel=1e-4)
+    next(critic.parameters()).grad[0] = float("nan")
+    assert not clip_gradients(model, critic, 1.0)  # reported, not raised
+
+
+def _recorded_episodes(model, catalog):
+    service = PolicyService(model, catalog, "v")
+    return [
+        recorded_episode(service, varied_trajectory(model.config, n, f"g{n}"), "v", reward=r)
+        for n, r in ((6, 1), (3, -1), (8, 1), (5, -1))
+    ]
+
+
+def test_non_finite_gradients_skip_the_step_and_only_a_fully_broken_update_fails(components, monkeypatch):
+    model, critic, catalog = components
+    episodes = _recorded_episodes(model, catalog)
+    config = PPOConfig(epochs=1, episodes_per_batch=1, sequence_length=3, target_kl=0.0)
+    verdicts = iter([False, True, False, True])
+    monkeypatch.setattr("magezero.learner.clip_gradients", lambda *args: next(verdicts))
+    m, c = copy.deepcopy(model), copy.deepcopy(critic)
+    optimizer = torch.optim.AdamW(list(m.parameters()) + list(c.parameters()), lr=1e-3)
+    metrics = ppo_update(m, c, optimizer, episodes, config, "v")
+    assert metrics["nonfinite_steps"] == 2 and metrics["optimizer_steps"] == 2
+    monkeypatch.undo()
+    # A NaN critic poisons every advantage, so no step can be taken: that is an error.
+    broken = copy.deepcopy(critic)
+    with torch.no_grad():
+        broken.value[-1].bias.fill_(float("nan"))
+    optimizer = torch.optim.AdamW(list(model.parameters()) + list(broken.parameters()), lr=1e-3)
+    with pytest.raises(RuntimeError, match="non-finite"):
+        ppo_update(copy.deepcopy(model), broken, optimizer, episodes, config, "v")
+
+
+def test_reference_log_probabilities_are_compact_copies(components):
+    model, critic, catalog = components
+    episodes = _recorded_episodes(model, catalog)
+    prepared = [prepare_chunks(episode, model, 3) for episode in episodes]
+    _ppo_targets(model, critic, episodes, prepared, PPOConfig(), copy.deepcopy(model))
+    for chunks in prepared:
+        for chunk in chunks:
+            reference = chunk.reference_log_probability
+            assert reference.shape == chunk.batch.action_mask.shape and reference.is_contiguous()
+            assert reference.untyped_storage().nbytes() == reference.numel() * reference.element_size()
 
 
 def test_kl_early_stop_skips_the_step_and_entropy_is_normalized(components, tmp_path):
