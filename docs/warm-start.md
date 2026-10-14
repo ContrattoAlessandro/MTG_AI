@@ -52,7 +52,7 @@ Three arms of 25 PPO generations (64 games each, half of them against XMage's AI
 |---|---|---|
 | a | fresh `mz init` checkpoint | 1 / 0 / 0 |
 | b | behaviour-cloned checkpoint | 0.95 / 0.5 / 0.05 (`configs/policy-final.yml`) |
-| c | behaviour-cloned checkpoint | 1 / 0 / 0 (`configs/experiments/policy-compare-control.yml`) |
+| c | behaviour-cloned checkpoint | 1 / 0 / 0 (`policy-final.yml` with these three values) |
 
 The teacher data were 2,000 games of XMage's AI at skill 1 playing both decks (3,987 trajectories, 418,521 decisions). The clone reached 92.3% held-out accuracy (NLL 0.216): 98.5% on passes, 71.0% on casts, 62.7% on activations, 96.9% on attacks and 81.6% on blocks. After training, every checkpoint below played 256 fresh sampled games per opponent deck against XMage's AI at skill 3, with `mz evaluate`. b2 and c2 are second runs of b and c. Scores count a win as 1 and a draw or truncation as ½, with Wilson 95% intervals of the win rate:
 
@@ -69,7 +69,7 @@ The teacher data were 2,000 games of XMage's AI at skill 1 playing both decks (3
 - **PPO improves on the clone, modestly:** by about 0.05 to 0.10 after 25 generations, in all four cloned runs.
 - **λ, shaping and the KL term made no measurable difference.** Averaged over the two runs, the new settings lead on the mirror (0.52 against 0.47) and trail against Kinnan (0.61 against 0.64), and two runs of the same settings differ by up to 0.06. `configs/policy-final.yml` keeps them, since the decaying KL term is meant to prevent drift from the clone over thousands of generations, which a 25-generation comparison cannot test.
 
-The scripts of this comparison are in `notes/a5/`.
+The comparison's control configuration and scripts were removed once it was decided; they are in git history (commit `0f2acb7`, `configs/experiments/policy-compare-control.yml` and `notes/a5/`).
 
 ## Pipeline check
 

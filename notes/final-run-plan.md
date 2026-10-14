@@ -12,6 +12,8 @@ Written 13 October 2026, end of the fourth session. This is the plan for the nex
 
 ## Phase 0: running now (no action needed)
 
+Done. The A5 scripts and comparison configurations were removed afterwards (git history, commit `0f2acb7`); arm (d) never ran. Results: [docs/warm-start.md](../docs/warm-start.md#results-the-a5-comparison).
+
 `scripts/a5-comparison.sh` (log `artifacts/a5-chain.log`) runs these steps one after another:
 
 1. Clone (`artifacts/a5/clone.log`): reads all 3,987 teacher trajectories once, then trains for 10 epochs, about 1.5–2 h in all. Output `artifacts/commander-cloned.pt`.

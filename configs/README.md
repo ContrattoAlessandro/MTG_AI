@@ -11,6 +11,6 @@ Policy configurations hold a `model:` section (read by `mz init`), a `training:`
 | `policy-game.yml` | game | Example two-player constructed matchup |
 | `card-roles.json` | data | Reviewed role annotations for every card of the supported pools, with source and notes |
 | `smoke/` | both | Short configurations for integration checks on the `simplegreen` mirror |
-| `experiments/` | both | Configurations of specific experiments: the A5 warm-start comparison arms (`policy-compare-control.yml`, `policy-final-lr1e4.yml`) and the earlier `simplegreen` pilots (`pilot-game.yml`, `policy-pilot.yml`, `policy-cpu-30min.yml`), which used earlier checkpoint formats |
+| `experiments/` | both | Configurations of the earlier `simplegreen` pilots (`pilot-game.yml`, `policy-pilot.yml`, `policy-cpu-30min.yml`), which used earlier checkpoint formats |
 
 Command-line options override some game settings: `--engine-threads` replaces `training.threads`, and `mz selfplay` writes the actual batch configurations it plays into each generation folder.
