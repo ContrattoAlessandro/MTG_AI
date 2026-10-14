@@ -9,6 +9,7 @@ and a snapshot of what the person may see, to `/engine/decide`. The browser poll
 `/api/answer`. Mana is paid automatically, as in training.
 """
 
+import collections
 import json
 import re
 import subprocess
@@ -35,20 +36,22 @@ def strip_tags(message: str) -> str:
     return re.sub(r"<[^>]+>", "", message).replace("&nbsp;", " ").replace("&lt;", "<").replace("&gt;", ">")
 
 
-def read_deck(path: Path) -> tuple[int, set[str]]:
-    """Main-deck card count and every card name of an XMage .dck file.
+def read_deck(path: Path) -> tuple[int, set[str], list[str]]:
+    """Main-deck card count, every card name, and the sideboard of an XMage .dck file.
 
     Lines are `N [SET:NUM] Name`, sideboard lines (a Commander deck's commander) `SB: N [SET:NUM] Name`.
     """
-    total, names = 0, set()
+    total, names, sideboard = 0, set(), []
     for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
         match = re.match(r"\s*(SB:\s*)?(\d+)\s+\[[^\]]*\]\s*(.+?)\s*$", line)
         if not match:
             continue
         names.add(match.group(3))
-        if not match.group(1):
+        if match.group(1):
+            sideboard.append(match.group(3))
+        else:
             total += int(match.group(2))
-    return total, names
+    return total, names, sideboard
 
 
 def compile_adapter(repo: Path, xmage: Path, classes: Path) -> None:
@@ -112,6 +115,12 @@ class Table:
         self.abort = False
         self.concede = False
         self.result = None
+        self.decks = None  # the running game's decks: {"you": deck, "opponent": deck}
+        # The browser tab that plays: the last one to claim the table. Other tabs watch,
+        # so two open tabs never answer (or auto-pass) the same decision.
+        self.controller = None
+        # Recent decisions and answers, for diagnosing the flow (GET /api/history).
+        self.history = collections.deque(maxlen=300)
         self.game = 0
         self.version = 0
 
@@ -132,6 +141,8 @@ class Table:
                 "state": state,
                 "decision": None if self.decision is None else {k: v for k, v in self.decision.items() if k != "state"},
                 "result": self.result,
+                "decks": self.decks,
+                "controller": self.controller,
             }
 
     # --- engine side
@@ -146,6 +157,18 @@ class Table:
             if self.decision is None or self.decision["decision"] != payload["decision"]:
                 self.decision, self.answer = payload, None
                 self.state = payload["state"]
+                state = self.state
+                self.history.append(
+                    {
+                        "t": round(time.time(), 2),
+                        "asked": payload["kind"],
+                        "turn": state.get("turn"),
+                        "step": state.get("step"),
+                        "active": state.get("active"),
+                        "stack": len(state.get("stack", [])),
+                        "options": [o["label"] for o in payload["options"]],
+                    }
+                )
                 self.message = f"Turn {self.state['turn']}: your move"
                 self.changed()
             while self.answer is None and not self.abort and not self.concede:
@@ -182,13 +205,23 @@ class Table:
 
     # --- browser side
 
-    def respond(self, decision: str, action_id: str) -> None:
+    def claim(self, client: str) -> None:
         with self.cond:
+            if client != self.controller:
+                self.controller = client
+                self.changed()
+
+    def respond(self, decision: str, action_id: str, client: str | None = None) -> None:
+        with self.cond:
+            if client is not None and self.controller is not None and client != self.controller:
+                raise ValueError("this game is being played in another browser tab")
             if self.decision is None or self.decision["decision"] != decision:
                 raise ValueError("that decision is no longer pending")
             if action_id not in {option["id"] for option in self.decision["options"]}:
                 raise ValueError("not an offered option")
             self.answer = action_id
+            label = next(o["label"] for o in self.decision["options"] if o["id"] == action_id)
+            self.history.append({"t": round(time.time(), 2), "answered": label, "client": client})
             self.changed()
 
 
@@ -213,9 +246,10 @@ class WebGame:
         """Decks in xmage/decks whose cards are all in the bot's catalog (it must know both lists)."""
         decks = []
         for path in sorted((self.xmage / "decks").glob("*.dck")):
-            cards, names = read_deck(path)
+            cards, names, sideboard = read_deck(path)
             if names and names <= self.catalog:
-                decks.append({"name": path.stem, "cards": cards})
+                commander = sideboard[0] if cards >= 99 and len(sideboard) == 1 else None
+                decks.append({"name": path.stem, "cards": cards, "commander": commander, "names": sorted(names)})
         return decks
 
     def boot(self) -> None:
@@ -263,6 +297,7 @@ class WebGame:
                 table.status, table.message = "playing", "Shuffling up…"
                 table.state, table.decision, table.answer, table.result = None, None, None, None
                 table.abort = table.concede = False
+                table.decks = {"you": names[human_deck], "opponent": names[bot_deck]}
                 table.changed()
                 game = table.game
             path = self.workdir / f"web-game-{game}.yml"
@@ -361,7 +396,18 @@ def create_app(web: WebGame) -> Flask:
     @app.post("/api/answer")
     def answer():
         body = request.get_json(force=True)
-        table.respond(str(body.get("decision")), str(body.get("action_id")))
+        client = body.get("client")
+        table.respond(str(body.get("decision")), str(body.get("action_id")), None if client is None else str(client))
+        return jsonify(ok=True)
+
+    @app.get("/api/history")
+    def history():
+        with table.cond:
+            return jsonify(list(table.history))
+
+    @app.post("/api/claim")
+    def claim():
+        table.claim(str(request.get_json(force=True).get("client")))
         return jsonify(ok=True)
 
     @app.post("/api/concede")

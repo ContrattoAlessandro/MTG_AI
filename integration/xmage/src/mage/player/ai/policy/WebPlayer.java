@@ -70,9 +70,16 @@ public final class WebPlayer extends PolicyPlayer {
         // XMage's own game log: the messages its client shows, already worded for
         // every player (hidden cards are not named).
         List<String> lines = log;
+        int[] turn = {-1};
         game.addTableEventListener(event -> {
             if (event.getEventType() != TableEvent.EventType.INFO || event.getMessage() == null) return;
             synchronized (lines) {
+                if (game.getTurnNum() != turn[0] && game.getActivePlayerId() != null) {
+                    // XMage's log has no turn headers; the page shows these as separators.
+                    turn[0] = game.getTurnNum();
+                    Player active = game.getPlayer(game.getActivePlayerId());
+                    lines.add("@turn " + turn[0] + " " + (getId().equals(active.getId()) ? "you" : "opponent"));
+                }
                 lines.add(event.getMessage());
                 if (lines.size() > LOG_LINES) lines.remove(0);
             }
@@ -304,6 +311,12 @@ public final class WebPlayer extends PolicyPlayer {
         for (StackObject object : game.getStack()) {
             Map<String, Object> entry = card(object, game);
             Ability ability = object.getStackAbility();
+            if (object instanceof mage.game.stack.StackAbility) {
+                // XMage names abilities "stack ability (rules)"; show the source's name.
+                MageObject source = game.getObject(object.getSourceId());
+                entry.put("name", source == null ? "Ability" : source.getName());
+                entry.put("ability", true);
+            }
             List<String> targets = new ArrayList<>();
             if (ability != null) {
                 entry.put("rules", Collections.singletonList(ability.getRule()));

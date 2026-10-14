@@ -15,8 +15,9 @@ def test_read_deck_counts_main_deck_and_names_commander(tmp_path):
         "NAME:test\n1 [MH3:237] Ajani, Nacatl Pariah\n24 [SNC:280] Forest\nSB: 1 [IKO:216] Winota, Joiner of Forces\n",
         encoding="utf-8",
     )
-    cards, names = read_deck(deck)
+    cards, names, sideboard = read_deck(deck)
     assert cards == 25
+    assert sideboard == ["Winota, Joiner of Forces"]
     assert names == {"Ajani, Nacatl Pariah", "Forest", "Winota, Joiner of Forces"}
 
 
@@ -75,3 +76,16 @@ def test_concede_and_abort_reach_the_engine():
     table.abort = True
     assert table.decide(decision("d2")) == {"abort": True}
     assert table.publish({"state": {"turn": 4, "log": []}}) == {"abort": True}
+
+
+def test_only_the_controlling_tab_answers(monkeypatch):
+    monkeypatch.setattr(webplay, "HOLD_SECONDS", 0.05)
+    table = Table()
+    table.decide(decision())
+    table.claim("tab-a")
+    table.claim("tab-b")  # the newest tab takes over
+    assert table.view()["controller"] == "tab-b"
+    with pytest.raises(ValueError, match="another browser tab"):
+        table.respond("d1", "priority-0", "tab-a")
+    table.respond("d1", "priority-0", "tab-b")
+    assert table.decide(decision()) == {"action_id": "priority-0"}

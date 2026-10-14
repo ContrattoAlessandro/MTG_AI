@@ -133,7 +133,7 @@ mz play --checkpoint artifacts/commander-run/best.pt --greedy   # --device cuda 
 
 ### In the browser
 
-`mz web` needs no XMage client:
+`mz web` needs no XMage client ([Playing in the browser](web-play.md) is the user guide):
 
 ```bash
 mz web --checkpoint artifacts/anchors/a5-b-gen24.pt     # then open http://127.0.0.1:8765

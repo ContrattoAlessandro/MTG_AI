@@ -16,7 +16,8 @@ This repository is a redesign of [WillWroble/MageZero](https://github.com/WillWr
 | Learning | Recurrent PPO on one player's complete trajectories with GAE, a public value head, and a privileged critic that sees the true hand during training only. Optional potential-based reward shaping. | [Architecture](docs/architecture.md#learning-and-collection) |
 | Warm start | Behaviour cloning from XMage's AI recorded over the policy's own candidate lists, then PPO with a decaying KL penalty towards the cloned policy (as in AlphaStar). Against XMage's AI, the cloned policy alone outscores 25 generations of PPO from a random start. | [Warm start](docs/warm-start.md#results-the-a5-comparison) |
 | Training runs | Resumable self-play generations with a historical league, a gauntlet piloted by XMage's AI, crash recovery, disk retention and periodic evaluation with best-checkpoint selection. | [Long runs](docs/long-run.md) |
-| Engine adapter | Java classes and small engine patches for the pinned XMage fork: the policy player, observation encoder, history watcher, teacher recorder, batch game runner and catalog exporter. | [XMage integration](docs/xmage-integration.md) |
+| Engine adapter | Java classes and small engine patches for the pinned XMage fork: the policy player, observation encoder, history watcher, teacher recorder, batch game runner and catalog exporter. | [Playing in the browser](docs/web-play.md) | `mz web`: starting the app, the table, decisions, keyboard, auto-pass, troubleshooting |
+| [XMage integration](docs/xmage-integration.md) |
 
 ## Repository layout
 
