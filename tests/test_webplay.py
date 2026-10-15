@@ -89,3 +89,50 @@ def test_only_the_controlling_tab_answers(monkeypatch):
         table.respond("d1", "priority-0", "tab-a")
     table.respond("d1", "priority-0", "tab-b")
     assert table.decide(decision()) == {"action_id": "priority-0"}
+
+
+def test_trigger_order_must_list_every_trigger_once(monkeypatch):
+    monkeypatch.setattr(webplay, "HOLD_SECONDS", 0.05)
+    table = Table()
+    ask = {**decision(), "kind": "triggers",
+           "options": [{"id": "a", "type": "order", "label": "A"}, {"id": "b", "type": "order", "label": "B"}]}
+    table.decide(ask)
+    for wrong in ("a", "a,a", "a,b,c"):
+        with pytest.raises(ValueError, match="every trigger once"):
+            table.respond("d1", wrong)
+    table.respond("d1", "b,a")
+    assert table.decide(ask) == {"action_id": "b,a"}
+
+
+def test_combat_declaration_lists_offered_pairs_once(monkeypatch):
+    monkeypatch.setattr(webplay, "HOLD_SECONDS", 0.05)
+    table = Table()
+    ask = {**decision(), "kind": "blockers",
+           "options": [{"id": "b1>a1", "type": "block", "label": "Bear blocks Goblin", "max": 1},
+                       {"id": "b2>a1", "type": "block", "label": "Elf blocks Goblin", "max": 1}]}
+    table.decide(ask)
+    for wrong in ("b1>a2", "b1>a1,b1>a1"):
+        with pytest.raises(ValueError, match="offered pairs"):
+            table.respond("d1", wrong)
+    table.respond("d1", "b1>a1,b2>a1")
+    assert table.decide(ask) == {"action_id": "b1>a1,b2>a1"}
+    table.decide({**ask, "decision": "d2"})
+    table.respond("d2", "")  # no blocks
+    assert table.decide({**ask, "decision": "d2"}) == {"action_id": ""}
+
+
+def test_searched_choice_keeps_names_on_the_server(monkeypatch):
+    monkeypatch.setattr(webplay, "HOLD_SECONDS", 0.05)
+    table = Table()
+    names = ["Lim-Dûl the Necromancer", "Lightning Bolt", "Bolt Bend", "Ball Lightning", "Sol Ring"]
+    table.decide({**decision(), "kind": "search", "options": [], "names": names, "suggested": ["Sol Ring"]})
+    shown = table.view()["decision"]
+    assert "names" not in shown and shown["count"] == 5 and shown["suggested"] == ["Sol Ring"]
+    assert table.search("bolt") == ["Bolt Bend", "Lightning Bolt"]  # name start first
+    assert table.search("light") == ["Lightning Bolt", "Ball Lightning"]
+    assert table.search("lim dul") == ["Lim-Dûl the Necromancer"]
+    assert table.search("  ") == []
+    with pytest.raises(ValueError, match="names offered"):
+        table.respond("d1", "Black Lotus")
+    table.respond("d1", "Sol Ring")
+    assert table.decide({**decision(), "kind": "search", "options": [], "names": names}) == {"action_id": "Sol Ring"}

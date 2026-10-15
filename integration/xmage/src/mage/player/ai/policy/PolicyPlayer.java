@@ -183,7 +183,7 @@ public class PolicyPlayer extends ComputerPlayer implements RecordingPlayer {
         ActivatedAbility chosen = select(game, PolicyCandidates.priority(this, game, client, rejected));
         game.setLastPriority(getId());
         if (chosen == null) { pass(game); return false; }
-        if (!activateAbility(chosen, game)) {
+        if (!activateAbility(chosen, game) && !cancelledPayment()) {
             // XMage lists some abilities as playable that then fail during payment or
             // choices (the state is rolled back). Like its own AI, treat that as no
             // action, and drop the ability from this priority window's candidates.
@@ -192,6 +192,12 @@ public class PolicyPlayer extends ComputerPlayer implements RecordingPlayer {
         }
         return true;
     }
+
+    /**
+     * True (once) when the last activation failed because the player chose not to pay
+     * its mana (WebPlayer); the ability then stays on offer. The policy never cancels.
+     */
+    protected boolean cancelledPayment() { return false; }
 
     @Override protected boolean makeChoice(Outcome outcome, Target target, Ability source, Game game, Cards fromCards) {
         if (target.isChoiceCompleted(target.getAffectedAbilityControllerId(getId()), source, game, fromCards)) return target.isChosen(game);

@@ -40,10 +40,22 @@ The bot was trained as Winota against Kinnan, so playing Kinnan against the Wino
 
 ## The table
 
-- **Top**: MageZero's seat panel (commander art, life, hand, library, graveyard and exile buttons, command zone, cards in hand as card backs) and battlefield.
-- **Middle bar**: turn number and whose turn it is, the phase tracker (the current step is lit in the active player's colour), and the stack (top first; hover an item to see its targets).
-- **Bottom**: your seat panel, your battlefield and your hand. Battlefields put creatures in the front row and other permanents and lands in the back row. Tapped cards turn sideways, identical lands and tokens stack with a ×N count, auras and equipment sit under their creature, and badges show power/toughness (red when damaged), counters, summoning sickness, attacking and blocking.
-- **Right**: the decision panel, the auto-pass controls and the game log (written to you; new lines flash; it follows the game unless you scroll up).
+- **Left**: the seat panels (commander art, life, hand, library, graveyard and exile piles, command zone; MageZero's hand as card backs).
+- **Centre**: MageZero's battlefield above yours, and your hand. Battlefields put creatures in the front row and other permanents and lands in the back row. Tapped cards turn sideways, identical lands and tokens stack with a ×N count, auras and equipment sit under their creature, and badges show power/toughness (red when damaged), counters, summoning sickness, attacking and blocking.
+- **The stack**: a floating panel (top right of the board; drag its header to move it, double-click to put it back) that appears while something is on the stack. The bottom of the stack is on the left, the item that resolves next is on the right, marked **Next**. Spells show their card; abilities show their source, whether they are triggered or activated, their text and their targets.
+- **Right**: the decision panel, the auto-pass controls and the game log (written to you; new lines flash; it follows the game unless you scroll up), then the match flow: whose turn it is, who has priority, and the steps of the turn with the current one lit in the active player's colour (blue for you, red for MageZero) and the steps already played dimmed.
+
+### What a stack item points at
+
+Lines drawn from the stack show what the top item (or the one under the mouse) interacts with:
+
+- **gold line and number**: the permanent or card that put the ability on the stack. Every source on the stack gets a number, shown on the stack item and on the source, so several triggers of one card share a number;
+- **violet arrow with a ring**: its targets (cards, players, other spells on the stack);
+- **dashed violet line**: what it affects without targeting, such as "that creature" in a trigger.
+
+A card that is not on the table (in a graveyard, in exile, in a hand or library) is pointed at through its pile, which lights up.
+
+Cards revealed by either player, or that only you look at, open in a window as it happens (several queue up: **Next**, then **Close**).
 
 Hover any card for a large image and its current state. Card images come from Scryfall (internet needed; cards without an image show a text frame). When MageZero casts a spell it is shown in the middle of the table for a moment.
 
@@ -51,22 +63,37 @@ Hover any card for a large image and its current state. Card images come from Sc
 
 Whenever the engine needs you, the decision panel lights up gold with the question and your options. Cards and players you can act on glow on the table; you can click them instead of the buttons (a card with several options opens a small menu). Choices with only one legal option are not asked.
 
+- **Activating an ability** of a permanent: when you have priority, a permanent with an ability you can activate now glows; click it (or its line in the decision panel). Mana abilities are not offered here: you tap sources while paying a cost (below), so a plain land does not glow.
+- **Choosing targets**: after you cast or activate something that targets, the panel asks for each target; legal targets glow on the table. A graveyard or exile pile that holds legal targets glows too: open it and click the card.
+
 | Decision | How it looks |
 |---|---|
 | Priority | your playable spells, abilities and land drops, plus **Pass priority** |
 | Mulligan, yes/no | two large buttons |
 | Targets, modes, choices | one button per option, with card art; **Done choosing** when you may stop |
-| Attackers | asked one creature at a time: **Attack MageZero** or **Don't attack**; **All attack** / **No more attacks** answer the rest of this combat |
-| Blockers | asked one blocker at a time: one button per attacker it can block, or **Don't block**; **No blocks** skips the rest |
+| Attackers | the whole attack at once: click your glowing creatures to attack with them (a chosen one turns a little and burns brighter; click it again to hold it back). A creature that can also attack a planeswalker opens a menu. **All attack** chooses every one. **Pass priority** (Space) declares the attack; with nothing chosen, no creature attacks. A creature that attacks lunges forward in sparks and flames (no particles when the system asks for reduced motion) |
+| Blockers | the whole block at once: click one of your glowing creatures, a line follows the pointer, then click the attacker it blocks; the line stays. Click a blocker again to aim it elsewhere (click the table or Esc to leave it unblocking). **Pass priority** (Space) declares the blocks. When they break a restriction (menace), you are asked again with your blocks kept. During combat, lines join each blocker to its attacker (blue yours, red MageZero's) |
 | Numbers (X costs) | a slider and a number box for long ranges |
+| Choices among cards (a library search, "look at the top six…") | a window with the cards: those you can choose glow, the others are dimmed; **Done choosing** when you may stop. **Hide** (or Esc) shows the table; **Show the cards** in the decision panel brings them back |
+| Cards you look at with nothing to choose (Winota without a Human among the six) | the same window with **OK** |
+| Naming a card, or another choice among many names (a creature type) | a search box: type part of the name (accents and punctuation do not matter), ↑/↓ and Enter or click a result. While the box is empty it lists the cards of this game. Every name XMage offers can be chosen (the bot only considers the cards of its catalog) |
+| Several of your triggers at once | they wait under the stack panel: click them in the order they go on the stack (the last one placed is on top and resolves first; 1–9 place them too), drag placed ones to reorder or click one to take it back, **Place all** for the rest, then **Confirm order** (Space). The whole order is sent at once and the engine then puts them on the stack in that order |
 
-Mana is always paid automatically (XMage's auto-payment), for you and the bot. Some sources still ask a question while paying, such as which colour Command Tower should make.
+### Paying mana
+
+Whenever you owe mana (casting a spell, activating an ability, a "pay {1}?" trigger), mana already in your pool is used first; for the rest the panel shows **Pay {2}{R}** and you choose how:
+
+- **By hand**: click a glowing source on your battlefield, or its line in the panel (identical lands are listed once, with ×N). A source with several mana abilities, such as a dual land, opens a menu of them. A source that makes mana of any colour (Command Tower) then shows its colours as mana symbols. You are asked again until the cost is paid. Only sources whose mana can go towards the cost are offered.
+- **Auto pay** (Space): the rest of the cost is paid for you. For each part of the cost it taps an artifact if one can pay it, else a land, else another permanent (a mana creature), and only last a source that is sacrificed for mana (Treasure, Lotus Petal) or a card in your hand (Simian Spirit Guide). Colours of any-colour sources are picked to fit the cost. When none of those can pay, XMage's own payment tries everything, including Phyrexian mana with life and convoke. If it still cannot finish, the panel says so and you pay the rest by hand or cancel.
+- **Cancel**: the spell or ability is not cast and everything is undone; you can cast it again in the same window.
+
+The toggle **Always auto pay mana costs** answers every payment with Auto pay (except one Auto pay could not finish). The bot always uses XMage's automatic payment.
 
 ### Keyboard
 
 | Key | Action |
 |---|---|
-| Space / Enter | the gold button: pass priority, don't attack, don't block, keep… |
+| Space / Enter | the gold button: pass priority (also declares the chosen attackers or blockers), keep… |
 | 1–9 | the numbered option |
 | E | pass priority until the end of this turn |
 | T | pass priority until your next main phase |
@@ -98,4 +125,4 @@ Only one browser tab plays at a time: the most recently opened one. Others show 
 
 ## How it works
 
-Your seat is `WebPlayer` (`integration/xmage/src/mage/player/ai/policy/WebPlayer.java`), a `PolicyPlayer` whose decisions go to the browser instead of the policy service. You therefore choose among exactly the candidates the policy is offered (`PolicyCandidates`), with readable labels. For each decision the engine posts the options and a snapshot of what you may see (never the bot's hand or library) to `/engine/decide`; the server holds the request until you answer. The page long-polls `/api/state` and answers through `/api/answer`. The server is `src/magezero/webplay.py` and the page is `src/magezero/web/index.html` (plain HTML and JavaScript, no build step).
+Your seat is `WebPlayer` (`integration/xmage/src/mage/player/ai/policy/WebPlayer.java`), a `PolicyPlayer` whose decisions go to the browser instead of the policy service. You therefore choose among exactly the candidates the policy is offered (`PolicyCandidates`), with readable labels. For each decision the engine posts the options and a snapshot of what you may see (never the bot's hand or library) to `/engine/decide`. Each stack item in the snapshot names its `source` and its `targets`, each with its zone and owner: the targets of every chosen mode (`kind: "target"`) and the objects its effects' target pointers name (`kind: "related"`), which is what the page draws its lines from; the server holds the request until you answer. The page long-polls `/api/state` and answers through `/api/answer`. The server is `src/magezero/webplay.py` and the page is `src/magezero/web/index.html` (plain HTML and JavaScript, no build step).

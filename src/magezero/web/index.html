@@ -22,6 +22,7 @@
   --hh: calc(var(--hw) * 1.396);
   --rail: clamp(200px, 15vw, 240px);
   --side: clamp(300px, 24vw, 380px);
+  --flow: clamp(104px, 7.5vw, 132px);           /* match flow column */
   --shadow: 0 10px 30px rgba(0, 0, 0, .45);
 }
 * { box-sizing: border-box; }
@@ -65,9 +66,9 @@ button { font: inherit; color: inherit; }
 .tools { display: flex; gap: 8px; }
 
 /* ---------- layout ---------- */
-main { display: grid; grid-template-columns: 1fr var(--side); min-height: 0; }
+main { display: grid; grid-template-columns: minmax(0, 1fr) var(--side) var(--flow); min-height: 0; }
 .table { position: relative; min-height: 0; display: grid; grid-template-columns: var(--rail) minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr) auto;
   background: radial-gradient(120% 90% at 55% 50%, var(--felt-1) 0%, var(--felt-2) 62%, var(--felt-edge) 100%); overflow: hidden; }
 .table::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .55;
   background-image: radial-gradient(rgba(255,255,255,.028) 1px, transparent 1px); background-size: 4px 4px; }
@@ -79,32 +80,101 @@ main { display: grid; grid-template-columns: 1fr var(--side); min-height: 0; }
 .lane { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
 .lane:empty { display: none; }
 .lane .gap { width: 14px; flex: none; }
-.center { grid-column: 1 / -1; display: grid; grid-template-columns: var(--rail) minmax(0, 1fr); align-items: center; position: relative; z-index: 2;
-  border-top: 1px solid rgba(255,255,255,.05); border-bottom: 1px solid rgba(255,255,255,.05);
-  background: linear-gradient(90deg, rgba(0,0,0,.42), rgba(0,0,0,.2) 40%, rgba(0,0,0,.42)); min-height: 54px; }
-.turnchip { margin: 0 10px 0 14px; display: flex; align-items: center; gap: 10px; }
-.turnchip .num { font: 800 24px/1 Inter, sans-serif; color: var(--gold); min-width: 28px; text-align: center; }
-.turnchip .who { font-size: 10px; text-transform: uppercase; letter-spacing: 1.3px; color: var(--text-3); line-height: 1.25; }
-.turnchip .who b { display: block; font-size: 13px; letter-spacing: .2px; text-transform: none; }
-.turnchip .who b.you { color: var(--you); } .turnchip .who b.opponent { color: var(--bot); }
-.centerbody { display: flex; align-items: center; gap: 14px; padding: 7px 14px 7px 0; min-width: 0; }
-.phases { display: flex; gap: 2px; padding: 3px; background: rgba(0,0,0,.4); border: 1px solid var(--line); border-radius: 10px; flex: none; }
-.phases span { font-size: 10.5px; font-weight: 700; letter-spacing: .5px; color: var(--text-3); padding: 5px 6px; border-radius: 7px; min-width: 27px; text-align: center; transition: background .2s, color .2s; }
-.phases span.main { color: var(--text-2); }
-.phases span.on { color: #061019; background: var(--you); box-shadow: 0 0 14px rgba(78,168,255,.45); }
-.phases.opponent span.on { background: var(--bot); box-shadow: 0 0 14px rgba(255,111,97,.45); }
-.stackzone { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; overflow-x: auto; scrollbar-width: none; }
-.stackzone .hint { color: var(--text-3); font-size: 12.5px; white-space: nowrap; }
-.stackzone .hint b { color: var(--text-2); font-weight: 600; }
-.stackzone .label { font-size: 10.5px; font-weight: 700; letter-spacing: 1.3px; color: var(--gold); text-transform: uppercase; white-space: nowrap; }
-.sobj { display: flex; align-items: center; gap: 9px; padding: 4px 12px 4px 4px; border-radius: 11px; background: var(--glass-2);
-  border: 1px solid var(--line-2); max-width: 360px; flex: none; animation: pop .25s ease-out; }
-.sobj.you { border-color: rgba(78,168,255,.55); } .sobj.opponent { border-color: rgba(255,111,97,.55); }
-.sobj.top { box-shadow: 0 0 0 2px rgba(230,180,80,.45), 0 6px 18px rgba(0,0,0,.4); }
-.sobj .thumb { width: 36px; height: 36px; border-radius: 8px; background: #222 center 25%/cover; flex: none; }
-.sobj .t { min-width: 0; }
-.sobj .t b { display: block; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sobj .t span { display: block; font-size: 11px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 290px; }
+.field.me { border-top: 1px solid rgba(255,255,255,.07); }
+
+/* ---------- match flow (right column) ---------- */
+.flowcol { display: flex; flex-direction: column; gap: 8px; min-height: 0; padding: 12px 10px; overflow: auto; scrollbar-width: none;
+  background: linear-gradient(180deg, #0d1217, #090c10); border-left: 1px solid var(--line); }
+.turnbox { text-align: center; padding: 10px 6px 9px; border-radius: 10px; border: 1px solid var(--line-2); background: rgba(255,255,255,.03); }
+.turnbox small { display: block; font-size: 10px; font-weight: 800; letter-spacing: 1.6px; text-transform: uppercase; color: var(--text-3); }
+.turnbox b { display: block; font: 800 20px/1.15 Inter, sans-serif; margin-top: 2px; }
+.turnbox i { display: block; font-size: 11px; color: var(--text-3); font-style: normal; }
+.turnbox.you { border-color: rgba(78,168,255,.55); background: linear-gradient(180deg, rgba(78,168,255,.14), transparent); }
+.turnbox.you small { color: var(--you); }
+.turnbox.opponent { border-color: rgba(255,111,97,.55); background: linear-gradient(180deg, rgba(255,111,97,.14), transparent); }
+.turnbox.opponent small { color: var(--bot); }
+.prio { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 5px 4px; border-radius: 8px; border: 1px solid var(--line);
+  font-size: 9.5px; font-weight: 800; letter-spacing: .6px; white-space: nowrap; text-transform: uppercase; color: var(--text-3); }
+.prio::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.prio.you { color: var(--you); border-color: rgba(78,168,255,.45); } .prio.opponent { color: var(--bot); border-color: rgba(255,111,97,.45); }
+.prio.mine { color: var(--gold-2); border-color: var(--gold); animation: prioglow 1.8s ease-in-out infinite; }
+@keyframes prioglow { 50% { box-shadow: 0 0 14px rgba(230,180,80,.35); } }
+.steps { display: flex; flex-direction: column; gap: 3px; }
+.steps .grp { display: flex; align-items: center; gap: 6px; margin: 5px 0 1px; font-size: 9.5px; font-style: italic; color: var(--text-3); }
+.steps .grp::before, .steps .grp::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.steps .st { text-align: center; padding: 6px 4px; border-radius: 7px; font-size: 11px; font-weight: 700; letter-spacing: 1px; color: var(--text-2);
+  border: 1px solid transparent; transition: background .2s, color .2s; }
+.steps .st.main { background: rgba(255,255,255,.035); border-color: var(--line); }
+.steps .st.past { color: var(--text-3); opacity: .5; }
+.steps .st.on { padding: 10px 4px; font-size: 13px; color: var(--text); letter-spacing: .4px; }
+.steps .st.on small { display: block; font-size: 10.5px; font-weight: 500; letter-spacing: 0; color: var(--text-2); margin-top: 3px; }
+.steps.you .st.on { border-color: var(--you); background: linear-gradient(180deg, rgba(78,168,255,.28), rgba(78,168,255,.08)); box-shadow: 0 0 16px rgba(78,168,255,.25); }
+.steps.opponent .st.on { border-color: var(--bot); background: linear-gradient(180deg, rgba(255,111,97,.28), rgba(255,111,97,.08)); box-shadow: 0 0 16px rgba(255,111,97,.25); }
+.legend { margin-top: auto; display: flex; justify-content: center; gap: 10px; padding-top: 8px; font-size: 9.5px; font-weight: 700; letter-spacing: 1px; color: var(--text-3); }
+.legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+
+/* ---------- the stack (floating) and its links ---------- */
+.stackpanel { position: absolute; z-index: 20; display: none; flex-direction: column; min-width: 170px; max-width: min(720px, 60%);
+  background: rgba(12, 16, 21, .92); backdrop-filter: blur(8px); border: 1px solid rgba(230,180,80,.45); border-radius: 12px;
+  box-shadow: 0 18px 40px rgba(0,0,0,.55); }
+.stackpanel.show { display: flex; animation: pop .2s ease-out; }
+.sp-h { display: flex; align-items: center; gap: 8px; padding: 7px 12px; cursor: grab; user-select: none; touch-action: none;
+  font: 700 13px/1 Cinzel, serif; letter-spacing: .5px; color: var(--gold-2); border-bottom: 1px solid var(--line); }
+.sp-h .grip { color: var(--text-3); font-family: Inter, sans-serif; letter-spacing: -1px; }
+.sp-h b { margin-left: auto; font: 700 11px/1 Inter, sans-serif; color: var(--text-3); }
+.sp-h small { font: 500 10.5px/1 Inter, sans-serif; color: var(--text-3); letter-spacing: 0; }
+.sp-body { display: flex; align-items: flex-start; padding: 22px 12px 12px; overflow: hidden; }
+.stile { --tw: 124px; position: relative; flex: none; width: var(--tw); border-radius: 9px; background: #141a20; cursor: default;
+  border: 1px solid var(--line-2); box-shadow: -6px 0 14px rgba(0,0,0,.45); transition: transform .15s, box-shadow .15s; }
+.stile + .stile { margin-left: calc(var(--ov, 0px) * -1); }
+.stile:hover, .stile.focus { transform: translateY(-6px); z-index: 50 !important; }
+.stile.you { border-color: rgba(78,168,255,.6); } .stile.opponent { border-color: rgba(255,111,97,.6); }
+.stile.top { box-shadow: 0 0 0 2px var(--gold), -6px 0 14px rgba(0,0,0,.45); }
+.stile .card { position: relative; --cw: calc(var(--tw) - 2px); border-radius: 8px 8px 0 0; box-shadow: none; }
+.stile .ab { height: calc((var(--tw) - 2px) * 1.396); display: flex; flex-direction: column; border-radius: 8px 8px 0 0; overflow: hidden; }
+.stile .ab .nm { padding: 6px 7px 5px; font-weight: 700; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: rgba(0,0,0,.35); }
+.stile .ab .art { height: 34%; background: #222 center 25%/cover; flex: none; }
+.stile .ab .kd { padding: 4px 7px 0; font-size: 9px; font-weight: 800; letter-spacing: .8px; text-transform: uppercase; color: #7fb6ff; }
+.stile .ab .kd.triggered { color: #c9a0ff; }
+.stile .ab .tx { padding: 3px 7px 6px; font-size: 10.5px; line-height: 1.3; color: var(--text); overflow: hidden; flex: 1; }
+.stile .ab .tx .ms { width: .95em; height: .95em; }
+.stile .tg { padding: 5px 7px; font-size: 10.5px; color: var(--text-2); border-top: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stile .tg b { color: #e3b8ff; font-weight: 600; }
+.stile .sn { position: absolute; z-index: 3; left: 8px; top: -13px; }
+.stile .res { position: absolute; z-index: 3; right: 6px; top: -10px; font-size: 9px; font-weight: 800; letter-spacing: .8px; padding: 3px 6px; border-radius: 5px;
+  background: var(--gold); color: var(--gold-ink); text-transform: uppercase; }
+/* Ordering triggers: the ones still to place, the placed ones (draggable), and the lock-in. */
+.sp-pending { display: none; flex-direction: column; gap: 6px; padding: 10px 12px 12px; border-top: 1px dashed rgba(230,180,80,.35); background: rgba(230,180,80,.05); }
+.sp-pending.show { display: flex; }
+.sp-pending .lbl { font-size: 10.5px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--gold-2); }
+.sp-pending .lbl span { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--text-3); margin-left: 6px; }
+.sp-pending .row { display: flex; gap: 8px; overflow-x: auto; padding: 4px 2px 2px; scrollbar-width: thin; }
+.sp-pending .stile { --tw: 104px; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,.4); }
+.sp-pending .stile:hover { border-color: var(--gold); transform: translateY(-4px); }
+.sp-pending .stile .key { position: absolute; z-index: 3; right: 6px; top: 6px; }
+.stile.proposed { cursor: grab; border: 1px dashed var(--gold); }
+.stile.proposed:active { cursor: grabbing; }
+.stile.dragging { opacity: .35; }
+.stile.locked { border: 1px solid var(--gold-2); animation: lockin .55s ease-out forwards; }
+@keyframes lockin { 0% { box-shadow: 0 0 0 0 rgba(255,215,120,0); } 35% { box-shadow: 0 0 0 4px rgba(255,215,120,.95), 0 0 34px rgba(255,190,80,.9); filter: brightness(1.35); }
+  100% { box-shadow: 0 0 0 2px var(--gold), 0 0 14px rgba(230,180,80,.45); filter: none; } }
+.sp-ctl { display: none; gap: 8px; padding: 0 12px 12px; }
+.sp-ctl.show { display: flex; }
+.sp-ctl .btn { flex: 1; padding: 9px 12px; }
+.num { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; font: 800 12px/1 Inter, sans-serif;
+  background: #1a140a; color: var(--gold-2); border: 2px solid var(--gold); box-shadow: 0 2px 8px rgba(0,0,0,.6); }
+#links { position: fixed; inset: 0; z-index: 35; pointer-events: none; }
+#combatLinks { position: fixed; inset: 0; z-index: 33; pointer-events: none; }
+#combatLinks svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+#links svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+#links .num { position: absolute; transform: translate(-50%, -50%); }
+.card.ln-target, .seat.ln-target { outline: 3px solid #c77dff; outline-offset: 2px; }
+.card.ln-source { outline: 2px solid var(--gold); outline-offset: 2px; }
+.pinged { border-color: #c77dff !important; color: #f0dcff !important; animation: ping 1.4s ease-in-out infinite; }
+@keyframes ping { 50% { box-shadow: 0 0 0 3px rgba(199,125,255,.35), 0 0 16px rgba(199,125,255,.45); } }
+.chip.can { border-color: var(--gold); color: var(--gold-2); animation: seatglow 2.2s ease-in-out infinite; }
+.hintline { font-size: 12px; color: var(--text-3); line-height: 1.4; }
+.hintline b { color: var(--gold-2); font-weight: 600; }
 @keyframes pop { from { transform: scale(.9); opacity: 0; } }
 
 /* ---------- seat panels ---------- */
@@ -148,7 +218,9 @@ button.chip:hover { border-color: var(--line-2); background: rgba(255,255,255,.0
   box-shadow: 1px 1px 3px rgba(0,0,0,.5); }
 
 /* ---------- cards ---------- */
-.slot { position: relative; flex: none; width: var(--cw); height: var(--ch); transition: width .22s ease; }
+.slot { position: relative; flex: none; width: var(--cw); height: var(--ch); transition: width .22s ease, transform .22s ease; }
+/* Declaring attackers: a chosen creature turns a little (it taps for real once declared). */
+.slot.atk-sel { transform: rotate(15deg); }
 .slot.tapped { width: var(--ch); }
 .slot.has-att { margin-top: calc(var(--ch) * .2); }
 .card { position: absolute; left: 0; top: 0; width: var(--cw); height: calc(var(--cw) * 1.396); border-radius: calc(var(--cw) * .055);
@@ -187,6 +259,19 @@ button.chip:hover { border-color: var(--line-2); background: rgba(255,255,255,.0
 @keyframes glow { 0%, 100% { box-shadow: 0 0 0 2px var(--gold), 0 0 12px rgba(230,180,80,.45); } 50% { box-shadow: 0 0 0 2px var(--gold-2), 0 0 24px rgba(230,180,80,.8); } }
 .card.can:hover { filter: brightness(1.12); }
 .slot:not(.tapped) > .card.can:hover { transform: translateY(-6px); }
+/* Declare attackers: creatures still to be asked burn red; the one being asked burns brighter. */
+.card.atk-ready { animation: ready 1.6s ease-in-out infinite; }
+@keyframes ready { 0%, 100% { box-shadow: 0 0 0 2px rgba(255,77,46,.75), 0 0 10px rgba(255,90,40,.35); } 50% { box-shadow: 0 0 0 2px #ff6a3d, 0 0 20px rgba(255,90,40,.6); } }
+.card.atk-now, .card.can.atk-now { animation: now 1s ease-in-out infinite; }
+@keyframes now { 0%, 100% { box-shadow: 0 0 0 3px #ff5a2a, 0 0 18px rgba(255,110,40,.7), 0 0 40px rgba(255,60,20,.35); }
+  50% { box-shadow: 0 0 0 3px #ffb347, 0 0 28px rgba(255,140,50,.9), 0 0 60px rgba(255,60,20,.5); } }
+.slot.lunge { animation: lunge .55s cubic-bezier(.3, 1.4, .5, 1); z-index: 5; }
+@keyframes lunge { 0% { transform: none; } 35% { transform: translateY(var(--lunge, -18px)) scale(1.08); } 100% { transform: none; } }
+#fx { position: fixed; inset: 0; z-index: 34; pointer-events: none; width: 100vw; height: 100vh; }
+@media (prefers-reduced-motion: reduce) { .slot.lunge { animation: none; } #fx { display: none; } }
+/* Declaring blockers: the blocker whose line follows the pointer, and blockers already aimed. */
+.card.can.arming { animation: none; box-shadow: 0 0 0 3px var(--you), 0 0 26px rgba(78,168,255,.85); }
+.card.can.blocking { animation: none; }
 .card.marked { animation: none; box-shadow: 0 0 0 3px #fff, 0 0 24px rgba(255,255,255,.7) !important; }
 .att { position: absolute; left: 0; width: var(--cw); }
 .att .card { position: relative; }
@@ -222,6 +307,21 @@ aside { display: flex; flex-direction: column; min-height: 0; background: linear
 .opt .lbl { flex: 1; min-width: 0; font-size: 13px; font-weight: 500; }
 .opt .kbd { flex: none; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.searchbox { display: flex; flex-direction: column; gap: 8px; }
+.searchbox input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(230,180,80,.55); background: rgba(0,0,0,.35);
+  color: var(--text); font: 500 14px Inter, sans-serif; outline: none; }
+.searchbox input:focus { border-color: var(--gold-2); box-shadow: 0 0 0 3px rgba(230,180,80,.18); }
+.manapick { display: flex; flex-direction: column; gap: 10px; }
+.manapick .ttl { font: 700 15px/1.2 Cinzel, serif; letter-spacing: 3px; text-transform: uppercase; color: var(--gold); }
+.manapick .sub { font-style: italic; color: var(--text-2); }
+.manapick .pips { display: flex; flex-wrap: wrap; gap: 10px; }
+.pip { position: relative; display: grid; place-items: center; width: 54px; height: 54px; padding: 0; border: 0; border-radius: 50%; background: none; cursor: pointer;
+  color: var(--text-2); transition: transform .08s, box-shadow .15s; }
+.pip .ms { width: 50px; height: 50px; margin: 0; }
+.pip:hover, .pip:focus-visible { transform: translateY(-2px); box-shadow: 0 0 0 2px var(--gold-2), 0 0 16px rgba(230,180,80,.6); outline: none; }
+.pip .kbd { position: absolute; right: -4px; bottom: -4px; background: var(--bg); opacity: .8; }
+.manapick .art { width: min(100%, 220px); border-radius: 10px; box-shadow: 0 6px 18px rgba(0,0,0,.5); }
+.opt.sel { background: rgba(230,180,80,.14); border-color: rgba(230,180,80,.7); }
 .actions .btn { flex: 1; padding: 11px 14px; font-size: 14px; }
 .amount { display: flex; flex-direction: column; gap: 10px; }
 .amount .row { display: flex; align-items: center; gap: 10px; }
@@ -320,7 +420,7 @@ aside { display: flex; flex-direction: column; min-height: 0; background: linear
 .result.win h2 { color: var(--gold-2); } .result.loss h2 { color: #ffb0a8; }
 .result p { color: var(--text-2); margin: 8px 0 24px; }
 .result .row { display: flex; gap: 10px; justify-content: center; }
-.banner { position: fixed; left: 0; right: var(--side); top: 45%; z-index: 40; pointer-events: none; display: flex; justify-content: center; opacity: 0; }
+.banner { position: fixed; left: 0; right: calc(var(--side) + var(--flow)); top: 45%; z-index: 40; pointer-events: none; display: flex; justify-content: center; opacity: 0; }
 .banner.show { animation: banner 1.6s ease-out; }
 .banner div { padding: 14px 80px; font: 700 30px/1 Cinzel, serif; letter-spacing: 1px;
   background: linear-gradient(90deg, transparent, rgba(0,0,0,.78) 22%, rgba(0,0,0,.78) 78%, transparent); }
@@ -335,23 +435,39 @@ aside { display: flex; flex-direction: column; min-height: 0; background: linear
 @keyframes spot { 0% { opacity: 0; transform: translate(-50%, -46%) scale(.9); } 12%, 78% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -52%) scale(.98); } }
 .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 90; padding: 10px 16px; border-radius: 10px;
   background: #3a1d1d; border: 1px solid rgba(255,107,107,.5); color: #ffd6d2; display: none; box-shadow: var(--shadow); }
+/* Card viewer: cards a choice is made among, or that were revealed or looked at. */
+.viewer { position: fixed; inset: 0; z-index: 55; display: none; align-items: center; justify-content: center; padding: 20px; background: rgba(3, 5, 8, .55); }
+.viewer.show { display: flex; animation: fade .18s ease-out; }
+.vbox { background: linear-gradient(180deg, #171d25, #0f141a); border: 1px solid rgba(230,180,80,.45); border-radius: 16px; box-shadow: 0 30px 80px rgba(0,0,0,.6);
+  max-width: min(1180px, 96vw); max-height: 92vh; display: flex; flex-direction: column; animation: rise .22s ease-out; }
+.vh { display: flex; align-items: flex-start; gap: 18px; padding: 18px 22px 12px; border-bottom: 1px solid var(--line); }
+.vh > div { flex: 1; min-width: 0; }
+.vl { font-size: 11px; font-weight: 800; letter-spacing: 2.4px; text-transform: uppercase; color: var(--gold); }
+.vt { margin-top: 4px; font: 600 17px/1.35 Inter, sans-serif; color: var(--text); }
+.vcards { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; padding: 20px 22px; overflow: auto; --cw: clamp(120px, 11vw, 168px); }
+.vcards .card { position: relative; }
+.vcards.picking .card:not(.can) { filter: saturate(.25) brightness(.5); }
+.vf { display: flex; justify-content: flex-end; gap: 10px; padding: 12px 22px 18px; border-top: 1px solid var(--line); }
+.vf .btn { padding: 10px 22px; font-size: 14px; }
 .empty-field { margin: auto; color: var(--text-3); font-size: 13px; }
 
 @media (max-width: 1100px) {
-  :root { --side: 280px; --rail: 196px; }
+  :root { --side: 280px; --rail: 196px; --flow: 96px; }
+  .steps .st { font-size: 10px; letter-spacing: .5px; } .steps .st.on small { display: none; }
   .matchup { display: none; }
   .avatar { width: 38px; height: 38px; }
   .life b { font-size: 26px; }
   .chip { font-size: 0; gap: 4px; justify-content: space-between; }   /* icon + number only */
   .chip b { font-size: 12px; }
-  .phases span { min-width: 22px; padding: 5px 4px; font-size: 10px; }
 }
 @media (max-width: 760px) {
   html, body { overflow: auto; }
   #app { height: auto; min-height: 100vh; }
   main { grid-template-columns: 1fr; }
   .table { grid-template-columns: 1fr; grid-template-rows: auto; }
-  .rail { padding: 10px; } .center { grid-template-columns: 1fr; } .turnchip { display: none; }
+  .rail { padding: 10px; }
+  .flowcol { flex-direction: row; flex-wrap: wrap; align-items: center; } .steps { flex-direction: row; flex-wrap: wrap; } .steps .grp, .legend { display: none; }
+  .stackpanel { max-width: calc(100% - 16px); }
   .field { min-height: 170px; }
   .handbar { height: calc(var(--hh) + 20px); } .hand { bottom: 10px; }
   .banner { right: 0; }
@@ -379,13 +495,15 @@ aside { display: flex; flex-direction: column; min-height: 0; background: linear
     <section class="table" id="table">
       <div class="rail opp" id="oppRail"></div>
       <div class="field opp" id="oppField"></div>
-      <div class="center">
-        <div class="turnchip" id="turnchip"></div>
-        <div class="centerbody"><div class="phases" id="phases"></div><div class="stackzone" id="stack"></div></div>
-      </div>
       <div class="rail me" id="myRail"></div>
       <div class="field me" id="myField"></div>
       <div class="handbar"><div class="hand-label" id="handLabel"></div><div class="hand" id="hand"></div></div>
+      <div class="stackpanel" id="stackpanel">
+        <div class="sp-h" id="stackhead" title="Drag to move"><span class="grip">⠿⠿</span>The Stack<small>top resolves first</small><b id="stackcount"></b></div>
+        <div class="sp-body" id="stack"></div>
+        <div class="sp-ctl" id="stackctl"></div>
+        <div class="sp-pending" id="stackpending"></div>
+      </div>
     </section>
     <aside>
       <div class="decision" id="decision"></div>
@@ -397,11 +515,17 @@ aside { display: flex; flex-direction: column; min-height: 0; background: linear
         <div class="passing" id="passing"></div>
         <label class="toggle"><input type="checkbox" id="autoEmpty" checked><span class="sw"></span><span>Auto-pass on an empty stack outside my main phases</span></label>
         <label class="toggle"><input type="checkbox" id="autoOwn" checked><span class="sw"></span><span>Auto-pass while my own spell or ability is on top of the stack</span></label>
+        <label class="toggle"><input type="checkbox" id="autoMana"><span class="sw"></span><span>Always auto pay mana costs (artifacts, then lands, then sources to sacrifice)</span></label>
       </div>
       <div class="logwrap"><div class="panel-h">Game log</div><div class="log" id="log"></div></div>
     </aside>
+    <nav class="flowcol" id="flowcol" aria-label="Turn and phase"></nav>
   </main>
 </div>
+<div class="viewer" id="viewer"></div>
+<canvas id="fx"></canvas>
+<div id="combatLinks"></div>
+<div id="links"></div>
 <div class="preview" id="preview"></div>
 <div class="menu" id="menu"></div>
 <div class="banner" id="banner"><div id="bannerText"></div></div>
@@ -425,9 +549,17 @@ const STEPS = [["UNTAP","UT","Untap"],["UPKEEP","UP","Upkeep"],["DRAW","DR","Dra
   ["FIRST_COMBAT_DAMAGE","FS","First-strike damage"],["COMBAT_DAMAGE","DMG","Combat damage"],["END_COMBAT","EC","End of combat"],
   ["POSTCOMBAT_MAIN","M2","Second main phase"],["END_TURN","END","End step"],["CLEANUP","CL","Cleanup"]];
 const STEP_NAME = Object.fromEntries(STEPS.map(([k, , n]) => [k, n]));
+// The right-hand column: the turn's steps, grouped like the rules' phases.
+const FLOW = [["beginning", [["UNTAP", "Untap"], ["UPKEEP", "Upkeep"], ["DRAW", "Draw"]]], [null, [["PRECOMBAT_MAIN", "Main 1"]]],
+  ["combat", [["BEGIN_COMBAT", "Beg."], ["DECLARE_ATTACKERS", "Atk"], ["DECLARE_BLOCKERS", "Blk"], ["FIRST_COMBAT_DAMAGE", "1st"], ["COMBAT_DAMAGE", "Dmg"], ["END_COMBAT", "End c."]]],
+  [null, [["POSTCOMBAT_MAIN", "Main 2"]]], ["ending", [["END_TURN", "End"], ["CLEANUP", "Clean"]]]];
+const STEP_HINT = { UNTAP: "Permanents untap.", UPKEEP: "Upkeep triggers.", DRAW: "Draw a card.", PRECOMBAT_MAIN: "Cast or pass.",
+  BEGIN_COMBAT: "Before attacks.", DECLARE_ATTACKERS: "Declare attackers.", DECLARE_BLOCKERS: "Declare blockers.",
+  FIRST_COMBAT_DAMAGE: "First strike deals damage.", COMBAT_DAMAGE: "Combat damage.", END_COMBAT: "Combat ends.",
+  POSTCOMBAT_MAIN: "Cast or pass.", END_TURN: "End-step triggers.", CLEANUP: "Damage wears off." };
 const MAIN = new Set(["PRECOMBAT_MAIN", "POSTCOMBAT_MAIN"]);
-const KIND = { pass: "Priority", cast: "Priority", activate: "Priority", target: "Choose a target", use: "Choice", mode: "Choose a mode",
-  attack: "Attackers", block: "Blockers", order: "Order", amount: "Choose a number", mulligan: "Opening hand", choose: "Choice" };
+const KIND = { mana: "Pay mana", color: "Choose a color", search: "Choose a name", triggers: "Order triggers", look: "Look at cards", pass: "Priority", cast: "Priority", activate: "Priority", target: "Choose a target", use: "Choice", mode: "Choose a mode",
+  attack: "Attackers", block: "Blockers", attackers: "Attackers", blockers: "Blockers", order: "Order", amount: "Choose a number", mulligan: "Opening hand", choose: "Choice" };
 const ICON = {
   hand: '<path d="M8 4h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><path d="M10 8l2-2 2 2"/>',
   library: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 3v18"/>',
@@ -472,13 +604,21 @@ const IMG = load("img.v3", {});          // name -> {n: normal, a: art_crop, l: 
 const waiters = new Map(); const pending = new Set(); let timer = null;
 const tries = new Map();
 // Tokens: XMage names them "Goblin Token"; Scryfall has token cards named "Goblin".
+// The search also finds double-faced tokens ("Dinosaur // Treasure"), so a token named
+// exactly that is preferred, then the matching face of a double-faced one.
+// (v2: v1 keys could hold the wrong face of such a token.)
+const TOKEN = "token2:";
 async function tokenArt(name) {
-  const key = "token:" + name;
+  const key = TOKEN + name;
   if (key in IMG) return IMG[key] || null;
   try {
     const base = name.replace(/ Token$/, "");
     const r = await fetch("https://api.scryfall.com/cards/search?unique=art&q=" + encodeURIComponent(`!"${base}" t:token`));
-    if (r.ok) { const card = (await r.json()).data[0]; IMG[key] = facesFor(card, card.name); }
+    if (r.ok) {
+      const found = (await r.json()).data;
+      const card = found.find((c) => c.name === base) || found.find((c) => (c.card_faces || []).some((f) => f.name === base)) || found[0];
+      IMG[key] = facesFor(card, base);
+    }
     else if (r.status === 404) IMG[key] = 0;
     store("img.v3", IMG);
   } catch (e) { return null; }
@@ -486,7 +626,7 @@ async function tokenArt(name) {
 }
 const tokenWaits = new Map();
 function tokenImg(name, cb) {
-  const key = "token:" + name;
+  const key = TOKEN + name;
   if (key in IMG) { if (IMG[key]) cb(IMG[key]); return; }
   if (!tokenWaits.has(name)) tokenWaits.set(name, tokenArt(name));
   tokenWaits.get(name).then((u) => u && cb(u));
@@ -554,8 +694,6 @@ let hotkeys = [], primary = null;
 const clientId = Math.random().toString(36).slice(2) + Date.now().toString(36);
 const inControl = () => !view || !view.controller || view.controller === clientId;
 function claim() { post("/api/claim", { client: clientId }).catch(() => {}); }
-// Combat shortcuts: XMage asks attackers and blockers one creature at a time.
-let combatAuto = null;  // {turn, kind: "attack" | "block", mode: "all" | "none"}
 async function post(path, body) {
   const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
   const data = await r.json().catch(() => ({}));
@@ -568,9 +706,16 @@ async function poll() {
     try {
       const r = await fetch("/api/state" + (version == null ? "" : "?since=" + version));
       const next = await r.json();
-      if (version == null || next.version !== version) { view = next; version = next.version; render(); autoPass(); }
+      if (version == null || next.version !== version) { cleanDecision(next.decision); view = next; version = next.version; render(); autoPass(); }
     } catch (e) { setStatus("err", "Lost the connection to the server, retrying…"); await new Promise((r) => setTimeout(r, 1500)); }
   }
+}
+// XMage writes labels and prompts with its client's markup ("<font …>Ragavan</font> [ab2]",
+// "<i>reminder</i>"); a label's "(source: …)" repeats the prompt's source.
+function cleanDecision(d) {
+  if (!d) return;
+  d.prompt = tidy(d.prompt || "");
+  for (const o of d.options) if (typeof o.label === "string") o.label = tidy(o.label).replace(/\s*\(source: [^()]*\)$/, "");
 }
 // The last answers this page sent and why (inspect window.mzTrace when a decision seems skipped).
 const mzTrace = (window.mzTrace = []);
@@ -581,6 +726,8 @@ async function answer(id, why = "click") {
   mzTrace.push({ why, kind: d.kind, label: (d.options.find((o) => o.id === id) || {}).label, turn: st.turn, step: st.step, active: st.active, stack: (st.stack || []).length });
   if (mzTrace.length > 200) mzTrace.shift();
   answered.add(d.decision); hideMenu(); hidePreview();
+  if (zoneOpen) closeDialog();
+  if (viewerMode === "decision") { hideViewer(); viewerMode = null; }
   $("decision").style.opacity = ".55";
   try { await post("/api/answer", { decision: d.decision, action_id: id, client: clientId }); }
   catch (e) { answered.delete(d.decision); toast(e.message); $("decision").style.opacity = ""; }
@@ -594,10 +741,10 @@ function autoPass() {
   if (s && passUntil && s.active === "you" && MAIN.has(s.step) && !s.stack.length) passUntil = false;
   renderPassing();
   if (!inControl()) return;
-  if (d && s && combatAuto && combatAuto.turn === s.turn && d.kind === combatAuto.kind && !answered.has(d.decision)) {
-    const opp = s.players.find((p) => p.side === "opponent");
-    const pick = combatAuto.mode === "all" ? d.options.find((o) => o.target === opp.id) : d.options.find((o) => !o.target);
-    if (pick) { setTimeout(() => answer(pick.id, "combat shortcut"), 60); return; }
+  // A payment auto pay could not finish is left to the player.
+  if (d && d.kind === "mana" && $("autoMana").checked && !answered.has(d.decision) && !/^Auto pay could not/.test(d.prompt)) {
+    setTimeout(() => { if (view.decision && view.decision.decision === d.decision) answer("auto", "auto pay"); }, 60);
+    return;
   }
   if (!isPriority(d) || !s || answered.has(d.decision)) return;
   let pass;
@@ -622,10 +769,12 @@ function indexState(s) {
   s.players.forEach((p) => { byId.set(p.id, { id: p.id, name: p.side === "you" ? "You" : "MageZero", player: p.side }); p.graveyard.forEach(add); p.exile.forEach(add); p.command.forEach(add); });
 }
 function optionsFor(ids) {
-  const d = view && view.decision; if (!d || answered.has(d.decision)) return [];
+  const d = view && view.decision; if (!d || answered.has(d.decision) || isDeclare(d)) return [];
   const set = new Set(ids);
   let hits = d.options.filter((o) => o.target && set.has(o.target));
   if (!hits.length) hits = d.options.filter((o) => o.source && set.has(o.source) && o.type !== "pass" && !(["attack", "block"].includes(o.type) && !o.target));
+  // Stacked identical lands: one of them pays.
+  if (d.kind === "mana") { const labels = new Set(); hits = hits.filter((o) => !labels.has(o.label) && labels.add(o.label)); }
   return hits;
 }
 function attachPreview(node, c) {
@@ -636,7 +785,7 @@ function attachPreview(node, c) {
 const isHidden = (c) => c.face_down || c.name === "Face-down card";
 // Generated tokens ("Goblin Token") use Scryfall's token cards; token copies keep a real card's name.
 const isTokenName = (c) => c.token && / Token$/.test(c.name);
-const cachedArt = (c) => (isHidden(c) ? null : isTokenName(c) ? ("token:" + c.name in IMG ? IMG["token:" + c.name] || null : undefined) : known(c.name));
+const cachedArt = (c) => (isHidden(c) ? null : isTokenName(c) ? (TOKEN + c.name in IMG ? IMG[TOKEN + c.name] || null : undefined) : known(c.name));
 function cardFace(c) {
   const node = h("div", { class: "card" });
   const im = cachedArt(c);
@@ -665,6 +814,8 @@ function cardEl(c, opt = {}) {
   if (c.phased_out) node.append(h("span", { class: "badge phase" }, "Phased out"));
   if (c.attacking) node.append(h("span", { class: "badge combat atk" }, "Attacking"));
   else if (c.blocking) node.append(h("span", { class: "badge combat blk" }, "Blocking"));
+  const dec = view && view.decision;
+  if (!opt.passive && isDeclare(dec) && plan && !answered.has(dec.decision)) combatCard(node, ids[0], dec);
   const hits = opt.passive ? [] : optionsFor(ids);
   if (hits.length) {
     node.classList.add("can");
@@ -682,6 +833,13 @@ function slot(c, opt = {}) {
     atts.forEach((a, i) => s.append(h("div", { class: "att", style: `top:calc(var(--ch) * ${(-0.2 * (atts.length - i)).toFixed(2)})` }, cardEl(a))));
   }
   s.append(cardEl(c, opt));
+  // A creature just chosen (or held back) turns from where it was, on the next frame.
+  const sel = !!plan && plan.kind === "attackers" && isDeclare(view.decision) && plan.picks.has(c.id);
+  if (turning && turning.id === c.id) {
+    turning = null;
+    s.classList.toggle("atk-sel", !sel);
+    requestAnimationFrame(() => requestAnimationFrame(() => s.classList.toggle("atk-sel", sel)));
+  } else if (sel) s.classList.add("atk-sel");
   return s;
 }
 function lanes(cards, mirrored) {
@@ -689,12 +847,13 @@ function lanes(cards, mirrored) {
   const host = new Map();
   cards.forEach((c) => { if (c.attached_to && ids.has(c.attached_to)) { if (!host.has(c.attached_to)) host.set(c.attached_to, []); host.get(c.attached_to).push(c); } });
   const loose = cards.filter((c) => !(c.attached_to && ids.has(c.attached_to)));
+  const dec = view && view.decision, declared = new Set(isDeclare(dec) ? dec.options.flatMap((o) => [o.source, o.target]) : []);
   // Front row: creatures. Back row: other permanents, then lands.
   const creatures = h("div", { class: "lane" }), back = h("div", { class: "lane" });
   const others = [], lands = [];
   const groups = new Map(), order = [];
   for (const c of loose) {
-    const groupable = (c.land || c.token) && !c.attacking && !c.blocking && !host.has(c.id);
+    const groupable = (c.land || c.token) && !c.attacking && !c.blocking && !host.has(c.id) && !declared.has(c.id);
     const key = groupable ? [c.name, c.tapped, c.sick, c.damage, JSON.stringify(c.counters), c.power, c.toughness, c.phased_out].join("|") : null;
     if (key) { if (!groups.has(key)) { groups.set(key, []); order.push(key); } groups.get(key).push(c); }
     else order.push(c);
@@ -733,11 +892,16 @@ function seat(p, s) {
   const box = h("div", { class: `seat ${p.side}` + (s.active === p.side ? " active" : "") },
     h("div", { class: "who" }, avatar, h("div", null, h("div", { class: "name" }, mine ? "You" : "MageZero"),
       h("div", { class: "sub" }, deck ? cap(deck.name) : mine ? "Human" : "Policy bot")), life));
+  // data-zone lets the stack's links point at a zone when the card itself is not on the table.
+  const pile = (key, label, cards) => {
+    const can = optionsFor(cards.map((c) => c.id)).length > 0;
+    return h("button", { class: "chip" + (can ? " can" : ""), "data-zone": `${key}-${p.side}`, title: can ? "Choose a card from here" : "View the " + label.toLowerCase(),
+      onclick: () => zone(`${mine ? "Your" : "MageZero's"} ${label.toLowerCase()}`, cards) }, icon(key), label, h("b", null, cards.length));
+  };
   const chips = h("div", { class: "chips" },
-    h("div", { class: "chip", title: "Cards in hand" }, icon("hand"), "Hand", h("b", null, p.hand)),
-    h("div", { class: "chip", title: "Cards in library" }, icon("library"), "Library", h("b", null, p.library)),
-    h("button", { class: "chip", title: "View the graveyard", onclick: () => zone((mine ? "Your" : "MageZero's") + " graveyard", p.graveyard) }, icon("grave"), "Graveyard", h("b", null, p.graveyard.length)),
-    h("button", { class: "chip", title: "View exile", onclick: () => zone((mine ? "Your" : "MageZero's") + " exile", p.exile) }, icon("exile"), "Exile", h("b", null, p.exile.length)));
+    h("div", { class: "chip", title: "Cards in hand", "data-zone": "hand-" + p.side }, icon("hand"), "Hand", h("b", null, p.hand)),
+    h("div", { class: "chip", title: "Cards in library", "data-zone": "library-" + p.side }, icon("library"), "Library", h("b", null, p.library)),
+    pile("grave", "Graveyard", p.graveyard), pile("exile", "Exile", p.exile));
   if (p.poison) chips.append(h("div", { class: "chip alert" }, icon("poison"), "Poison", h("b", null, p.poison + "/10")));
   if (p.commander_damage) chips.append(h("div", { class: "chip alert", title: "Combat damage taken from the opposing commander (21 loses)" }, icon("shield"), "Cmdr", h("b", null, p.commander_damage + "/21")));
   box.append(chips);
@@ -758,17 +922,510 @@ function seat(p, s) {
   box.dataset.ids = p.id;
   return box;
 }
-function stackItem(o, top) {
-  const th = h("div", { class: "thumb" });
-  artInto(th, o.name);
-  const rule = tidy((o.rules || [])[0] || "");
-  const targets = (o.targets || []).map((t) => (byId.get(t) || { name: "?" }).name);
-  const el = h("div", { class: `sobj ${o.controller}` + (top ? " top" : "") }, th,
-    h("div", { class: "t" }, h("b", null, o.name + (o.ability ? " · ability" : "")), h("span", { html: targets.length ? "→ " + esc(targets.join(", ")) : symbols(rule) })));
-  el.addEventListener("mouseenter", (ev) => { showPreview(o, ev); (o.targets || []).forEach((t) => mark(t, true)); });
+// ---------- the stack and what each item points at ----------
+// Sources get a number, shared by every item they put on the stack (as on the board).
+function sourceNumbers(s) {
+  const nums = new Map();
+  for (const o of stackItems(s)) if (o.source && !nums.has(o.source.id)) nums.set(o.source.id, nums.size + 1);
+  return nums;
+}
+// Ordering triggers (decision "triggers"): the page collects the whole order, then answers
+// with every id, first on the stack first. `placed` is that order so far.
+let ordering = null;
+function orderState() {
+  const d = view && view.decision;
+  if (!d || d.kind !== "triggers" || answered.has(d.decision) || !inControl()) return (ordering = null);
+  if (!ordering || ordering.decision !== d.decision) ordering = { decision: d.decision, placed: [], locking: false };
+  return ordering;
+}
+function triggerItem(o) {
+  return { id: o.id, name: o.name || (byId.get(o.source) || {}).name || "Ability", ability: true, ability_kind: "triggered", rules: [o.label],
+    controller: "you", source: o.source ? { id: o.source } : null, targets: [], proposed: true };
+}
+// Everything on the stack, top first: the placed triggers above the real stack.
+function stackItems(s) {
+  const ord = orderState();
+  if (!ord) return s.stack;
+  const opts = new Map(view.decision.options.map((o) => [o.id, o]));
+  return [...ord.placed.map((id) => triggerItem(opts.get(id))).reverse(), ...s.stack];
+}
+function pendingItems() {
+  const ord = orderState();
+  return ord ? view.decision.options.filter((o) => !ord.placed.includes(o.id)).map(triggerItem) : [];
+}
+function placeTrigger(id) {
+  const ord = orderState();
+  if (!ord || ord.locking) return;
+  if (ord.placed.includes(id)) ord.placed = ord.placed.filter((x) => x !== id); else ord.placed.push(id);
+  render();
+}
+// The stack locks in from the top down, then the order is sent.
+function confirmOrder() {
+  const ord = orderState();
+  if (!ord || ord.locking || ord.placed.length !== view.decision.options.length) return;
+  ord.locking = true;
+  const tiles = [...document.querySelectorAll("#stack .stile.proposed")].reverse();
+  tiles.forEach((el, i) => setTimeout(() => {
+    el.classList.add("locked");
+    if (!calm.matches) {
+      const r = el.getBoundingClientRect();
+      for (let k = 0; k < 6; k++) spawn("spark", rnd(r.left, r.right), r.top + rnd(0, 8), 3, 0.7);
+      spawn("ember", r.left + r.width / 2, r.top + r.height / 2, 6);
+      fxRun();
+    }
+  }, i * 170));
+  setTimeout(() => answer(ord.placed.join(","), "trigger order"), tiles.length * 170 + 380);
+}
+function placeName(t) {
+  if (t.zone === "player") return t.owner === "you" ? "you" : "MageZero";
+  const name = t.name || "a card";
+  if (!t.zone || t.zone === "battlefield" || t.zone === "stack") return name;
+  return `${name} (${t.owner === "you" ? "your" : "MageZero's"} ${t.zone})`;
+}
+let stackFocus = null, stackPos = load("stackPos", null);
+function stackTile(o, top, nums) {
+  return o.proposed ? proposedTile(o, top, nums) : stackTileBase(o, top, nums);
+}
+function stackTileBase(o, top, nums) {
+  let face;
+  if (o.ability) {
+    const art = h("div", { class: "art" });
+    artInto(art, o.name);
+    const kind = o.ability_kind === "triggered" ? "Triggered ability" : o.ability_kind === "activated" ? "Activated ability" : "Ability";
+    face = h("div", { class: "ab" }, h("div", { class: "nm" }, o.name), art, h("div", { class: "kd " + (o.ability_kind || "") }, kind),
+      h("div", { class: "tx", html: symbols(tidy((o.rules || [])[0] || "")) }));
+  } else face = cardFace(o);
+  const targets = (o.targets || []).filter((x) => x.kind === "target");
+  const n = o.source && nums.get(o.source.id);
+  const el = h("div", { class: `stile ${o.controller}` + (top ? " top" : "") + (o.id === stackFocus ? " focus" : ""), "data-ids": o.id }, face,
+    targets.length ? h("div", { class: "tg", html: "→ " + targets.map((x) => `<b>${esc(placeName(x))}</b>`).join(", ") }) : null,
+    n ? h("span", { class: "num sn", title: "Its source is marked with the same number" }, n) : null,
+    top ? h("span", { class: "res", title: "Resolves next" }, "Next") : null);
+  el.addEventListener("mouseenter", (ev) => { stackFocus = o.id; showPreview(o, ev); followLinks(); });
   el.addEventListener("mousemove", movePreview);
-  el.addEventListener("mouseleave", () => { hidePreview(); (o.targets || []).forEach((t) => mark(t, false)); });
+  el.addEventListener("mouseleave", () => { stackFocus = null; hidePreview(); followLinks(); });
   return el;
+}
+// A placed trigger: drag it to reorder (the DOM is reordered while dragging, the order read on drop), click to take it back.
+function proposedTile(o, top, nums) {
+  const el = stackTileBase(o, top, nums);
+  el.classList.add("proposed");
+  el.draggable = true;
+  el.title = "Drag to reorder, click to take it back";
+  el.addEventListener("click", () => placeTrigger(o.id));
+  el.addEventListener("dragstart", (e) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", o.id); el.classList.add("dragging"); hidePreview(); dragged = el; });
+  el.addEventListener("dragend", () => {
+    el.classList.remove("dragging"); dragged = null;
+    const ord = orderState();
+    if (ord) ord.placed = [...document.querySelectorAll("#stack .stile.proposed")].map((x) => x.dataset.ids);
+    render();
+  });
+  el.addEventListener("dragover", (e) => {
+    if (!dragged || dragged === el) return;
+    e.preventDefault();
+    const r = el.getBoundingClientRect(), after = e.clientX > r.left + r.width / 2;
+    if (after ? el.nextSibling !== dragged : el.previousSibling !== dragged) el.parentNode.insertBefore(dragged, after ? el.nextSibling : el);
+    [...el.parentNode.children].forEach((x, i) => (x.style.zIndex = i + 1));
+    drawLinks();
+  });
+  el.addEventListener("drop", (e) => e.preventDefault());
+  return el;
+}
+let dragged = null;
+function placeStack() {
+  const panel = $("stackpanel"), table = $("table");
+  // By default in the top-right corner of the board, where the left-aligned lanes leave room.
+  const x = stackPos ? stackPos.x : table.clientWidth - panel.offsetWidth - 14, y = stackPos ? stackPos.y : 12;
+  panel.style.left = Math.max(4, Math.min(x, table.clientWidth - 160)) + "px";
+  panel.style.top = Math.max(4, Math.min(y, table.clientHeight - 80)) + "px";
+}
+function renderStack(s) {
+  const panel = $("stackpanel"), body = $("stack"), items = stackItems(s), pending = pendingItems(), ord = orderState(), n = items.length;
+  panel.classList.toggle("show", n + pending.length > 0);
+  renderOrdering(ord, pending, s);
+  if (!(n + pending.length)) { body.replaceChildren(); stackFocus = null; return; }
+  if (stackFocus && ![...items, ...pending].some((o) => o.id === stackFocus)) stackFocus = null;
+  const nums = sourceNumbers(s);
+  // Bottom of the stack on the left, the top (next to resolve) on the right and in front.
+  const tiles = items.map((o, i) => stackTile(o, i === 0 && !pending.length, nums)).reverse();
+  tiles.forEach((el, i) => (el.style.zIndex = i + 1));
+  body.replaceChildren(...tiles);
+  body.style.minHeight = n ? "" : "0";
+  body.style.padding = n ? "" : "0";
+  $("stackcount").textContent = n;
+  const tw = 124, room = Math.min(720, $("table").clientWidth * 0.6) - 26;
+  body.style.setProperty("--ov", (n > 1 ? Math.max(0, Math.min(tw - 34, (n * tw - room) / (n - 1))) : 0) + "px");
+  placeStack();
+}
+function renderOrdering(ord, pending, s) {
+  const box = $("stackpending"), ctl = $("stackctl");
+  box.classList.toggle("show", !!ord && pending.length > 0);
+  ctl.classList.toggle("show", !!ord);
+  if (!ord) { box.replaceChildren(); ctl.replaceChildren(); return; }
+  const nums = sourceNumbers(s);
+  box.replaceChildren(h("div", { class: "lbl" }, `To put on the stack · ${pending.length}`, h("span", null, "click in order: the last one placed resolves first")),
+    h("div", { class: "row" }, pending.map((o, i) => {
+      const el = stackTileBase(o, false, nums);
+      el.title = "Put on the stack";
+      el.addEventListener("click", () => placeTrigger(o.id));
+      if (i < 9) el.append(h("span", { class: "kbd key" }, i + 1));
+      return el;
+    })));
+  const done = ord.placed.length === view.decision.options.length;
+  ctl.replaceChildren(
+    h("button", { class: "btn gold", disabled: !done || ord.locking, onclick: confirmOrder, title: "Lock in this order (Space)" }, "Confirm order", h("span", { class: "kbd" }, "Space")),
+    pending.length ? h("button", { class: "btn", onclick: () => { ord.placed.push(...pending.map((o) => o.id)); render(); }, title: "Place the rest in this order" }, "Place all")
+      : h("button", { class: "btn", disabled: ord.locking, onclick: () => { ord.placed = []; render(); } }, "Reset"));
+}
+// Drag the stack panel by its header; a double click puts it back.
+(() => {
+  const head = $("stackhead");
+  head.addEventListener("pointerdown", (ev) => {
+    const panel = $("stackpanel"), dx = ev.clientX - panel.offsetLeft, dy = ev.clientY - panel.offsetTop;
+    head.setPointerCapture(ev.pointerId);
+    const move = (e) => { stackPos = { x: e.clientX - dx, y: e.clientY - dy }; placeStack(); drawLinks(); };
+    const up = () => { head.removeEventListener("pointermove", move); head.removeEventListener("pointerup", up); store("stackPos", stackPos); };
+    head.addEventListener("pointermove", move); head.addEventListener("pointerup", up);
+  });
+  head.addEventListener("dblclick", () => { stackPos = null; store("stackPos", null); placeStack(); drawLinks(); });
+})();
+// Where an object is on screen: its card or seat, else the pile (graveyard, exile, hand, library) holding it.
+const ZONE_KEY = { graveyard: "grave", exile: "exile", library: "library", hand: "hand" };
+function zoneOf(id, s) {
+  for (const p of s.players) for (const [zone, list] of [["graveyard", p.graveyard], ["exile", p.exile]]) if (list.some((c) => c.id === id)) return { zone, owner: p.side };
+  if (s.hand.some((c) => c.id === id)) return { zone: "hand", owner: "you" };
+  return null;
+}
+function anchorEl(place) {
+  for (const el of document.querySelectorAll(`[data-ids~="${CSS.escape(place.id)}"]`)) {
+    if (el.closest("#scrim, #decision, #menu, #preview, #viewer")) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width && r.height) return el;
+  }
+  const z = (view && view.state && zoneOf(place.id, view.state)) || place;
+  const key = ZONE_KEY[z.zone];
+  return key && z.owner ? document.querySelector(`[data-zone="${key}-${z.owner}"]`) : null;
+}
+const LINK_COLOR = { source: "#e6b450", target: "#c77dff", related: "#c77dff" };
+// From a stack tile (its top edge, or its bottom edge when the object is lower down) to an object,
+// arriving from above.
+function curve(a, b, kind) {
+  const lift = Math.max(40, Math.min(200, Math.hypot(b.x - a.x, b.y - a.y) * 0.35));
+  const c1 = a.down ? a.y + lift * 0.8 : Math.max(6, a.y - lift), c2 = Math.max(6, b.y - lift);
+  const d = `M${a.x.toFixed(1)},${a.y.toFixed(1)} C${a.x.toFixed(1)},${c1.toFixed(1)} ${b.x.toFixed(1)},${c2.toFixed(1)} ${b.x.toFixed(1)},${b.y.toFixed(1)}`;
+  const col = LINK_COLOR[kind];
+  const line = `<path d="${d}" fill="none" stroke="rgba(0,0,0,.55)" stroke-width="7" stroke-linecap="round"/>` +
+    `<path d="${d}" fill="none" stroke="${col}" stroke-width="3" stroke-linecap="round"${kind === "related" ? ' stroke-dasharray="8 6"' : ""}${kind === "source" ? "" : ' marker-end="url(#mzArrow)"'}/>`;
+  if (kind === "source") return line + `<circle cx="${b.x}" cy="${b.y}" r="5" fill="${col}"/>`;
+  return line + `<circle cx="${b.x}" cy="${b.y}" r="15" fill="rgba(199,125,255,.12)" stroke="${col}" stroke-width="2.5"${kind === "related" ? ' stroke-dasharray="5 4"' : ""}/>`;
+}
+// Gold: the stack item's source (numbered like the item). Violet: its targets; dashed violet:
+// what it affects without targeting. Drawn for the hovered stack item, else the top one.
+function drawLinks() {
+  drawCombat();
+  const layer = $("links");
+  document.querySelectorAll(".ln-target, .ln-source, .pinged").forEach((n) => n.classList.remove("ln-target", "ln-source", "pinged"));
+  const s = view && view.state;
+  const items = s && s.stack ? stackItems(s) : [], all = [...items, ...pendingItems()];
+  if (!all.length || !$("stackpanel").classList.contains("show")) { layer.replaceChildren(); return; }
+  const badges = [];
+  for (const [id, n] of sourceNumbers(s)) {
+    const el = anchorEl(items.find((o) => o.source && o.source.id === id).source);
+    if (!el) continue;
+    const r = el.getBoundingClientRect();
+    badges.push(h("span", { class: "num", style: `left:${r.left + r.width / 2}px;top:${r.top + 3}px` }, n));
+  }
+  let paths = "";
+  const focus = all.find((o) => o.id === stackFocus) || all[0];
+  const tile = document.querySelector(`#stackpanel .stile[data-ids~="${CSS.escape(focus.id)}"]`);
+  if (tile) {
+    const tr = tile.getBoundingClientRect();
+    for (const l of [...(focus.source ? [{ ...focus.source, kind: "source" }] : []), ...(focus.targets || [])]) {
+      const el = anchorEl(l);
+      if (!el || el === tile) continue;
+      const r = el.getBoundingClientRect();
+      el.classList.add(el.matches(".card, .seat") ? (l.kind === "source" ? "ln-source" : "ln-target") : "pinged");
+      const to = { x: r.left + r.width / 2, y: l.kind === "source" ? r.top + 3 : r.top + Math.min(r.height / 2, 44) };
+      const down = to.y > tr.bottom + 30;
+      paths += curve({ x: tr.left + tr.width / 2, y: down ? tr.bottom : tr.top, down }, to, l.kind);
+    }
+  }
+  layer.innerHTML = `<svg><defs><marker id="mzArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">` +
+    `<path d="M0,0 L10,5 L0,10 z" fill="${LINK_COLOR.target}"/></marker></defs>${paths}</svg>`;
+  layer.append(...badges);
+}
+// A hovered tile rises (a .15s transition): redraw every frame until it has settled.
+let followUntil = 0;
+function followLinks(ms = 260) {
+  const running = performance.now() < followUntil;
+  followUntil = performance.now() + ms;
+  if (running) return;
+  const step = () => { drawLinks(); if (performance.now() < followUntil) requestAnimationFrame(step); };
+  step();
+}
+let linkTimer = null;
+function scheduleLinks() { requestAnimationFrame(drawLinks); clearTimeout(linkTimer); linkTimer = setTimeout(drawLinks, 280); }
+document.addEventListener("scroll", () => requestAnimationFrame(drawLinks), true);
+
+// ---------- combat effects: embers on creatures that can attack, sparks and fire when they do ----------
+const fx = { canvas: $("fx"), parts: [], running: false, last: 0, embers: [] };
+const calm = matchMedia("(prefers-reduced-motion: reduce)");
+function fxSize() {
+  const dpr = devicePixelRatio || 1, c = fx.canvas;
+  c.width = innerWidth * dpr; c.height = innerHeight * dpr;
+  c.getContext("2d").setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+fxSize(); addEventListener("resize", fxSize);
+const rnd = (a, b) => a + Math.random() * (b - a);
+// kind "spark": fast streaks that fall back; "flame": soft blobs that rise and shrink; "ember": slow rising dots.
+function spawn(kind, x, y, n, spread = 1) {
+  for (let i = 0; i < n; i++) {
+    if (fx.parts.length > 900) return;
+    if (kind === "spark") {
+      const a = rnd(-Math.PI * 0.95, -Math.PI * 0.05), v = rnd(180, 520) * spread;
+      fx.parts.push({ kind, x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, g: 620, life: 0, max: rnd(0.35, 0.8), r: rnd(1, 2.2) });
+    } else if (kind === "flame") {
+      fx.parts.push({ kind, x: x + rnd(-6, 6), y, vx: rnd(-35, 35), vy: rnd(-240, -110), g: -60, life: 0, max: rnd(0.5, 1), r: rnd(7, 15) });
+    } else {
+      fx.parts.push({ kind, x, y, vx: rnd(-12, 12), vy: rnd(-55, -25), g: -10, life: 0, max: rnd(0.9, 1.6), r: rnd(1.3, 2.6), wob: rnd(0, 6) });
+    }
+  }
+}
+// Heat: 1 yellow-white, 0 dark red.
+function heat(h, a) { return `hsla(${(8 + 44 * h).toFixed(0)}, 100%, ${(38 + 42 * h).toFixed(0)}%, ${a.toFixed(3)})`; }
+function burst(el) {
+  if (calm.matches) return;
+  const r = el.getBoundingClientRect(), bottom = r.bottom - 4;
+  for (let i = 0; i < 14; i++) spawn("flame", rnd(r.left + 4, r.right - 4), bottom, 2);
+  for (let i = 0; i < 10; i++) spawn("spark", rnd(r.left, r.right), rnd(r.top + r.height * 0.4, bottom), 5);
+  spawn("spark", r.left + r.width / 2, r.top + r.height / 2, 24, 1.3);
+  fxRun();
+}
+// Emitters: cards that keep giving off embers (ready attackers lightly, attackers more).
+function setEmbers(list) { fx.embers = list; if (list.length) fxRun(); }
+function fxRun() { if (fx.running || calm.matches) return; fx.running = true; fx.last = performance.now(); requestAnimationFrame(fxFrame); }
+function fxFrame(now) {
+  const dt = Math.min(0.05, (now - fx.last) / 1000); fx.last = now;
+  const ctx = fx.canvas.getContext("2d");
+  ctx.clearRect(0, 0, innerWidth, innerHeight);
+  for (const e of fx.embers) {
+    if (!e.el.isConnected || Math.random() > e.rate * dt * 60) continue;
+    const r = e.el.getBoundingClientRect();
+    if (!r.width) continue;
+    spawn("ember", rnd(r.left + 3, r.right - 3), r.bottom - rnd(0, r.height * 0.25), 1);
+    if (e.hot && Math.random() < 0.35) spawn("flame", rnd(r.left + 6, r.right - 6), r.bottom - 2, 1);
+  }
+  ctx.globalCompositeOperation = "lighter";
+  fx.parts = fx.parts.filter((p) => (p.life += dt) < p.max);
+  for (const p of fx.parts) {
+    p.vy += p.g * dt; p.x += p.vx * dt + (p.wob ? Math.sin(p.life * 6 + p.wob) * 0.3 : 0); p.y += p.vy * dt;
+    const k = 1 - p.life / p.max;
+    if (p.kind === "spark") {
+      ctx.strokeStyle = heat(0.3 + 0.6 * k, k); ctx.lineWidth = p.r; ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.vx * 0.025, p.y - p.vy * 0.025); ctx.stroke();
+    } else {
+      const rad = p.kind === "flame" ? p.r * (0.4 + 0.6 * k) : p.r;
+      const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, rad * 2);
+      g.addColorStop(0, heat(k, (p.kind === "flame" ? 0.55 : 0.9) * k)); g.addColorStop(1, heat(0, 0));
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y, rad * 2, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  ctx.globalCompositeOperation = "source-over";
+  if (fx.parts.length || fx.embers.some((e) => e.el.isConnected)) requestAnimationFrame(fxFrame);
+  else { fx.running = false; ctx.clearRect(0, 0, innerWidth, innerHeight); }
+}
+// After each render: burst on creatures that have just started attacking, embers on the rest.
+let wasAttacking = null;
+function combatFx(s) {
+  const now = new Set(s.battlefield.filter((c) => c.attacking).map((c) => c.id));
+  const cardOf = (id) => document.querySelector(`#table .card[data-ids~="${CSS.escape(id)}"]`);
+  if (wasAttacking) for (const id of now) {
+    if (wasAttacking.has(id)) continue;
+    const el = cardOf(id);
+    if (!el) continue;
+    const slot = el.closest(".slot");
+    if (slot && !calm.matches) {
+      slot.style.setProperty("--lunge", el.closest("#oppField") ? "18px" : "-18px");
+      slot.classList.remove("lunge"); void slot.offsetWidth; slot.classList.add("lunge");
+    }
+    burst(el);
+  }
+  wasAttacking = now;
+  const embers = [];
+  document.querySelectorAll("#table .card.atk-ready, #table .card.atk-now").forEach((el) => embers.push({ el, rate: el.classList.contains("atk-now") ? 0.5 : 0.12, hot: el.classList.contains("atk-now") }));
+  document.querySelectorAll("#table .card.attacking").forEach((el) => embers.push({ el, rate: 0.3, hot: false }));
+  setEmbers(embers);
+}
+
+// ---------- declaring attackers and blockers ----------
+// The engine asks for the whole declaration at once. Attackers: click creatures to choose
+// them (they turn a little). Blockers: click a creature of yours, a line follows the
+// pointer, click the attacker it blocks. Passing priority sends the declaration.
+let plan = null;      // {kind, turn, picks: Map(creature id -> [defender or attacker ids])}
+let arming = null;    // the blocker whose line follows the pointer
+let pointer = null, turning = null;
+const isDeclare = (d) => !!d && (d.kind === "attackers" || d.kind === "blockers");
+// A declaration XMage refuses (menace) is asked again: the plan carries over to fix it.
+function syncPlan(s, d) {
+  if (!isDeclare(d)) { if (d) plan = null; arming = null; return; }
+  if (!plan || plan.kind !== d.kind || plan.turn !== s.turn) { plan = { kind: d.kind, turn: s.turn, picks: new Map() }; arming = null; }
+  const offered = new Set(d.options.map((o) => o.id));
+  for (const [src, list] of [...plan.picks]) {
+    const kept = list.filter((t) => offered.has(src + ">" + t));
+    kept.length ? plan.picks.set(src, kept) : plan.picks.delete(src);
+  }
+  if (arming && !d.options.some((o) => o.source === arming)) arming = null;
+}
+const pairsOf = () => (plan ? [...plan.picks].flatMap(([src, list]) => list.map((t) => src + ">" + t)) : []);
+function declare(why) { if (arming) { arming = null; drawCombat(); } answer(pairsOf().join(","), why); }
+function combatCard(node, id, d) {
+  const own = d.options.filter((o) => o.source === id);
+  const on = (fn) => node.addEventListener("click", (ev) => { ev.stopPropagation(); fn(ev); });
+  if (d.kind === "attackers") {
+    if (!own.length) return;
+    node.classList.add("can", plan.picks.has(id) ? "atk-now" : "atk-ready");
+    on((ev) => pickAttacker(id, own, ev));
+  } else if (own.length) {
+    node.classList.add("can");
+    if (arming === id) node.classList.add("arming"); else if (plan.picks.has(id)) node.classList.add("blocking");
+    on((ev) => armBlocker(id, own, ev));
+  } else if (arming && d.options.some((o) => o.source === arming && o.target === id)) {
+    node.classList.add("can");
+    on(() => blockWith(arming, id));
+  }
+}
+function pickAttacker(id, own, ev) {
+  const choose = (o) => { plan.picks.set(id, [o.target]); turning = { id }; render(); };
+  if (plan.picks.has(id)) { plan.picks.delete(id); turning = { id }; render(); }
+  else if (own.length === 1) choose(own[0]);
+  else showMenu(own, ev, choose);  // MageZero or one of its planeswalkers
+}
+function allAttack() {
+  const opp = view.state.players.find((p) => p.side === "opponent");
+  const sources = [...new Set(view.decision.options.map((o) => o.source))];
+  for (const src of sources) {
+    if (plan.picks.has(src)) continue;
+    const own = view.decision.options.filter((o) => o.source === src);
+    plan.picks.set(src, [(own.find((o) => o.target === opp.id) || own[0]).target]);
+  }
+  render();
+}
+function armBlocker(id, own, ev) {
+  if (arming === id) { arming = null; render(); return; }
+  const max = own[0].max;
+  // A creature that blocks one attacker is re-aimed; one that blocks several adds to its blocks.
+  if (max === 1) plan.picks.delete(id);
+  arming = id; pointer = { x: ev.clientX, y: ev.clientY };
+  render();
+}
+function blockWith(blocker, attacker) {
+  const max = view.decision.options.find((o) => o.source === blocker).max;
+  const list = (plan.picks.get(blocker) || []).filter((t) => t !== attacker);
+  list.push(attacker);
+  plan.picks.set(blocker, max ? list.slice(-max) : list);
+  arming = null; render();
+}
+document.addEventListener("mousemove", (ev) => { if (!arming) return; pointer = { x: ev.clientX, y: ev.clientY }; requestAnimationFrame(drawCombat); });
+document.addEventListener("click", () => { if (arming) { arming = null; render(); } });
+// Blocker to attacker: the blocks being declared, else the blocks of this combat (the
+// declarer's colour); while aiming, a line from the blocker to the pointer.
+function drawCombat() {
+  const layer = $("combatLinks"), d = view && view.decision, s = view && view.state;
+  const cardOf = (id) => document.querySelector(`#table .card[data-ids~="${CSS.escape(id)}"]`);
+  const mid = (el) => { const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; };
+  let paths = "";
+  const line = (fromId, to, color) => {
+    const a = cardOf(fromId);
+    if (!a || !to) return;
+    paths += arc(mid(a), to, color);
+  };
+  if (isDeclare(d) && d.kind === "blockers" && plan) {
+    for (const [b, list] of plan.picks) for (const t of list) { const el = cardOf(t); line(b, el && mid(el), "#4ea8ff"); }
+    if (arming && pointer) line(arming, pointer, "#4ea8ff");
+  } else if (s && s.combat) {
+    for (const g of s.combat) for (const b of g.blockers) for (const t of g.attackers) {
+      const el = cardOf(t), from = cardOf(b);
+      if (from) line(b, el && mid(el), from.closest("#oppField") ? "#ff6f61" : "#4ea8ff");
+    }
+  }
+  if (!paths) { layer.replaceChildren(); return; }
+  layer.innerHTML = `<svg>${paths}</svg>`;
+}
+// A gently bent line, bowing to the left of its direction.
+function arc(a, b, color) {
+  const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1, bend = Math.min(70, len * 0.2);
+  const cx = (a.x + b.x) / 2 + (dy / len) * bend, cy = (a.y + b.y) / 2 - (dx / len) * bend;
+  const d = `M${a.x.toFixed(1)},${a.y.toFixed(1)} Q${cx.toFixed(1)},${cy.toFixed(1)} ${b.x.toFixed(1)},${b.y.toFixed(1)}`;
+  return `<path d="${d}" fill="none" stroke="rgba(0,0,0,.55)" stroke-width="8" stroke-linecap="round"/>` +
+    `<path d="${d}" fill="none" stroke="${color}" stroke-width="3.5" stroke-linecap="round"/>` +
+    `<circle cx="${a.x.toFixed(1)}" cy="${a.y.toFixed(1)}" r="5" fill="${color}"/>` +
+    `<circle cx="${b.x.toFixed(1)}" cy="${b.y.toFixed(1)}" r="9" fill="${color}" fill-opacity=".15" stroke="${color}" stroke-width="2.5"/>`;
+}
+
+// ---------- card viewer ----------
+// A decision among cards (or one where they are only looked at) opens it until answered
+// or hidden; cards revealed or looked at outside a choice queue up after it.
+let viewerMode = null, viewerHidden = null, seenUpTo = null, seenGame = null, seenShown = null;
+const seenQueue = [];
+function viewer(label, title, cards, buttons, hideable) {
+  const pickable = cards.some((c) => optionsFor([c.id]).length);
+  $("viewer").replaceChildren(h("div", { class: "vbox" },
+    h("div", { class: "vh" }, h("div", null, h("div", { class: "vl" }, label), h("div", { class: "vt", html: symbols(tidy(title || "")) })),
+      hideable ? h("button", { class: "btn", title: "Look at the table (Esc); the decision panel brings the cards back", onclick: () => {
+        viewerHidden = view.decision && view.decision.decision; hideViewer(); viewerMode = null; } }, "Hide") : null),
+    h("div", { class: "vcards" + (pickable ? " picking" : "") }, cards.map((c) => cardEl(c))),
+    buttons.length ? h("div", { class: "vf" }, buttons) : null));
+  $("viewer").classList.add("show");
+  hidePreview();
+}
+function hideViewer() { $("viewer").classList.remove("show"); $("viewer").replaceChildren(); }
+function renderViewer(s, d) {
+  if (view.game !== seenGame) { seenGame = view.game; seenUpTo = null; seenQueue.length = 0; seenShown = null; }
+  const seen = (s && s.seen) || [];
+  // Groups already there when the page opened are not replayed.
+  if (seenUpTo === null) seenUpTo = seen.length ? seen[seen.length - 1].id : 0;
+  for (const g of seen) if (g.id > seenUpTo) { seenQueue.push(g); seenUpTo = g.id; }
+  if (d && s && s.revealed.length && !answered.has(d.decision) && inControl()) {
+    if (viewerHidden === d.decision) return;
+    if (viewerMode === "seen" && seenShown) { seenQueue.unshift(seenShown); seenShown = null; }
+    const ok = d.options.find((o) => o.type === "look");
+    const stops = d.options.filter((o) => !o.target && o.type !== "look");
+    const buttons = ok ? [h("button", { class: "btn gold", onclick: () => answer(ok.id) }, "OK", h("span", { class: "kbd" }, "Space"))]
+      : stops.map((o, i) => h("button", { class: "btn" + (i === 0 ? " gold" : ""), onclick: () => answer(o.id) }, o.label, i === 0 ? h("span", { class: "kbd" }, "Space") : null));
+    viewer(ok ? "You look at" : "Choose", d.prompt, s.revealed, buttons, true);
+    viewerMode = "decision";
+    return;
+  }
+  if (viewerMode === "decision") { hideViewer(); viewerMode = null; }
+  if (!viewerMode && seenQueue.length) showSeen();
+}
+function showSeen() {
+  seenShown = seenQueue.shift() || null;
+  if (!seenShown) { hideViewer(); viewerMode = null; return; }
+  viewerMode = "seen";
+  viewer(seenShown.kind === "reveal" ? "Revealed" : "You look at", seenShown.title, seenShown.cards,
+    [h("button", { class: "btn gold", onclick: showSeen }, seenQueue.length ? `Next (${seenQueue.length} more)` : "Close")], false);
+}
+
+// ---------- match flow (right column) ----------
+function renderFlow(s, started) {
+  const order = STEPS.map(([k]) => k), cur = order.indexOf(s.step);
+  const d = view.decision, mine = !!(d && isPriority(d) && !answered.has(d.decision));
+  const turn = h("div", { class: "turnbox " + (started ? s.active : ""), title: "Turn number and whose turn it is" },
+    h("small", null, !started ? "Pre-game" : s.active === "you" ? "Your turn" : "Opp turn"), h("b", null, started ? "T" + s.turn : "—"),
+    h("i", null, !started ? "Mulligans" : s.active === "you" ? "You" : "MageZero"));
+  const prio = started && s.priority ? h("div", { class: "prio " + (mine ? "mine" : s.priority), title: "Who has priority" }, s.priority === "you" ? "Your priority" : "MZ priority") : null;
+  const steps = h("div", { class: "steps " + (s.active || "") });
+  for (const [group, list] of FLOW) {
+    if (group) steps.append(h("div", { class: "grp" }, group));
+    for (const [k, label] of list) {
+      const i = order.indexOf(k), on = started && i === cur;
+      steps.append(h("div", { class: "st" + (MAIN.has(k) ? " main" : "") + (on ? " on" : started && i < cur ? " past" : ""), title: STEP_NAME[k] },
+        on ? STEP_NAME[k] : label.toUpperCase(), on ? h("small", null, STEP_HINT[k]) : null));
+    }
+  }
+  $("flowcol").replaceChildren(turn, prio || "", steps,
+    h("div", { class: "legend" }, h("span", null, h("i", { style: "background:var(--you)" }), "YOU"), h("span", null, h("i", { style: "background:var(--bot)" }), "OPP")));
 }
 
 // ---------- main render ----------
@@ -783,14 +1440,19 @@ function render() {
   const dk = view.decks;
   $("matchup").replaceChildren(...(dk ? [h("span", { class: "you" }, cap(dk.you.name)), h("span", { class: "vs" }, "vs"), h("span", { class: "bot" }, cap(dk.opponent.name)),
     h("span", { class: "vs" }, dk.you.cards >= 99 ? "· Commander duel" : "· Duel")] : []));
+  syncPlan(s, d);
   if (!s) renderEmpty(); else renderTable(s);
   renderDecision(s, d);
+  renderViewer(s, d);
   renderOverlays(s);
+  scheduleLinks();
   if (hovered && !byId.has(hovered)) { hovered = null; hidePreview(); }
 }
 function renderEmpty() {
   byId = new Map();
-  ["oppRail", "myRail", "turnchip", "phases", "stack", "hand", "handLabel", "log"].forEach((id) => $(id).replaceChildren());
+  ["oppRail", "myRail", "flowcol", "stack", "hand", "handLabel", "log", "links"].forEach((id) => $(id).replaceChildren());
+  $("stackpanel").classList.remove("show");
+  wasAttacking = null; setEmbers([]);
   $("oppField").replaceChildren(h("div", { class: "empty-field" }, view.status === "playing" ? "Shuffling up and drawing…" : ""));
   $("myField").replaceChildren();
   logTail = null; lastTurnKey = null;
@@ -805,14 +1467,9 @@ function renderTable(s) {
   $("myField").replaceChildren(...(myf.length ? lanes(myf, false) : [h("div", { class: "empty-field" })]));
   fitField($("oppField")); fitField($("myField"));
   const started = s.turn > 0 && !!s.step && !(view.decision && view.decision.kind === "mulligan");
-  $("turnchip").replaceChildren(h("div", { class: "num", title: "Turn number" }, started ? s.turn : "–"),
-    h("div", { class: "who" }, started ? "Turn" : "Pre-game", h("b", { class: s.active }, !started ? "Mulligans" : s.active === "you" ? "Yours" : "MageZero's")));
-  const ph = $("phases"); ph.className = "phases " + (s.active || "");
-  ph.replaceChildren(...STEPS.map(([k, short, name]) => h("span", { class: (started && k === s.step ? "on " : "") + (MAIN.has(k) ? "main" : ""), title: name }, short)));
-  const st = $("stack");
-  if (s.stack.length) st.replaceChildren(h("span", { class: "label" }, "Stack"), ...s.stack.map((o, i) => stackItem(o, i === 0)));
-  else if (!started) st.replaceChildren(h("span", { class: "hint", html: "<b>Opening hands</b> · keep or mulligan (London mulligan)" }));
-  else st.replaceChildren(h("span", { class: "hint", html: `<b>${esc(STEP_NAME[s.step] || "")}</b>${s.priority ? " · " + (s.priority === "you" ? "you have priority" : "MageZero has priority") : ""}` }));
+  renderFlow(s, started);
+  renderStack(s);
+  requestAnimationFrame(() => combatFx(s));
   // hand: overlap the cards when they do not fit
   const hand = $("hand"), n = s.hand.length;
   const hwPx = hand.firstElementChild ? hand.firstElementChild.offsetWidth : Math.min(134, Math.max(78, innerWidth * 0.069));
@@ -891,6 +1548,43 @@ function optThumb(o) {
   else th.textContent = o.type === "amount" ? "#" : "•";
   return th;
 }
+// A choice among thousands of names (naming a card): the server searches them (GET /api/search);
+// the cards of this game are suggested while the box is empty. ↑/↓ and Enter pick from the keyboard.
+let search = {};
+function searchBox(d) {
+  if (search.decision !== d.decision) search = { decision: d.decision, q: "", results: null, sel: 0, seq: 0, shown: [] };
+  const cards = (d.suggested || []).length > 0;   // card names: show their art
+  const input = h("input", { type: "search", value: search.q, placeholder: `Search ${d.count || ""} names…`, autocomplete: "off", spellcheck: "false" });
+  const list = h("div", { class: "opts" });
+  const thumb = (name) => { const th = h("div", { class: "thumb" }, cards ? "" : "•"); if (cards) img(name, (u) => (th.style.backgroundImage = `url("${u.a}")`)); return th; };
+  const paint = () => {
+    const q = search.q.trim(), shown = q ? search.results || [] : d.suggested || [];
+    search.shown = shown;
+    search.sel = Math.max(0, Math.min(search.sel, shown.length - 1));
+    list.replaceChildren(...[
+      !q && shown.length ? h("div", { class: "panel-h" }, "In this game") : null,
+      ...shown.map((name, i) => h("button", { class: "opt" + (i === search.sel ? " sel" : ""), onclick: () => answer(name, "search") }, thumb(name), h("span", { class: "lbl" }, name))),
+      q && search.results && !shown.length ? h("div", { class: "hintline" }, "No name matches.") : null].filter(Boolean));
+    const sel = list.querySelector(".opt.sel");
+    if (sel) sel.scrollIntoView({ block: "nearest" });
+  };
+  const run = async () => {
+    const q = search.q, seq = ++search.seq;
+    try {
+      const names = (await (await fetch("/api/search?q=" + encodeURIComponent(q))).json()).names || [];
+      if (seq === search.seq && search.decision === d.decision) { search.results = names; search.sel = 0; paint(); }
+    } catch (e) { /* the next keystroke retries */ }
+  };
+  input.addEventListener("input", () => { search.q = input.value; search.sel = 0; clearTimeout(search.timer); search.timer = setTimeout(run, 110); if (!search.q.trim()) paint(); });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") { search.sel += e.key === "ArrowDown" ? 1 : -1; paint(); e.preventDefault(); }
+    else if (e.key === "Enter") { const name = search.shown[search.sel]; if (name) answer(name, "search"); e.preventDefault(); }
+  });
+  paint();
+  if (search.q.trim() && !search.results) run();
+  requestAnimationFrame(() => { input.focus(); input.setSelectionRange(input.value.length, input.value.length); });
+  return h("div", { class: "searchbox" }, input, list);
+}
 let decisionShownAt = 0, shownDecision = null, turnChangedAt = 0;
 function renderDecision(s, d) {
   const box = $("decision");
@@ -913,7 +1607,7 @@ function renderDecision(s, d) {
   }
   const m = /^(.*?)\s*\(([^()]*)\)$/.exec(d.prompt || "");
   const kids = [h("div", { class: "panel-h" }, h("span", { class: "kind" }, KIND[d.kind] || "Decision"), h("span", { style: "margin-left:auto;color:var(--gold-2)" }, "Your move")),
-    h("div", { class: "prompt" }, m ? m[1] : d.prompt, m ? h("span", { class: "src" }, m[2]) : null)];
+    d.kind === "color" ? null : h("div", { class: "prompt" }, h("span", { html: symbols(m ? m[1] : d.prompt) }), m ? h("span", { class: "src" }, m[2]) : null)];
   const opts = d.options;
   const amounts = opts.filter((o) => o.type === "amount");
   const pass = opts.find((o) => o.type === "pass");
@@ -925,6 +1619,64 @@ function renderDecision(s, d) {
     const ok = () => { const o = amounts.find((a) => Number(a.label) === Number(num.value)); o ? answer(o.id) : toast(`Choose a number from ${lo} to ${hi}`); };
     num.onkeydown = (e) => { if (e.key === "Enter") ok(); };
     kids.push(h("div", { class: "amount" }, h("div", { class: "row" }, range, num), h("div", { class: "actions" }, h("button", { class: "btn gold", onclick: ok }, "Confirm"))));
+  } else if (d.kind === "mana") {
+    const auto = opts.find((o) => o.id === "auto"), cancel = opts.find((o) => o.id === "cancel");
+    // Identical sources (five Mountains) are listed once.
+    const count = new Map(), shown = [];
+    for (const o of opts) {
+      if (o === auto || o === cancel) continue;
+      const k = o.name + "|" + o.label;
+      if (!count.has(k)) { count.set(k, 0); shown.push(o); }
+      count.set(k, count.get(k) + 1);
+    }
+    kids.push(h("div", { class: "hintline", html: shown.length
+      ? "Click a <b>glowing</b> source to tap it (one with several mana abilities opens a menu), or pick one below. <b>Auto pay</b> pays the rest: artifacts first, then lands, then sources you sacrifice."
+      : "No source of yours can pay this by hand. <b>Auto pay</b> can still pay Phyrexian mana with life or tap creatures for convoke." }));
+    if (shown.length) kids.push(h("div", { class: "opts" }, shown.map((o, i) => {
+      const n = count.get(o.name + "|" + o.label);
+      const b = h("button", { class: "opt", onclick: () => answer(o.id) }, optThumb(o),
+        h("span", { class: "lbl", html: `<b>${esc(o.name)}</b>${n > 1 ? " ×" + n : ""} &nbsp;${symbols(o.label)}` }), i < 9 ? h("span", { class: "kbd" }, i + 1) : null);
+      b.addEventListener("mouseenter", () => mark(o.source, true)); b.addEventListener("mouseleave", () => mark(o.source, false));
+      return b;
+    })));
+    kids.push(h("div", { class: "actions" }, h("button", { class: "btn gold", onclick: () => answer(auto.id) }, "Auto pay", h("span", { class: "kbd" }, "Space")),
+      h("button", { class: "btn", onclick: () => answer(cancel.id) }, "Cancel")));
+    hotkeys = shown.map((o) => o.id); primary = auto.id;
+  } else if (d.kind === "color") {
+    // The permanent being tapped and one mana symbol per colour it can make.
+    const PIP = { White: "W", Blue: "U", Black: "B", Red: "R", Green: "G", Colorless: "C" };
+    const ORDER = Object.keys(PIP);
+    const rank = (o) => (ORDER.includes(o.label) ? ORDER.indexOf(o.label) : ORDER.length);
+    const pips = [...opts].sort((a, b) => rank(a) - rank(b));
+    const src = byId.get(d.source);
+    const art = h("img", { class: "art", alt: src ? src.name : "" });
+    if (src && !isHidden(src)) img(src.name, (u) => (art.src = u.n || u.l));
+    kids.push(h("div", { class: "manapick" }, h("div", { class: "ttl" }, src ? src.name : "Mana"), h("div", { class: "sub" }, d.prompt || "Select mana to produce"),
+      h("div", { class: "pips" }, pips.map((o, i) => h("button", { class: "pip", title: o.label, onclick: () => answer(o.id) },
+        PIP[o.label] ? h("span", { html: symbols(`{${PIP[o.label]}}`) }) : o.label, i < 9 ? h("span", { class: "kbd" }, i + 1) : null))),
+      src ? art : null));
+    hotkeys = pips.map((o) => o.id);
+  } else if (d.kind === "search") {
+    kids.push(searchBox(d));
+  } else if (d.kind === "triggers") {
+    kids.push(h("div", { class: "hintline", html: "Several of your abilities triggered. In the <b>stack panel</b>, click them in the order they go on the stack: the last one placed is on top and <b>resolves first</b>. Drag placed ones to reorder, click one to take it back, then <b>Confirm order</b>." }));
+    const ord = orderState();
+    kids.push(h("div", { class: "actions" }, h("button", { class: "btn gold", disabled: !ord || ord.placed.length !== opts.length, onclick: confirmOrder }, "Confirm order", h("span", { class: "kbd" }, "Space"))));
+  } else if (isDeclare(d) && plan) {
+    const atk = d.kind === "attackers", picks = pairsOf();
+    kids.push(h("div", { class: "hintline", html: atk
+      ? "Click your <b>glowing</b> creatures to attack with them (click one again to hold it back). <b>Pass priority</b> declares the attack."
+      : "Click a <b>glowing</b> creature of yours, then the <b>attacker</b> it blocks. Click a blocker again to change its block. <b>Pass priority</b> declares the blocks." }));
+    const label = new Map(d.options.map((o) => [o.id, o.label]));
+    kids.push(h("div", { class: "hintline" }, picks.length ? picks.map((id) => label.get(id)).join(" · ") : atk ? "No attackers yet." : "No blockers yet."));
+    const acts = [h("button", { class: "btn gold", onclick: () => declare("click") }, "Pass priority", h("span", { class: "kbd" }, "Space"))];
+    if (atk) acts.push(h("button", { class: "btn", title: "Every creature that can attack attacks MageZero", onclick: allAttack }, "All attack"));
+    if (picks.length) acts.push(h("button", { class: "btn", onclick: () => { plan.picks.clear(); arming = null; render(); } }, atk ? "Clear" : "Clear blocks"));
+    kids.push(h("div", { class: "actions" }, acts));
+    primary = () => declare("key");
+  } else if (d.kind === "look") {
+    kids.push(h("div", { class: "actions" }, h("button", { class: "btn gold", onclick: () => answer(opts[0].id) }, "OK", h("span", { class: "kbd" }, "Space"))));
+    primary = opts[0].id;
   } else if ((d.kind === "mulligan" || d.kind === "use") && opts.length === 2) {
     const [a, b] = d.kind === "mulligan" ? opts : [opts[1], opts[0]];
     kids.push(h("div", { class: "actions" }, h("button", { class: "btn gold", onclick: () => answer(a.id) }, a.label, h("span", { class: "kbd" }, "1")),
@@ -943,6 +1695,8 @@ function renderDecision(s, d) {
     const stop = rest.filter((o) => (!o.target && ["attack", "block", "target"].includes(o.type)) || /^Done/.test(o.label));
     const main = rest.filter((o) => !stop.includes(o));
     hotkeys = main.map((o) => o.id);
+    if (pass && main.length) kids.push(h("div", { class: "hintline", html: "Click a <b>glowing card</b> to cast it or use its ability (a card with several abilities opens a menu), or pick one below. You pay the mana after choosing (Auto pay or one source at a time), so lands only glow here when they have other abilities." }));
+    if (d.kind === "target") kids.push(h("div", { class: "hintline", html: "Click a <b>glowing</b> card or player on the table, or pick one below. A glowing graveyard or exile pile holds targets: open it and click the card." }));
     if (main.length) kids.push(h("div", { class: "opts" }, main.map((o, i) => {
       const b = h("button", { class: "opt", onclick: () => answer(o.id) }, optThumb(o), h("span", { class: "lbl", html: symbols(o.label) }), i < 9 ? h("span", { class: "kbd" }, i + 1) : null);
       const ref = o.target || o.source;
@@ -954,19 +1708,16 @@ function renderDecision(s, d) {
     stop.forEach((o, i) => acts.push(h("button", { class: !pass && i === 0 ? "btn gold" : "btn", onclick: () => answer(o.id) }, o.label, !pass && i === 0 ? h("span", { class: "kbd" }, "Space") : null)));
     if (acts.length) kids.push(h("div", { class: "actions" }, acts));
     primary = pass ? pass.id : stop[0] ? stop[0].id : null;
-    const auto = (kind, mode) => () => { combatAuto = { turn: s.turn, kind, mode }; autoPass(); };
-    if (d.kind === "attack") kids.push(h("div", { class: "actions" },
-      h("button", { class: "btn", onclick: auto("attack", "all"), title: "Every remaining creature attacks MageZero" }, "All attack"),
-      h("button", { class: "btn", onclick: auto("attack", "none"), title: "No other creature attacks this combat" }, "No more attacks")));
-    if (d.kind === "block") kids.push(h("div", { class: "actions" },
-      h("button", { class: "btn", onclick: auto("block", "none"), title: "Declare no further blockers this combat" }, "No blocks")));
   }
-  if (s && s.revealed.length) kids.push(h("div", { class: "panel-h" }, "Cards you can see"), h("div", { class: "revealed" }, s.revealed.map((c) => cardEl(c))));
-  box.replaceChildren(...kids);
+  if (s && s.revealed.length) kids.push(h("div", { class: "actions" }, h("button", { class: "btn", onclick: () => { viewerHidden = null; renderViewer(view.state, view.decision); } },
+    `Show the cards (${s.revealed.length})`)));
+  box.replaceChildren(...kids.filter(Boolean));
 }
 function mark(id, on) {
   if (!id) return;
-  document.querySelectorAll("[data-ids]").forEach((n) => { if (n.dataset.ids.split(" ").includes(id)) n.classList.toggle("marked", on); });
+  const hits = document.querySelectorAll(`[data-ids~="${CSS.escape(id)}"]`);
+  hits.forEach((n) => n.classList.toggle("marked", on));
+  if (!hits.length && view && view.state) { const pile = anchorEl({ id }); if (pile) pile.classList.toggle("pinged", on); }
 }
 
 // ---------- overlays ----------
@@ -983,7 +1734,11 @@ function showPreview(c, ev) {
   if (c.attacking) stats.push("Attacking");
   if (c.blocking) stats.push("Blocking");
   if (c.phased_out) stats.push("Phased out");
-  if (!u || stats.length) {
+  if (c.ability) {
+    box.append(h("div", { class: "info" }, h("b", null, c.name), h("div", { class: "ty" }, c.ability_kind ? cap(c.ability_kind) + " ability" : "Ability"),
+      (c.rules || []).map((r) => h("p", { html: symbols(tidy(r)) })),
+      (c.targets || []).length ? h("div", { class: "st" }, c.targets.map((x) => h("span", null, (x.kind === "target" ? "⌖ " : "↳ ") + placeName(x)))) : null));
+  } else if (!u || stats.length) {
     box.append(h("div", { class: "info" }, !u ? h("b", { html: esc(isHidden(c) ? "Face-down card" : c.name) + (c.cost ? " &nbsp;" + symbols(c.cost) : "") }) : null,
       !u && c.types ? h("div", { class: "ty" }, c.types) : null, !u ? (c.rules || []).map((r) => h("p", { html: symbols(plain(r)) })) : null,
       stats.length ? h("div", { class: "st" }, stats.map((t) => h("span", null, t))) : null));
@@ -998,9 +1753,9 @@ function movePreview(ev) {
   box.style.left = x + "px"; box.style.top = y + "px";
 }
 function hidePreview() { $("preview").style.display = "none"; }
-function showMenu(hits, ev) {
+function showMenu(hits, ev, pick = (o) => answer(o.id)) {
   const m = $("menu");
-  m.replaceChildren(...hits.map((o) => h("button", { class: "opt", onclick: (e) => { e.stopPropagation(); answer(o.id); } }, h("span", { class: "lbl", html: symbols(o.label) }))));
+  m.replaceChildren(...hits.map((o) => h("button", { class: "opt", onclick: (e) => { e.stopPropagation(); hideMenu(); pick(o); } }, h("span", { class: "lbl", html: symbols(o.label) }))));
   m.style.display = "flex";
   m.style.left = Math.min(ev.clientX, innerWidth - 340) + "px";
   m.style.top = Math.min(ev.clientY, innerHeight - m.offsetHeight - 10) + "px";
@@ -1008,12 +1763,14 @@ function showMenu(hits, ev) {
 function hideMenu() { $("menu").style.display = "none"; }
 document.addEventListener("click", hideMenu);
 function dialog(...kids) { $("dialog").replaceChildren(...kids); $("scrim").classList.add("show"); }
-function closeDialog() { $("scrim").classList.remove("show"); lobbyOpen = false; hidePreview(); }
+let zoneOpen = false;
+function closeDialog() { $("scrim").classList.remove("show"); lobbyOpen = false; zoneOpen = false; hidePreview(); }
 const dismissible = () => view && inControl() && view.status !== "starting" && !(lobbyOpen && !view.state && view.status !== "playing");
 $("scrim").addEventListener("click", (e) => { if (e.target === $("scrim") && dismissible()) closeDialog(); });
 function zone(title, cards) {
+  zoneOpen = true;
   dialog(h("div", { class: "dh" }, h("h2", null, title), h("button", { class: "btn ghost icon", onclick: closeDialog, title: "Close" }, "✕")),
-    h("div", { class: "db" }, cards.length ? h("div", { class: "zonecards" }, cards.map((c) => cardEl(c, { passive: true }))) : h("div", { style: "color:var(--text-3)" }, "Empty.")));
+    h("div", { class: "db" }, cards.length ? h("div", { class: "zonecards" }, cards.map((c) => cardEl(c))) : h("div", { style: "color:var(--text-3)" }, "Empty.")));
 }
 let shown = null;
 function renderOverlays(s) {
@@ -1083,7 +1840,7 @@ async function openLobby() {
 }
 async function startGame() {
   store("humanDeck", choice.you); store("botDeck", choice.opponent); store("starts", choice.starts); store("greedy", choice.greedy);
-  passUntil = false; passTurn = null; combatAuto = null; lastTurnKey = null; lastLife = {}; logTail = null;
+  passUntil = false; passTurn = null; plan = null; arming = null; lastTurnKey = null; lastLife = {}; logTail = null;
   claim();
   try { await post("/api/new", { human_deck: choice.you, bot_deck: choice.opponent, starts: choice.starts, greedy: choice.greedy }); shown = null; closeDialog(); }
   catch (e) { toast(e.message); }
@@ -1096,9 +1853,11 @@ $("concede").onclick = () => dialog(h("div", { class: "result loss" }, h("h2", n
     h("button", { class: "btn", onclick: closeDialog }, "Keep playing"))));
 $("passTurn").onclick = () => { if (view && view.state) { passTurn = view.state.turn; passUntil = false; autoPass(); } };
 $("passMine").onclick = () => { passUntil = true; passTurn = null; autoPass(); };
-for (const id of ["autoEmpty", "autoOwn"]) { $(id).checked = load(id, true); $(id).onchange = () => { store(id, $(id).checked); autoPass(); }; }
+for (const id of ["autoEmpty", "autoOwn", "autoMana"]) { $(id).checked = load(id, id !== "autoMana"); $(id).onchange = () => { store(id, $(id).checked); autoPass(); }; }
 document.addEventListener("keydown", (ev) => {
   if (["INPUT", "SELECT", "TEXTAREA"].includes(ev.target.tagName)) return;
+  if (ev.key === "Escape" && viewerMode) { if (viewerMode === "decision") { viewerHidden = view.decision && view.decision.decision; hideViewer(); viewerMode = null; } else showSeen(); return; }
+  if (ev.key === "Escape" && arming) { arming = null; drawCombat(); render(); return; }
   if (ev.key === "Escape") { hideMenu(); if ($("scrim").classList.contains("show") && dismissible()) closeDialog(); return; }
   if ($("scrim").classList.contains("show")) return;
   // A held key repeats, and a key pressed just as a new decision appears would answer
@@ -1107,7 +1866,15 @@ document.addEventListener("keydown", (ev) => {
   // between the player's last look and this key.
   if (ev.repeat || performance.now() - decisionShownAt < 300 || performance.now() - turnChangedAt < 1200) return;
   const d = view && view.decision;
-  if (ev.key === " " || ev.key === "Enter") { if (d && primary) { ev.preventDefault(); answer(primary, "key " + JSON.stringify(ev.key)); } return; }
+  if (d && d.kind === "triggers" && orderState()) {
+    if (ev.key === " " || ev.key === "Enter") { ev.preventDefault(); confirmOrder(); }
+    else if (/^[1-9]$/.test(ev.key)) { const o = pendingItems()[Number(ev.key) - 1]; if (o) placeTrigger(o.id); }
+    return;
+  }
+  if (ev.key === " " || ev.key === "Enter") {
+    if (d && primary) { ev.preventDefault(); typeof primary === "function" ? primary() : answer(primary, "key " + JSON.stringify(ev.key)); }
+    return;
+  }
   if (/^[1-9]$/.test(ev.key) && d && hotkeys[Number(ev.key) - 1]) { answer(hotkeys[Number(ev.key) - 1], "key " + ev.key); return; }
   if (ev.key === "e" || ev.key === "E") $("passTurn").click();
   if (ev.key === "t" || ev.key === "T") $("passMine").click();

@@ -17,6 +17,7 @@ import sys
 import tempfile
 import threading
 import time
+import unicodedata
 import urllib.request
 from pathlib import Path
 
@@ -34,6 +35,12 @@ SOURCES = ("src",)  # adapter source folders under integration/xmage
 def strip_tags(message: str) -> str:
     """XMage log lines carry client HTML (colours, card links); keep the text."""
     return re.sub(r"<[^>]+>", "", message).replace("&nbsp;", " ").replace("&lt;", "<").replace("&gt;", ">")
+
+
+def fold(text: str) -> str:
+    """Lower case without accents or punctuation, for searching card names ("Lim-Dûl" ~ "lim dul")."""
+    plain = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode().lower()
+    return re.sub(r"[^a-z0-9]+", " ", plain).strip()
 
 
 def read_deck(path: Path) -> tuple[int, set[str], list[str]]:
@@ -139,11 +146,33 @@ class Table:
                 "game": self.game,
                 "version": self.version,
                 "state": state,
-                "decision": None if self.decision is None else {k: v for k, v in self.decision.items() if k != "state"},
+                # A searched choice's names (every card in XMage) stay here: GET /api/search.
+                "decision": None if self.decision is None else {
+                    **{k: v for k, v in self.decision.items() if k not in ("state", "names")},
+                    **({"count": len(self.decision["names"])} if "names" in self.decision else {}),
+                },
                 "result": self.result,
                 "decks": self.decks,
                 "controller": self.controller,
             }
+
+    def search(self, query: str, limit: int = 60) -> list[str]:
+        """Names of the pending searched choice that match `query`: whole name, then word starts, then anywhere."""
+        with self.cond:
+            names = self.decision.get("names", []) if self.decision else []
+        words = fold(query).split()
+        if not words:
+            return []
+        ranked = []
+        for name in names:
+            folded = fold(name)
+            if not all(word in folded for word in words):
+                continue
+            starts = folded.split()
+            rank = 0 if folded.startswith(" ".join(words)) else 1 if all(any(s.startswith(w) for s in starts) for w in words) else 2
+            ranked.append((rank, len(name), name))
+        ranked.sort()
+        return [name for _, _, name in ranked[:limit]]
 
     # --- engine side
 
@@ -217,10 +246,29 @@ class Table:
                 raise ValueError("this game is being played in another browser tab")
             if self.decision is None or self.decision["decision"] != decision:
                 raise ValueError("that decision is no longer pending")
-            if action_id not in {option["id"] for option in self.decision["options"]}:
+            offered = {option["id"]: option["label"] for option in self.decision["options"]}
+            if self.decision["kind"] == "search":
+                if action_id not in self.decision["names"]:
+                    raise ValueError("not one of the names offered")
+                label = action_id
+            elif self.decision["kind"] == "triggers":
+                # The answer orders every offered trigger: ids joined by commas, first on the stack first.
+                order = action_id.split(",")
+                if sorted(order) != sorted(offered):
+                    raise ValueError("the order must list every trigger once")
+                label = "order: " + " | ".join(offered[i] for i in order)
+            elif self.decision["kind"] in ("attackers", "blockers"):
+                # The whole declaration: the chosen pairs' ids joined by commas (empty: none).
+                pairs = [i for i in action_id.split(",") if i]
+                if len(set(pairs)) != len(pairs) or any(i not in offered for i in pairs):
+                    raise ValueError("not a declaration of offered pairs")
+                none = "no attackers" if self.decision["kind"] == "attackers" else "no blockers"
+                label = " | ".join(offered[i] for i in pairs) or none
+            elif action_id not in offered:
                 raise ValueError("not an offered option")
+            else:
+                label = offered[action_id]
             self.answer = action_id
-            label = next(o["label"] for o in self.decision["options"] if o["id"] == action_id)
             self.history.append({"t": round(time.time(), 2), "answered": label, "client": client})
             self.changed()
 
@@ -322,6 +370,7 @@ class WebGame:
         with self.table.cond:
             if self.table.game != game:
                 return  # a newer game replaced this one
+            self._save_log(game)
             self.table.decision = None
             if self.table.abort:
                 self.table.status, self.table.message = "ready", "Game abandoned."
@@ -331,6 +380,13 @@ class WebGame:
                 self.table.status = "over"
                 self.table.message = f"Game over: you {self.table.result}." if self.table.result else "Game over."
             self.table.changed()
+
+    def _save_log(self, game: int) -> None:
+        """Keep the game's log and the decisions asked and answered (a new game replaces them on the page)."""
+        lines = [strip_tags(line) for line in (self.table.state or {}).get("log", [])]
+        decisions = [json.dumps(entry, ensure_ascii=False) for entry in self.table.history]
+        text = "\n".join([*lines, "", "--- decisions", *decisions]) + "\n"
+        (self.workdir / f"web-game-{game}.log").write_text(text, encoding="utf-8")
 
     def concede(self) -> None:
         """Concede the running game: the bot wins, as in XMage."""
@@ -399,6 +455,10 @@ def create_app(web: WebGame) -> Flask:
         client = body.get("client")
         table.respond(str(body.get("decision")), str(body.get("action_id")), None if client is None else str(client))
         return jsonify(ok=True)
+
+    @app.get("/api/search")
+    def search():
+        return jsonify(names=table.search(request.args.get("q", ""), min(request.args.get("limit", 60, type=int), 200)))
 
     @app.get("/api/history")
     def history():
