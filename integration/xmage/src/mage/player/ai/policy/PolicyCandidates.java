@@ -77,17 +77,33 @@ public final class PolicyCandidates<T> {
 
     /** Pass first, then playable non-mana abilities not in `rejected`. */
     public static PolicyCandidates<ActivatedAbility> priority(Player player, Game game, PolicyClient client, Set<String> rejected) {
+        return priority(player, game, client, rejected, false);
+    }
+
+    /**
+     * As above; withMana adds the playable mana abilities last, flagged "mana": true
+     * (a person tapping for mana with nothing to pay, WebPlayer; never the policy).
+     */
+    public static PolicyCandidates<ActivatedAbility> priority(Player player, Game game, PolicyClient client, Set<String> rejected,
+                                                              boolean withMana) {
         List<ActivatedAbility> abilities = new ArrayList<>(player.getPlayable(game, true));
-        abilities.removeIf(Ability::isManaAbility);
         abilities.removeIf(ability -> rejected.contains(abilityKey(ability)));
-        abilities.sort(Comparator.comparing((Ability a) -> String.valueOf(a.getSourceId())).thenComparing(Ability::toString));
+        Comparator<Ability> order = Comparator.comparing((Ability a) -> String.valueOf(a.getSourceId())).thenComparing(Ability::toString);
+        List<ActivatedAbility> mana = new ArrayList<>();
+        if (withMana) for (ActivatedAbility ability : abilities) if (ability.isManaAbility()) mana.add(ability);
+        mana.sort(order);
+        abilities.removeIf(Ability::isManaAbility);
+        abilities.sort(order);
         abilities.add(0, new PassAbility());
+        int manaFrom = abilities.size();
+        abilities.addAll(mana);
         PolicyCandidates<ActivatedAbility> result = new PolicyCandidates<>();
         for (int i = 0; i < abilities.size(); i++) {
             ActivatedAbility ability = abilities.get(i);
             String type = ability instanceof PassAbility ? "pass" : ability instanceof SpellAbility ? "cast" : "activate";
             Map<String, Object> candidate = action(client, "priority-" + i, type, ability.getSourceId(), null, game);
             ((double[]) candidate.get("features"))[1] = ability.getManaCosts().manaValue() / 16.0;
+            if (i >= manaFrom) candidate.put("mana", true);
             result.add(i == 0 ? null : ability, describe(candidate, ability.getRule()));
         }
         return result;

@@ -180,7 +180,7 @@ public class PolicyPlayer extends ComputerPlayer implements RecordingPlayer {
             + ":" + game.getBattlefield().getAllPermanents().size() + ":" + getHand().size();
         if (!window.equals(rejectedWindow)) { rejected.clear(); rejectedWindow = window; }
         int firstStep = encoder == null ? 0 : encoder.decisions();
-        ActivatedAbility chosen = select(game, PolicyCandidates.priority(this, game, client, rejected));
+        ActivatedAbility chosen = select(game, PolicyCandidates.priority(this, game, client, rejected, tapsForMana()));
         game.setLastPriority(getId());
         if (chosen == null) { pass(game); return false; }
         if (!activateAbility(chosen, game) && !cancelledPayment()) {
@@ -198,6 +198,13 @@ public class PolicyPlayer extends ComputerPlayer implements RecordingPlayer {
      * its mana (WebPlayer); the ability then stays on offer. The policy never cancels.
      */
     protected boolean cancelledPayment() { return false; }
+
+    /**
+     * Whether mana abilities are offered at priority, with nothing to pay (WebPlayer:
+     * a person floats mana or taps for what tapping sets off). The policy taps for
+     * mana only while paying.
+     */
+    protected boolean tapsForMana() { return false; }
 
     @Override protected boolean makeChoice(Outcome outcome, Target target, Ability source, Game game, Cards fromCards) {
         if (target.isChoiceCompleted(target.getAffectedAbilityControllerId(getId()), source, game, fromCards)) return target.isChosen(game);

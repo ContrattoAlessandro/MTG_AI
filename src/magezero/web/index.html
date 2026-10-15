@@ -206,7 +206,9 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) var(--side) var(--fl
 button.chip { cursor: pointer; text-align: left; }
 button.chip:hover { border-color: var(--line-2); background: rgba(255,255,255,.08); }
 .chip.alert { border-color: rgba(255,107,107,.45); color: #ffc9c4; }
-.pool { display: flex; gap: 4px; flex-wrap: wrap; }
+.pool { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+.pool i { font-style: normal; font-size: 10px; font-weight: 700; letter-spacing: 1.1px; text-transform: uppercase; color: var(--text-3); margin-right: 2px; }
+.pool em { font-style: normal; font-size: 11.5px; color: var(--text-3); }
 .pool span { display: inline-flex; align-items: center; gap: 3px; padding: 2px 7px 2px 3px; background: rgba(0,0,0,.35); border-radius: 12px; font-weight: 700; font-size: 12px; }
 .cmdzone { display: flex; gap: 10px; align-items: center; padding-top: 2px; }
 .cmdzone .card { --cw: 44px; position: relative; flex: none; }
@@ -259,6 +261,9 @@ button.chip:hover { border-color: var(--line-2); background: rgba(255,255,255,.0
 @keyframes glow { 0%, 100% { box-shadow: 0 0 0 2px var(--gold), 0 0 12px rgba(230,180,80,.45); } 50% { box-shadow: 0 0 0 2px var(--gold-2), 0 0 24px rgba(230,180,80,.8); } }
 .card.can:hover { filter: brightness(1.12); }
 .slot:not(.tapped) > .card.can:hover { transform: translateY(-6px); }
+/* A source you may tap for mana with nothing to pay: clickable, but quiet until hovered. */
+.card.tap { cursor: pointer; }
+.card.tap:hover { filter: brightness(1.12); box-shadow: 0 0 0 2px rgba(230,180,80,.6), 0 0 12px rgba(230,180,80,.35); }
 /* Declare attackers: creatures still to be asked burn red; the one being asked burns brighter. */
 .card.atk-ready { animation: ready 1.6s ease-in-out infinite; }
 @keyframes ready { 0%, 100% { box-shadow: 0 0 0 2px rgba(255,77,46,.75), 0 0 10px rgba(255,90,40,.35); } 50% { box-shadow: 0 0 0 2px #ff6a3d, 0 0 20px rgba(255,90,40,.6); } }
@@ -515,6 +520,7 @@ aside { display: flex; flex-direction: column; min-height: 0; background: linear
         <div class="passing" id="passing"></div>
         <label class="toggle"><input type="checkbox" id="autoEmpty" checked><span class="sw"></span><span>Auto-pass on an empty stack outside my main phases</span></label>
         <label class="toggle"><input type="checkbox" id="autoOwn" checked><span class="sw"></span><span>Auto-pass while my own spell or ability is on top of the stack</span></label>
+        <label class="toggle"><input type="checkbox" id="stopMana"><span class="sw"></span><span>Stop when tapping for mana is all I can do (for effects that care about tapping)</span></label>
         <label class="toggle"><input type="checkbox" id="autoMana"><span class="sw"></span><span>Always auto pay mana costs (artifacts, then lands, then sources to sacrifice)</span></label>
       </div>
       <div class="logwrap"><div class="panel-h">Game log</div><div class="log" id="log"></div></div>
@@ -751,7 +757,10 @@ function autoPass() {
   if (passUntil || passTurn != null) pass = true;
   else if (s.stack.length) pass = $("autoOwn").checked && s.stack[0].controller === "you";
   else pass = $("autoEmpty").checked && !(s.active === "you" && MAIN.has(s.step));
-  const why = passUntil ? "pass until my turn" : passTurn != null ? "pass turn" : s.stack.length ? "own spell on top" : "empty stack";
+  // Nothing to do but tap for mana: passed as when there was nothing at all, unless asked to stop.
+  const manaOnly = d.options.slice(1).every((o) => o.mana);
+  if (manaOnly && !$("stopMana").checked) pass = true;
+  const why = manaOnly && !$("stopMana").checked ? "only mana to tap" : passUntil ? "pass until my turn" : passTurn != null ? "pass turn" : s.stack.length ? "own spell on top" : "empty stack";
   if (pass) setTimeout(() => { if (view.decision && view.decision.decision === d.decision) answer(d.options[0].id, "auto: " + why); }, 90);
 }
 function renderPassing() {
@@ -773,8 +782,8 @@ function optionsFor(ids) {
   const set = new Set(ids);
   let hits = d.options.filter((o) => o.target && set.has(o.target));
   if (!hits.length) hits = d.options.filter((o) => o.source && set.has(o.source) && o.type !== "pass" && !(["attack", "block"].includes(o.type) && !o.target));
-  // Stacked identical lands: one of them pays.
-  if (d.kind === "mana") { const labels = new Set(); hits = hits.filter((o) => !labels.has(o.label) && labels.add(o.label)); }
+  // Stacked identical lands: one of them pays (or taps for mana at priority).
+  if (d.kind === "mana" || hits.some((o) => o.mana)) { const labels = new Set(); hits = hits.filter((o) => !(d.kind === "mana" || o.mana) || (!labels.has(o.label) && labels.add(o.label))); }
   return hits;
 }
 function attachPreview(node, c) {
@@ -818,7 +827,7 @@ function cardEl(c, opt = {}) {
   if (!opt.passive && isDeclare(dec) && plan && !answered.has(dec.decision)) combatCard(node, ids[0], dec);
   const hits = opt.passive ? [] : optionsFor(ids);
   if (hits.length) {
-    node.classList.add("can");
+    node.classList.add(hits.every((o) => o.mana) ? "tap" : "can");
     node.addEventListener("click", (ev) => { ev.stopPropagation(); hits.length === 1 ? answer(hits[0].id) : showMenu(hits, ev); });
   }
   node.dataset.ids = ids.join(" ");
@@ -905,8 +914,6 @@ function seat(p, s) {
   if (p.poison) chips.append(h("div", { class: "chip alert" }, icon("poison"), "Poison", h("b", null, p.poison + "/10")));
   if (p.commander_damage) chips.append(h("div", { class: "chip alert", title: "Combat damage taken from the opposing commander (21 loses)" }, icon("shield"), "Cmdr", h("b", null, p.commander_damage + "/21")));
   box.append(chips);
-  const pool = Object.entries(p.mana).filter(([, v]) => v);
-  if (pool.length) box.append(h("div", { class: "pool", title: "Mana pool" }, pool.map(([k, v]) => h("span", { html: symbols(`{${k}}`) + v }))));
   if (p.command.length) {
     const cz = h("div", { class: "cmdzone" });
     p.command.forEach((c) => cz.append(cardEl(c, { bare: true })));
@@ -914,6 +921,10 @@ function seat(p, s) {
     box.append(cz);
   }
   if (!mine && p.hand) box.append(h("div", { class: "backs", title: `${p.hand} cards in hand` }, Array.from({ length: Math.min(p.hand, 12) }, () => h("i"))));
+  // Unspent mana, at the bottom (always there for you): it empties at the end of each step and phase.
+  const pool = Object.entries(p.mana).filter(([, v]) => v);
+  if (pool.length || mine) box.append(h("div", { class: "pool", title: "Unspent mana: it empties at the end of each step and phase" },
+    h("i", null, "Mana"), pool.length ? pool.map(([k, v]) => h("span", { html: symbols(`{${k}}`) + v })) : h("em", null, "none")));
   const hits = optionsFor([p.id]);
   if (hits.length) {
     box.classList.add("can");
@@ -1032,6 +1043,13 @@ function proposedTile(o, top, nums) {
   return el;
 }
 let dragged = null;
+// Anywhere on the stack panel takes the drop, the dragged tile itself and the gaps included: a refused drop has the
+// browser fly the drag image back to where it started, though the new order is already in place.
+for (const type of ["dragover", "drop"]) document.addEventListener(type, (e) => {
+  if (!dragged || !e.target.closest?.("#stackpanel")) return;
+  e.preventDefault();
+  if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+});
 function placeStack() {
   const panel = $("stackpanel"), table = $("table");
   // By default in the top-right corner of the board, where the left-aligned lanes leave room.
@@ -1685,7 +1703,7 @@ function renderDecision(s, d) {
   } else {
     const seen = new Set();
     const rest = opts.filter((o) => {
-      if (o === pass) return false;
+      if (o === pass || o.mana) return false; // tapped for mana on the table, not from the list
       const ref = byId.get(o.source);
       const fromHand = ref && s && s.hand.some((c) => c.id === ref.id);
       if (!fromHand || !["cast", "activate"].includes(o.type)) return true;
@@ -1696,6 +1714,7 @@ function renderDecision(s, d) {
     const main = rest.filter((o) => !stop.includes(o));
     hotkeys = main.map((o) => o.id);
     if (pass && main.length) kids.push(h("div", { class: "hintline", html: "Click a <b>glowing card</b> to cast it or use its ability (a card with several abilities opens a menu), or pick one below. You pay the mana after choosing (Auto pay or one source at a time), so lands only glow here when they have other abilities." }));
+    if (pass && opts.some((o) => o.mana)) kids.push(h("div", { class: "hintline", html: "Click an untapped land or mana source to <b>tap it for mana</b> now: the mana waits in your pool (bottom of your box) until the end of this step." }));
     if (d.kind === "target") kids.push(h("div", { class: "hintline", html: "Click a <b>glowing</b> card or player on the table, or pick one below. A glowing graveyard or exile pile holds targets: open it and click the card." }));
     if (main.length) kids.push(h("div", { class: "opts" }, main.map((o, i) => {
       const b = h("button", { class: "opt", onclick: () => answer(o.id) }, optThumb(o), h("span", { class: "lbl", html: symbols(o.label) }), i < 9 ? h("span", { class: "kbd" }, i + 1) : null);
@@ -1853,7 +1872,7 @@ $("concede").onclick = () => dialog(h("div", { class: "result loss" }, h("h2", n
     h("button", { class: "btn", onclick: closeDialog }, "Keep playing"))));
 $("passTurn").onclick = () => { if (view && view.state) { passTurn = view.state.turn; passUntil = false; autoPass(); } };
 $("passMine").onclick = () => { passUntil = true; passTurn = null; autoPass(); };
-for (const id of ["autoEmpty", "autoOwn", "autoMana"]) { $(id).checked = load(id, id !== "autoMana"); $(id).onchange = () => { store(id, $(id).checked); autoPass(); }; }
+for (const id of ["autoEmpty", "autoOwn", "autoMana", "stopMana"]) { $(id).checked = load(id, !["autoMana", "stopMana"].includes(id)); $(id).onchange = () => { store(id, $(id).checked); autoPass(); }; }
 document.addEventListener("keydown", (ev) => {
   if (["INPUT", "SELECT", "TEXTAREA"].includes(ev.target.tagName)) return;
   if (ev.key === "Escape" && viewerMode) { if (viewerMode === "decision") { viewerHidden = view.decision && view.decision.decision; hideViewer(); viewerMode = null; } else showSeen(); return; }

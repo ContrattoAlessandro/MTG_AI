@@ -171,8 +171,10 @@ public final class WebPlayer extends PolicyPlayer {
         for (int i = 0; i < actions.size(); i++) {
             Map<String, Object> action = actions.get(i);
             Object option = options == null ? null : options.get(i);
-            choices.add(PolicyEncoder.map("id", action.get("id"), "type", action.get("type"),
-                "label", label(action, option, game), "source", action.get("source"), "target", action.get("target")));
+            Map<String, Object> choice = PolicyEncoder.map("id", action.get("id"), "type", action.get("type"),
+                "label", label(action, option, game), "source", action.get("source"), "target", action.get("target"));
+            if (action.containsKey("mana")) choice.put("mana", true); // tap for mana at priority
+            choices.add(choice);
         }
         String type = (String) actions.get(actions.size() - 1).get("type");
         Map<String, Object> state = snapshot(game, visible);
@@ -500,6 +502,20 @@ public final class WebPlayer extends PolicyPlayer {
         boolean was = cancelled[0];
         cancelled[0] = false;
         return was;
+    }
+
+    /** The person may tap for mana at priority too; the pool empties between steps and phases as usual. */
+    @Override protected boolean tapsForMana() { return true; }
+
+    @Override public boolean activateAbility(ActivatedAbility ability, Game game) {
+        // A mana ability chosen at priority (not while paying): its colour picker shows the source.
+        if (!ability.isManaAbility() || manaSource[0] != null || game.isSimulation()) return super.activateAbility(ability, game);
+        manaSource[0] = ability.getSourceId();
+        try {
+            return super.activateAbility(ability, game);
+        } finally {
+            manaSource[0] = null;
+        }
     }
 
     private List<MageObject> manaProducers(Game game) {

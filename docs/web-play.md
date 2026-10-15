@@ -40,7 +40,7 @@ The bot was trained as Winota against Kinnan, so playing Kinnan against the Wino
 
 ## The table
 
-- **Left**: the seat panels (commander art, life, hand, library, graveyard and exile piles, command zone; MageZero's hand as card backs).
+- **Left**: the seat panels (commander art, life, hand, library, graveyard and exile piles, command zone; MageZero's hand as card backs; at the bottom, your unspent mana).
 - **Centre**: MageZero's battlefield above yours, and your hand. Battlefields put creatures in the front row and other permanents and lands in the back row. Tapped cards turn sideways, identical lands and tokens stack with a ×N count, auras and equipment sit under their creature, and badges show power/toughness (red when damaged), counters, summoning sickness, attacking and blocking.
 - **The stack**: a floating panel (top right of the board; drag its header to move it, double-click to put it back) that appears while something is on the stack. The bottom of the stack is on the left, the item that resolves next is on the right, marked **Next**. Spells show their card; abilities show their source, whether they are triggered or activated, their text and their targets.
 - **Right**: the decision panel, the auto-pass controls and the game log (written to you; new lines flash; it follows the game unless you scroll up), then the match flow: whose turn it is, who has priority, and the steps of the turn with the current one lit in the active player's colour (blue for you, red for MageZero) and the steps already played dimmed.
@@ -63,7 +63,8 @@ Hover any card for a large image and its current state. Card images come from Sc
 
 Whenever the engine needs you, the decision panel lights up gold with the question and your options. Cards and players you can act on glow on the table; you can click them instead of the buttons (a card with several options opens a small menu). Choices with only one legal option are not asked.
 
-- **Activating an ability** of a permanent: when you have priority, a permanent with an ability you can activate now glows; click it (or its line in the decision panel). Mana abilities are not offered here: you tap sources while paying a cost (below), so a plain land does not glow.
+- **Activating an ability** of a permanent: when you have priority, a permanent with an ability you can activate now glows; click it (or its line in the decision panel). A plain land does not glow: you usually tap sources while paying a cost (below).
+- **Tapping for mana with nothing to pay**: when you have priority, click an untapped land or other mana source (it lights up on hover) to tap it now, for effects that care about tapping or to float mana. The mana shows at the bottom of your seat panel and, as the rules say, empties at the end of each step and phase (XMage keeps it only where a card says so, such as Upwelling). A cost you pay later uses it first.
 - **Choosing targets**: after you cast or activate something that targets, the panel asks for each target; legal targets glow on the table. A graveyard or exile pile that holds legal targets glows too: open it and click the card.
 
 | Decision | How it looks |
@@ -107,6 +108,7 @@ Like XMage, the page passes priority for you when you would rarely act:
 
 - **Auto-pass on an empty stack outside my main phases** (on by default): you stop in your own main phases and whenever something is on the stack, so you can respond to the bot.
 - **Auto-pass while my own spell or ability is on top of the stack** (on by default).
+- **Stop when tapping for mana is all I can do** (off by default): a priority where your only actions are mana abilities is passed like one with nothing to do; turn this on to stop there and tap.
 
 Turn either off to stop at every priority (for instant-speed play in the bot's turn). **Pass turn** and **To my turn** pass until the end of the turn or your next turn; **Stop** cancels them.
 
@@ -125,4 +127,4 @@ Only one browser tab plays at a time: the most recently opened one. Others show 
 
 ## How it works
 
-Your seat is `WebPlayer` (`integration/xmage/src/mage/player/ai/policy/WebPlayer.java`), a `PolicyPlayer` whose decisions go to the browser instead of the policy service. You therefore choose among exactly the candidates the policy is offered (`PolicyCandidates`), with readable labels. For each decision the engine posts the options and a snapshot of what you may see (never the bot's hand or library) to `/engine/decide`. Each stack item in the snapshot names its `source` and its `targets`, each with its zone and owner: the targets of every chosen mode (`kind: "target"`) and the objects its effects' target pointers name (`kind: "related"`), which is what the page draws its lines from; the server holds the request until you answer. The page long-polls `/api/state` and answers through `/api/answer`. The server is `src/magezero/webplay.py` and the page is `src/magezero/web/index.html` (plain HTML and JavaScript, no build step).
+Your seat is `WebPlayer` (`integration/xmage/src/mage/player/ai/policy/WebPlayer.java`), a `PolicyPlayer` whose decisions go to the browser instead of the policy service. You therefore choose among exactly the candidates the policy is offered (`PolicyCandidates`), with readable labels; the one addition is the mana abilities at priority (flagged `mana: true`), which the policy is never offered. For each decision the engine posts the options and a snapshot of what you may see (never the bot's hand or library) to `/engine/decide`. Each stack item in the snapshot names its `source` and its `targets`, each with its zone and owner: the targets of every chosen mode (`kind: "target"`) and the objects its effects' target pointers name (`kind: "related"`), which is what the page draws its lines from; the server holds the request until you answer. The page long-polls `/api/state` and answers through `/api/answer`. The server is `src/magezero/webplay.py` and the page is `src/magezero/web/index.html` (plain HTML and JavaScript, no build step).
