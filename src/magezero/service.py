@@ -364,15 +364,20 @@ class PolicyService:
             session.event_cursor = obs["events"][-1]["seq"]
         session.inflight = None
 
-    def reload(self, model, catalog, policy_version, output_dir=None):
+    def reload(self, model, catalog, policy_version, output_dir=None, abandon_sessions=False):
         """Swap checkpoints between collection batches; per-batch counters restart.
 
         Only allowed with no live sessions, so no queued or in-flight decision can
         see the new weights, and a recurrent game never spans two policies.
+        abandon_sessions drops sessions left open by games that ended without /finish
+        (the caller guarantees no game is running); nothing of them is recorded.
         """
         if catalog.digest != self.catalog.digest:
             raise ValueError("reloaded checkpoints must keep the served card catalog")
         with self.lock:
+            if self.sessions and abandon_sessions and all(s.inflight is None for s in self.sessions.values()):
+                print(f"reload: abandoned {len(self.sessions)} session(s) left open by unfinished games")
+                self.sessions.clear()
             if self.sessions:
                 raise ValueError("cannot reload while games are active; finish or abort them first")
             self.model, self.catalog, self.policy_version = model.eval(), catalog, policy_version
@@ -526,15 +531,19 @@ def create_app(service: PolicyService, allow_reload: bool = False) -> Flask:
             # Collection runners keep this process (and its imports) between
             # generations. Opt-in: it loads a checkpoint path named by the caller.
             payload = request.get_json()
-            if not isinstance(payload, dict) or set(payload) != {"checkpoint", "episodes"}:
+            # "abandon_sessions" is optional: drop sessions of games that ended without /finish.
+            if not isinstance(payload, dict) or set(payload) - {"abandon_sessions"} != {"checkpoint", "episodes"}:
                 raise ValueError("/reload requires checkpoint and episodes (null to disable recording)")
+            abandon = payload.get("abandon_sessions", False)
+            if not isinstance(abandon, bool):
+                raise ValueError("abandon_sessions must be a boolean")
             if not isinstance(payload["checkpoint"], str) or not (
                 payload["episodes"] is None or isinstance(payload["episodes"], str)
             ):
                 raise ValueError("checkpoint must be a path and episodes a path or null")
             device = next(service.model.parameters()).device
             model, _, catalog, data = load_checkpoint(payload["checkpoint"], device)
-            service.reload(model, catalog, data["policy_version"], payload["episodes"])
+            service.reload(model, catalog, data["policy_version"], payload["episodes"], abandon)
             return jsonify(policy_version=service.policy_version)
 
     return app
