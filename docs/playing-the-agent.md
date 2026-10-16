@@ -1,6 +1,6 @@
 # Playing the Winota agent
 
-`artifacts/winota-agent.pt` is the finished agent: it pilots **Winota, Joiner of Forces** (`xmage/decks/winota.dck`) in Commander Duel. It is generation 999 of the final run, without optimizer state (SHA-256 `73b28381f4f8de6a2d93ad6bdd12922c33ec3512809daebd99ca1e16f4bd263a`). The `artifacts/` folder is not in git, so keep a copy of the file.
+`artifacts/winota-agent.pt` is the finished agent: it pilots **Winota, Joiner of Forces** (`xmage/decks/winota.dck`) in Commander Duel. It is generation 999 of the final run, without optimizer state (SHA-256 `73b28381f4f8de6a2d93ad6bdd12922c33ec3512809daebd99ca1e16f4bd263a`). Download it from the [v0.3.0-alpha release](https://github.com/ContrattoAlessandro/MTG_AI/releases/tag/v0.3.0-alpha) (`winota-agent.pt`); the commands below assume it is in `artifacts/`. The two decks it knows are `decks/winota.dck` and `decks/kinnan.dck`; copy them to `xmage/decks/`.
 
 ## Playing it
 
