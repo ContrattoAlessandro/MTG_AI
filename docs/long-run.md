@@ -45,7 +45,9 @@ mz selfplay --checkpoint artifacts/commander-cloned.pt --reference artifacts/com
     --keep-every 100 --min-free-gb 30
 ```
 
-After an interruption, rerun the same command with `--resume`. The gauntlet fraction, AI skills and game counts are starting points to be tuned from a short launch check: watch games per hour, `failure_fraction` and `truncation_fraction` (both should stay below a few percent), and the share of time spent in the learner.
+After an interruption, rerun the same command with `--resume`.
+
+The final run uses `scripts/final-run.sh`, which runs this command with `configs/final.yml` and a 20-epoch clone, through `scripts/final_run.py`. That supervisor reruns `mz selfplay --resume` after a crash, at most 20 times in a row without a completed generation, and stops on a clean finish, the disk guard or the failure guard. It also keeps Windows awake while it runs: a closed lid, a manual sleep or a Windows Update restart still interrupt the run, so pause updates for its duration. It appends selfplay's output to `supervisor.log` and a progress line every 30 minutes to `status.log`, and the script writes the commit, the clone and the jar hashes to `provenance.txt` in the run folder. Rerun the script unchanged to continue. The gauntlet fraction, AI skills and game counts are starting points to be tuned from a short launch check: watch games per hour, `failure_fraction` and `truncation_fraction` (both should stay below a few percent), and the share of time spent in the learner.
 
 ## Caveats
 

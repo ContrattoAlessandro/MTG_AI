@@ -21,11 +21,17 @@ class ServiceProcess:
         self, checkpoint, port: int, episodes, device: str, log_path, torch_threads: int = 1, allow_reload: bool = False
     ):
         # An existing server must never silently collect data for the wrong process.
-        with socket.socket() as probe:
-            try:
-                probe.bind(("127.0.0.1", port))
-            except OSError as error:
-                raise RuntimeError(f"policy port {port} is unavailable: {error}") from error
+        # A just-stopped service can hold the port for a moment, so retry briefly.
+        deadline = time.monotonic() + 15
+        while True:
+            with socket.socket() as probe:
+                try:
+                    probe.bind(("127.0.0.1", port))
+                    break
+                except OSError as error:
+                    if time.monotonic() > deadline:
+                        raise RuntimeError(f"policy port {port} is unavailable: {error}") from error
+            time.sleep(0.5)
         command = [
             sys.executable, "-m", "magezero.cli", "serve", "--checkpoint", str(checkpoint),
             "--port", str(port), "--device", device,
@@ -62,9 +68,16 @@ class ServiceProcess:
                 time.sleep(0.2)
         raise TimeoutError(f"policy service was not ready after {timeout} seconds; inspect {self.log.name}")
 
-    def reload(self, checkpoint, episodes, policy_version: str) -> None:
-        """Swap the served checkpoint in place (POST /reload; needs allow_reload)."""
-        body = json.dumps({"checkpoint": str(checkpoint), "episodes": str(episodes) if episodes else None}).encode()
+    def reload(self, checkpoint, episodes, policy_version: str, abandon_sessions: bool = False) -> None:
+        """Swap the served checkpoint in place (POST /reload; needs allow_reload).
+
+        abandon_sessions: drop sessions a failed or interrupted game left open. Only
+        safe between batches, when the engine plays no game against this service.
+        """
+        payload = {"checkpoint": str(checkpoint), "episodes": str(episodes) if episodes else None}
+        if abandon_sessions:
+            payload["abandon_sessions"] = True
+        body = json.dumps(payload).encode()
         request = urllib.request.Request(
             f"http://127.0.0.1:{self.port}/reload",
             data=body,
@@ -76,7 +89,12 @@ class ServiceProcess:
                 raise RuntimeError("reloaded policy service reports the wrong checkpoint version")
 
     def stop(self) -> None:
-        self.process.terminate()
+        if sys.platform == "win32" and self.running:
+            # A venv's python.exe is a launcher whose child is the real interpreter;
+            # terminating only the launcher would leave the server holding the port.
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(self.process.pid)], capture_output=True)
+        else:
+            self.process.terminate()
         try:
             self.process.wait(timeout=5)
         except subprocess.TimeoutExpired:
@@ -135,7 +153,8 @@ class ServicePool:
             service = self.services.get(port)
             if service is not None and service.running:
                 try:
-                    service.reload(checkpoint, episodes, version)
+                    # Between batches no game is running, so open sessions are stale.
+                    service.reload(checkpoint, episodes, version, abandon_sessions=True)
                     continue
                 except (OSError, ValueError, RuntimeError) as error:
                     print(f"Restarting policy service on port {port}: {error}")

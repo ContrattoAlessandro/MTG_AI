@@ -1,0 +1,56 @@
+# Frozen configuration of the final run (tag final-run-1): configs/policy-final.yml,
+# the A5 arm b settings (docs/warm-start.md), with a 20-epoch clone. The clone keeps
+# the epoch with the lowest held-out NLL, so more epochs cannot pick a worse one.
+model:
+  belief_mode: statistical_roles
+  auxiliary_belief: false
+  width: 256
+  entity_layers: 2
+  attention_heads: 4
+  max_hand_size: 64
+  max_entities: 512
+  max_actions: 2048
+  # Kinnan mana loops can emit thousands of events between two decisions.
+  max_events: 8192
+  max_relations: 2048
+  max_deck_kinds: 128
+
+training:
+  learning_rate: 0.0003
+  epochs: 2
+  # GPU batch width and optimizer minibatch. 16 was within 7% of 32 on the shared
+  # RTX 5070 (566 vs 607 decisions/s) and keeps twice the optimizer steps per
+  # generation (8 per epoch for 64 games). Re-check on an idle GPU.
+  episodes_per_batch: 16
+  sequence_length: 32
+  # Trajectories per no-gradient forward pass when computing PPO targets.
+  target_batch_episodes: 64
+  gamma: 1.0
+  # Bootstrapped advantages: lower variance than lambda 1 across hundreds of
+  # decisions per game, once the critic is pre-trained.
+  gae_lambda: 0.95
+  # Potential-based shaping (src/magezero/shaping.py): policy-invariant,
+  # bounded by 0.5 against the +-1 game result. Must equal clone.shaping_coefficient.
+  shaping_coefficient: 0.5
+  # KL(cloned || policy), AlphaStar-style. Halves about every 700 updates.
+  reference_kl_coefficient: 0.05
+  reference_kl_decay: 0.999
+  clip_ratio: 0.2
+  value_coefficient: 0.5
+  public_value_coefficient: 0.25
+  belief_coefficient: 0.0
+  entropy_coefficient: 0.01
+  max_grad_norm: 1.0
+  target_kl: 0.02
+
+# mz clone: behaviour cloning on mz teacher-collect trajectories.
+clone:
+  learning_rate: 0.0003
+  epochs: 20
+  episodes_per_batch: 16
+  sequence_length: 32
+  value_coefficient: 0.5
+  public_value_coefficient: 0.25
+  validation_fraction: 0.1
+  shaping_coefficient: 0.5
+  gamma: 1.0

@@ -15,7 +15,8 @@ This repository is a redesign of [WillWroble/MageZero](https://github.com/WillWr
 | Hidden hand | A closed-form without-replacement (hypergeometric) prior over the opponent's hand from public bounds, plus the probability of holding each of 20 reviewed, overlapping card roles. A learned constrained hand-count model is available as an alternative mode. | [Statistical roles](docs/statistical-roles-implementation.md) |
 | Learning | Recurrent PPO on one player's complete trajectories with GAE, a public value head, and a privileged critic that sees the true hand during training only. Optional potential-based reward shaping. | [Architecture](docs/architecture.md#learning-and-collection) |
 | Warm start | Behaviour cloning from XMage's AI recorded over the policy's own candidate lists, then PPO with a decaying KL penalty towards the cloned policy (as in AlphaStar). Against XMage's AI, the cloned policy alone outscores 25 generations of PPO from a random start. | [Warm start](docs/warm-start.md#results-the-a5-comparison) |
-| Training runs | Resumable self-play generations with a historical league, a gauntlet piloted by XMage's AI, crash recovery, disk retention and periodic evaluation with best-checkpoint selection. | [Long runs](docs/long-run.md) |
+| Training runs | Resumable self-play generations with a historical league, a gauntlet piloted by XMage's AI, crash recovery, disk retention and periodic evaluation with best-checkpoint selection. | [Playing the agent](docs/playing-the-agent.md) | The finished Winota agent: how to play it, deck rules, measured strength, the final run |
+| [Long runs](docs/long-run.md) |
 | Engine adapter | Java classes and small engine patches for the pinned XMage fork: the policy player, observation encoder, history watcher, teacher recorder, batch game runner and catalog exporter. | [Playing in the browser](docs/web-play.md) | `mz web`: starting the app, the table, decisions, keyboard, auto-pass, troubleshooting |
 | [XMage integration](docs/xmage-integration.md) |
 
@@ -64,6 +65,21 @@ The smoke script builds a synthetic catalog and checkpoint, plays two in-process
 
 Playing real games requires the XMage adapter: a JDK and Maven, a checkout of the pinned engine fork in `.mz_engine/`, the adapter installed with `integration/xmage/install.py`, and the built distribution extracted to `xmage/`. [XMage integration](docs/xmage-integration.md) gives the steps. Below, `ENGINE` stands for the launcher in that distribution: `xmage/mz-policy.sh`, or `xmage/mz-policy.bat` on Windows.
 
+## Playing the trained agent
+
+The trained Winota agent is published as a release asset: [`winota-agent.pt`](https://github.com/ContrattoAlessandro/MTG_AI/releases/download/v0.3.0-alpha/winota-agent.pt) (20 MB, release [v0.3.0-alpha](https://github.com/ContrattoAlessandro/MTG_AI/releases/tag/v0.3.0-alpha)). It pilots Winota, Joiner of Forces in Commander Duel and beats XMage's AI (skill 3) piloting Kinnan, Bonder Prodigy in about 7 of 8 games. To play it:
+
+1. Install the package (above) and build the XMage distribution into `xmage/` ([XMage integration](docs/xmage-integration.md)).
+2. Copy the two decks it knows into the distribution: `decks/winota.dck` and `decks/kinnan.dck` to `xmage/decks/`.
+3. Download the weights and start the browser app (http://127.0.0.1:8765):
+
+```bash
+curl -L -o winota-agent.pt https://github.com/ContrattoAlessandro/MTG_AI/releases/download/v0.3.0-alpha/winota-agent.pt
+mz web --checkpoint winota-agent.pt
+```
+
+Choose Kinnan for yourself and Winota for MageZero. [Playing the agent](docs/playing-the-agent.md) has the deck rules, the measured strength and the XMage-client alternative (`mz play`).
+
 ## Training the Commander agent
 
 ```bash
@@ -105,9 +121,9 @@ mz evaluate --checkpoint artifacts/commander-run/best.pt artifacts/commander-clo
     --games 400 --ai-skill 3 --engine-threads 16 --greedy
 
 # 7. Play against the agent in the browser (http://127.0.0.1:8765) ...
-mz web --checkpoint artifacts/commander-run/best.pt
+mz web --checkpoint artifacts/winota-agent.pt
 #    ... or in the XMage client ("Computer - monte carlo" seat).
-mz play --checkpoint artifacts/commander-run/best.pt --greedy
+mz play --checkpoint artifacts/winota-agent.pt --greedy
 ```
 
 `mz <command> --help` lists every option. [Long runs](docs/long-run.md) explains the run folder (`run-state.json`, `metrics.json` per generation, `evaluations.jsonl`, `best.pt`). `best.pt` is selected on evaluation scores, so its own score is optimistic: confirm the final choice with `mz evaluate` on fresh games.
@@ -121,6 +137,7 @@ mz play --checkpoint artifacts/commander-run/best.pt --greedy
 | [Statistical roles](docs/statistical-roles-implementation.md) | The hand prior and card roles as implemented, and their validation |
 | [Statistical belief: research](docs/statistical-belief-and-card-roles.md) | Literature and reasoning behind the statistical prior and roles |
 | [Warm start](docs/warm-start.md) | Teacher recording, behaviour cloning, reward shaping and the KL term |
+| [Playing the agent](docs/playing-the-agent.md) | The finished Winota agent: how to play it, deck rules, measured strength, the final run |
 | [Long runs](docs/long-run.md) | Unattended training runs: recovery, retention, gauntlet and evaluation |
 | [XMage integration](docs/xmage-integration.md) | Building the engine, engine patches, catalogs, Commander Duel, human play, coverage limits |
 | [Development notes](notes/README.md) | Session plans, reviews, and reports of earlier pilots |

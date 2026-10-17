@@ -159,6 +159,30 @@ def test_non_finite_gradients_skip_the_step_and_only_a_fully_broken_update_fails
         ppo_update(copy.deepcopy(model), broken, optimizer, episodes, config, "v")
 
 
+def test_a_rare_log_probability_mismatch_is_masked_and_widespread_ones_are_refused(components):
+    model, critic, catalog = components
+    episodes = _recorded_episodes(model, catalog)
+    choice_steps = [
+        (e, s) for e, episode in enumerate(episodes) for s, step in enumerate(episode["steps"])
+        if len(step["observation"]["actions"]) > 1
+    ]  # fmt: skip
+    e, s = choice_steps[0]
+    episodes[e]["steps"][s]["log_probability"] -= 0.5
+    prepared = [prepare_chunks(episode, model, 3) for episode in episodes]
+    before = sum(int(c.choice.sum()) for chunks in prepared for c in chunks)
+    _, mismatches = _ppo_targets(model, critic, episodes, prepared, PPOConfig(max_mismatch_fraction=0.1), None)
+    assert mismatches == 1
+    assert not prepared[e][s // 3].choice[s % 3]
+    assert sum(int(c.choice.sum()) for chunks in prepared for c in chunks) == before - 1
+    # The default bound (1% of decisions) is below one in these few decisions.
+    with pytest.raises(ValueError, match="behavior policy mismatch on 1 of"):
+        _ppo_targets(model, critic, episodes, [prepare_chunks(x, model, 3) for x in episodes], PPOConfig(), None)
+    config = PPOConfig(epochs=1, episodes_per_batch=2, sequence_length=3, max_mismatch_fraction=0.1)
+    m, c = copy.deepcopy(model), copy.deepcopy(critic)
+    optimizer = torch.optim.AdamW(list(m.parameters()) + list(c.parameters()), lr=1e-3)
+    assert ppo_update(m, c, optimizer, episodes, config, "v")["mismatched_decisions"] == 1
+
+
 def test_reference_log_probabilities_are_compact_copies(components):
     model, critic, catalog = components
     episodes = _recorded_episodes(model, catalog)

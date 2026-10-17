@@ -8,6 +8,7 @@ Each script documents its arguments with `--help`. They import the installed `ma
 | `commander_roles.py` | The reviewed role annotations of the Winota and Kinnan pool, merged into `configs/card-roles.json` |
 | `policy_smoke.py` | Synthetic end-to-end check without XMage: catalog, checkpoint, service games, PPO, reload, forward timing |
 | `validate_xmage_policy.py` | Compile the adapter and play one synthetic-card XMage game over HTTP, then train on it |
+| `final-run.sh`, `final_run.py` | The final training run, and its supervisor: crash restarts with `--resume`, keep-awake, `status.log` ([Long runs](../docs/long-run.md#the-commander-run)) |
 | `teacher_stats.py` | Label mix and size of a `mz teacher-collect` output |
 | `evaluate_policy_games.py` | Fixed-opponent arena: a checkpoint against another checkpoint or upstream MageZero's MCTS |
 | `evaluate_policy_predictions.py` | Opponent-hand prediction quality against the statistical prior, and an optional decision trace |

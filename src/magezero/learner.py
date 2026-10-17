@@ -55,6 +55,11 @@ class PPOConfig:
     target_kl: float = 0.02
     max_episode_steps: int = 10000
     log_probability_tolerance: float = 0.005
+    # Decisions whose recomputed log-probability differs by more than the tolerance
+    # (actor/learner rounding on a very unlikely sampled action) are dropped from the
+    # policy terms. More than this fraction of an update's decisions means the data
+    # or the weights changed, and the update is refused.
+    max_mismatch_fraction: float = 0.01
     # Trajectories per forward pass when computing PPO targets (no gradients).
     target_batch_episodes: int = 64
     # Potential-based shaping scale (policy-invariant; see shaping.py). 0 disables.
@@ -82,7 +87,7 @@ class PPOConfig:
             raise ValueError("PPO sizes, optimizer parameters, and clip ratio must be positive")
         non_negative = ("value_coefficient", "public_value_coefficient", "belief_coefficient", "entropy_coefficient",
                         "target_kl", "log_probability_tolerance", "shaping_coefficient",
-                        "reference_kl_coefficient")  # fmt: skip
+                        "reference_kl_coefficient", "max_mismatch_fraction")  # fmt: skip
         if any(getattr(self, key) < 0 for key in non_negative):
             raise ValueError("loss coefficients and tolerances cannot be negative")
 
@@ -331,13 +336,19 @@ def reference_kl(reference_log_probability: Tensor, logits: Tensor, mask: Tensor
     return (reference.exp() * (reference - log_policy)).masked_fill(~mask, 0.0).sum(-1)
 
 
-def _ppo_targets(model, critic, episodes, prepared, config: PPOConfig, reference) -> list[tuple[Tensor, Tensor]]:
+def _ppo_targets(
+    model, critic, episodes, prepared, config: PPOConfig, reference
+) -> tuple[list[tuple[Tensor, Tensor]], int]:
     """Normalized advantages and returns per trajectory, at the current weights.
 
-    Also checks that the replayed policy reproduces the behaviour log-probabilities,
-    and stores the reference policy's candidate log-probabilities in the chunks.
+    Also checks that the replayed policy reproduces the behaviour log-probabilities:
+    the rare decisions that do not (rounding between the actor and the learner) lose
+    their `choice` flag, so they carry no policy, entropy or KL term; more than
+    config.max_mismatch_fraction of them is refused. Returns the targets and the number
+    of such decisions. Stores the reference policy's candidate log-probabilities in the chunks.
     """
     targets = []
+    mismatched = torch.zeros((), dtype=torch.long)
     with torch.no_grad():
         values = [[] for _ in episodes]
         everyone = list(range(len(episodes)))
@@ -359,10 +370,11 @@ def _ppo_targets(model, critic, episodes, prepared, config: PPOConfig, reference
                         # A copy, not a view: a view would keep the whole padded window alive.
                         chunk.reference_log_probability = rows[:, : chunk.batch.action_mask.shape[1]].clone()
                 actual = out.distribution().log_prob(joined.actions)
-                if (actual - joined.behavior_log_probability).abs().max().item() > config.log_probability_tolerance:
-                    raise ValueError(
-                        "behavior policy mismatch: weights, history, candidate ordering, or sampling changed"
-                    )
+                mismatch = (actual - joined.behavior_log_probability).abs() > config.log_probability_tolerance
+                mismatch &= joined.choice
+                mismatched = mismatched.to(mismatch.device) + mismatch.sum()
+                for i, rows in zip(members, mismatch.split(sizes)):
+                    prepared[i][window].choice = prepared[i][window].choice & ~rows
                 critic_values = critic(out.context, joined.batch.deck_cards, joined.labels.float())
                 for i, value in zip(members, critic_values.split(sizes)):
                     values[i].append(value)
@@ -385,6 +397,13 @@ def _ppo_targets(model, critic, episodes, prepared, config: PPOConfig, reference
                     rewards, values_t, end, gamma=config.gamma, gae_lambda=config.gae_lambda
                 )
             targets.append((advantages, returns))
+        decisions = sum(len(episode["steps"]) for episode in episodes)
+        mismatches = int(mismatched.item())
+        if mismatches > config.max_mismatch_fraction * decisions:
+            raise ValueError(
+                f"behavior policy mismatch on {mismatches} of {decisions} decisions: weights, history, "
+                "candidate ordering, or sampling changed"
+            )
         choices = torch.cat([chunk.choice for chunks in prepared for chunk in chunks])
         # Forced steps receive no policy gradient, so they must not shift the
         # normalization of the advantages that do.
@@ -394,7 +413,7 @@ def _ppo_targets(model, critic, episodes, prepared, config: PPOConfig, reference
             std = chosen_advantages.std(unbiased=False).clamp(min=1e-8)
         else:
             mean, std = chosen_advantages.new_zeros(()), chosen_advantages.new_ones(())
-        return [((a - mean) / std, r) for a, r in targets]
+        return [((a - mean) / std, r) for a, r in targets], mismatches
 
 
 def ppo_update(
@@ -438,7 +457,7 @@ def ppo_update(
     elif reference.config.catalog_digest != model.config.catalog_digest:
         raise ValueError("the reference policy uses a different card catalog")
     prepared = [prepare_chunks(episode, model, length) for episode in episodes]
-    targets = _ppo_targets(model, critic, episodes, prepared, config, reference if beta > 0 else None)
+    targets, mismatches = _ppo_targets(model, critic, episodes, prepared, config, reference if beta > 0 else None)
 
     trains_belief = model.config.belief_mode == "learned" or model.config.auxiliary_belief
     belief_coefficient = config.belief_coefficient if trains_belief else 0.0
@@ -458,6 +477,7 @@ def ppo_update(
         "gae_lambda": config.gae_lambda,
         "shaping_coefficient": config.shaping_coefficient,
         "reference_kl_coefficient": beta,
+        "mismatched_decisions": mismatches,
     }
     step_counts = [len(e["steps"]) for e in episodes]
     choice_counts = [sum(int(c.choice.sum().item()) for c in chunks) for chunks in prepared]

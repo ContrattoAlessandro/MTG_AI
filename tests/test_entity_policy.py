@@ -343,6 +343,12 @@ def test_reload_swaps_checkpoints_only_between_games(components, tmp_path):
     )
     assert client.post("/reload", json=reload).json == {"policy_version": "next"}
     assert client.get("/healthz").json["policy_version"] == "next"
+    # Between batches, a session left open by a game that never finished can be abandoned.
+    assert client.post("/act", json={"observation": observation(model.config), "sample": True}).status_code == 200
+    assert client.post("/reload", json=reload).status_code == 400
+    abandon = client.post("/reload", json={**reload, "abandon_sessions": True})
+    assert abandon.json == {"policy_version": "next"} and not service.sessions
+    assert client.post("/reload", json={**reload, "abandon_sessions": "yes"}).status_code == 400
     assert service.output_dir == tmp_path / "second" and service.stats()["act_requests"] == 0
     # The finished game ID was from the previous policy; it may be reused afterwards.
     assert client.post("/act", json={"observation": observation(model.config), "sample": True}).status_code == 200
