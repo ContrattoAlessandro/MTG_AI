@@ -26,7 +26,7 @@ The first start compiles the Java adapter into `artifacts/web-engine/classes` (a
 | `--heap` | 4G | engine Java heap |
 | `--no-browser` | off | do not open a browser window |
 
-It does not touch the jars in `xmage/lib` or the training ports, so it can run beside a training run (it competes for CPU).
+It does not touch the adapter jar in `xmage/mz` or the training ports, so it can run beside a training run (it competes for CPU).
 
 ## Starting a game
 

@@ -1,6 +1,6 @@
 # Playing the Winota agent
 
-`artifacts/winota-agent.pt` is the finished agent: it pilots **Winota, Joiner of Forces** (`xmage/decks/winota.dck`) in Commander Duel. It is generation 999 of the final run, without optimizer state (SHA-256 `73b28381f4f8de6a2d93ad6bdd12922c33ec3512809daebd99ca1e16f4bd263a`). Download it from the [v0.3.0-alpha release](https://github.com/ContrattoAlessandro/MTG_AI/releases/tag/v0.3.0-alpha) (`winota-agent.pt`); the commands below assume it is in `artifacts/`. The two decks it knows are `decks/winota.dck` and `decks/kinnan.dck`; copy them to `xmage/decks/`.
+`artifacts/winota-agent.pt` is the finished agent: it pilots **Winota, Joiner of Forces** (`xmage/decks/winota.dck`) in Commander Duel. It is generation 999 of the final run, without optimizer state (SHA-256 `73b28381f4f8de6a2d93ad6bdd12922c33ec3512809daebd99ca1e16f4bd263a`). Download it from the [v0.3.0-alpha release](https://github.com/ContrattoAlessandro/MTG_AI/releases/tag/v0.3.0-alpha) (`winota-agent.pt`); the commands below assume it is in `artifacts/`. The two decks it knows are `decks/winota.dck` and `decks/kinnan.dck`; `python integration/xmage/build.py` installs them in `xmage/decks/` with the XMage distribution.
 
 ## Playing it
 
@@ -23,7 +23,7 @@ Then create a **Commander Two Player Duel** table in the client and put "Compute
 ## Deck rules
 
 - The agent only knows the cards of its catalog: the Winota and Kinnan lists, their tokens and other faces. Your deck must use only those cards, which in practice means `xmage/decks/kinnan.dck` or `winota.dck`.
-- Three cards missing from this XMage build were substituted in both lists: Mayor Tong → Ragavan, Nimble Pilferer; Avatar Sanctuary → Breeding Pool; Tidus, Zanarkand Fayth → Bounding Krasis.
+- Three cards missing from XMage (1.4.58, which the agent was trained on, and 1.4.62) were substituted in both lists: Mayor Tong → Ragavan, Nimble Pilferer; Avatar Sanctuary → Breeding Pool; Tidus, Zanarkand Fayth → Bounding Krasis.
 - Mana is paid by XMage's auto-tapper, for the agent and in its training.
 
 ## How strong it is
@@ -37,6 +37,8 @@ Measured on 16 October 2026 with `scripts/final-evaluate.ps1`: 400 fresh greedy 
 | generation 600 | 0.87 [0.84–0.90] | 0.77 [0.73–0.81] | 0.82 |
 | generation 850 | 0.86 [0.82–0.89] | 0.79 [0.75–0.83] | 0.83 |
 | **generation 999 (the agent)** | **0.88 [0.85–0.91]** | 0.77 [0.73–0.81] | **0.83** |
+
+These games ran on the XMage fork the agent was trained on (1.4.58). On official XMage 1.4.62 ([XMage integration](xmage-integration.md#updating-xmage)), measured on 20 October 2026 with the same settings, the agent scored **0.82 [0.78–0.86]** against Kinnan (3 of 400 games timed out) and **0.78 [0.74–0.82]** in the mirror. The mirror is unchanged; against Kinnan it is slightly lower, a sign that rules or AI changes between the two XMage versions matter a little to a policy trained on the older one.
 
 For comparison, with the same opponent at skill 3 but sampled play over 256 games, the behaviour-cloned starting point scored 0.56 against Kinnan and the best 25-generation PPO arm 0.63 ([Warm start](warm-start.md#results-the-a5-comparison)).
 

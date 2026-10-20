@@ -1,8 +1,8 @@
-"""Compile the adapter, play one synthetic XMage game over HTTP, and train it.
+"""Play one synthetic XMage game over HTTP with the built adapter, and train on it.
 
-Requires the pinned XMage checkout with Mage/target/classes and dependencies
-already built in artifacts/maven; see docs/xmage-integration.md. This exercises
-the actual rules engine but does not claim coverage of the real card database.
+Requires the XMage distribution built by integration/xmage/build.py (xmage/ by
+default). This exercises the actual rules engine but does not claim coverage of
+the real card database.
 """
 
 import argparse
@@ -23,27 +23,19 @@ PORT = 50054
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--engine", default=".mz_engine")
+    parser.add_argument("--xmage", default="xmage", help="distribution built by integration/xmage/build.py")
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--output", default="artifacts/java-smoke")
     args = parser.parse_args()
-    engine, root = Path(args.engine).resolve(), Path(args.output).resolve()
+    xmage, root = Path(args.xmage).resolve(), Path(args.output).resolve()
+    if not (xmage / "mz" / "build.json").is_file():
+        raise SystemExit(f"no XMage distribution in {xmage}: run python integration/xmage/build.py")
     root.mkdir(parents=True, exist_ok=True)
     if (root / "episodes").exists():
         raise ValueError("choose a fresh output directory")
-    jars = sorted(str(path) for path in (ROOT / "artifacts/maven").rglob("*.jar"))
-    classpath = os.pathsep.join([str(engine / "Mage/target/classes"), *jars])
-    sources = [
-        ROOT / "integration/xmage/src",
-        engine / "Mage.Server.Plugins/Mage.Player.AI/src/main/java",
-        engine / "Mage.Common/src/main/java",
-        engine / "Mage.MageZero/src/main/java",
-        engine / "Mage.Server.Plugins/Mage.Game.TwoPlayerDuel/src",
-    ]
-    java_files = sorted(str(path) for path in sources[0].rglob("*.java"))
-    subprocess.run(["javac", "--release", "8", "-proc:none", "-Xlint:-options", "-encoding", "UTF-8", "-cp", classpath,
-                    "-sourcepath", os.pathsep.join(map(str, sources)), "-d", str(root / "classes"),
-                    *java_files, str(ROOT / "integration/xmage/test/PolicySmoke.java")], check=True)  # fmt: skip
+    classpath = os.pathsep.join(str(xmage / folder / "*") for folder in ("mz", "lib", "plugins"))
+    subprocess.run(["javac", "-nowarn", "-encoding", "UTF-8", "-cp", classpath, "-d", str(root / "classes"),
+                    str(ROOT / "integration/xmage/test/PolicySmoke.java")], check=True)  # fmt: skip
     service = start_service(
         Path(args.checkpoint).resolve(),
         PORT,
@@ -55,7 +47,7 @@ def main():
     try:
         with (root / "game.log").open("w", encoding="utf-8") as game_log:
             subprocess.run(["java", "-Xmx2G", "-cp", str(root / "classes") + os.pathsep + classpath, "PolicySmoke",
-                            f"http://127.0.0.1:{PORT}", str(ROOT / "configs/policy-game.yml")],
+                            f"http://127.0.0.1:{PORT}"],
                            check=True, stdout=game_log, stderr=game_log, timeout=120)  # fmt: skip
     finally:
         service.stop()

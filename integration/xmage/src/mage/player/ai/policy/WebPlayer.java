@@ -547,7 +547,7 @@ public final class WebPlayer extends PolicyPlayer {
 
     // ------------------------------------------------------- prompts and labels
 
-    @Override protected boolean makeChoice(Outcome outcome, Target target, Ability source, Game game, Cards fromCards) {
+    @Override protected boolean chooseTargets(Outcome outcome, Target target, Ability source, Game game, Cards fromCards) {
         prompt[0] = target.getMessage(game) + from(source, game);
         if (fromCards != null && !fromCards.isEmpty() && target.getTargets().isEmpty() && !game.isSimulation()
                 && PolicyCandidates.target(this, target, source, game, fromCards, null).size() == 0) {
@@ -556,7 +556,7 @@ public final class WebPlayer extends PolicyPlayer {
             showCards(game, "None of these can be chosen: " + Character.toLowerCase(text.charAt(0)) + text.substring(1), fromCards.getCards(game));
             return target.isChosen(game);
         }
-        return super.makeChoice(outcome, target, source, game, fromCards);
+        return super.chooseTargets(outcome, target, source, game, fromCards);
     }
 
     @Override public boolean chooseTargetAmount(Outcome outcome, TargetAmount target, Ability source, Game game) {
@@ -574,7 +574,7 @@ public final class WebPlayer extends PolicyPlayer {
 
     @Override public boolean choose(Outcome outcome, Choice choice, Game game) {
         // An automatic payment picks the colours it needs, as XMage's AI does.
-        if (choice.isManaColorChoice() && autoPaying[0] != null) return chooseHelper(outcome, choice, game);
+        if (choice.isManaColorChoice() && autoPaying[0] != null) return chooseAsXMageAi(outcome, choice, game);
         String message = choice.getMessage();
         prompt[0] = message == null || message.isEmpty() ? "Make a choice" : message;
         if (choice.isManaColorChoice()) askKind[0] = "color";
@@ -600,9 +600,9 @@ public final class WebPlayer extends PolicyPlayer {
         return true;
     }
 
-    @Override protected int makeChoiceAmount(int min, int max, Game game, Ability source, boolean isManaPay) {
+    @Override protected int chooseAmount(int min, int max, Game game, Ability source) {
         prompt[0] = "Choose a number from " + min + " to " + max + from(source, game);
-        return super.makeChoiceAmount(min, max, game, source, isManaPay);
+        return super.chooseAmount(min, max, game, source);
     }
 
     @Override public Mode chooseMode(Modes modes, Ability source, Game game) {

@@ -15,6 +15,7 @@ Heavy imports happen inside each command, so `mz --help` stays fast.
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -134,10 +135,10 @@ def cmd_play(args: argparse.Namespace) -> None:
     from .service_client import ServiceProcess
 
     xmage = Path(args.xmage).resolve()
-    config = Path(args.server_config).resolve()
-    for path in (xmage / "lib", config):
+    config = Path(args.server_config).resolve() if args.server_config else xmage / "config" / "magezero-server.xml"
+    for path in (xmage / "mz" / "build.json", config):
         if not path.exists():
-            sys.exit(f"not found: {path}")
+            sys.exit(f"not found: {path} (build the distribution with python integration/xmage/build.py)")
     log = xmage / f"policy-play-{args.port}.log"
     print(f"[play] starting policy service on port {args.port} (log: {log})")
     # No episode directory: games against people are never recorded for training.
@@ -151,7 +152,7 @@ def cmd_play(args: argparse.Namespace) -> None:
             ["java", f"-Xmx{args.heap}", "-Dh2.bindAddress=127.0.0.1", f"-Dxmage.config.path={config}",
              f"-Dmagezero.policy.endpoint=http://127.0.0.1:{args.port}",
              f"-Dmagezero.policy.sample={'false' if args.greedy else 'true'}",
-             "-cp", "lib/*", "mage.server.Main"],
+             "-cp", os.pathsep.join(("mz/*", "lib/*")), "mage.server.Main"],
             cwd=xmage, check=False,
         )  # fmt: skip
     except KeyboardInterrupt:
@@ -334,8 +335,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--device", default="cpu")
     p.add_argument("--torch-threads", type=int, default=2)
     p.add_argument("--greedy", action="store_true", help="play the most likely action instead of sampling")
-    p.add_argument("--xmage", default="xmage", help="XMage distribution with the patched lib/ jars")
-    p.add_argument("--server-config", default="integration/xmage/server-config.xml")
+    p.add_argument("--xmage", default="xmage", help="XMage distribution built by integration/xmage/build.py")
+    p.add_argument("--server-config", help="XMage server config (default: config/magezero-server.xml in --xmage)")
     p.add_argument("--heap", default="4G", help="XMage server Java heap")
     p.set_defaults(func=cmd_play)
 
@@ -345,7 +346,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--policy-port", type=int, default=50071, help="the bot's policy service port")
     p.add_argument("--device", default="cpu")
     p.add_argument("--torch-threads", type=int, default=2)
-    p.add_argument("--xmage", default="xmage", help="XMage distribution with the patched lib/ jars")
+    p.add_argument("--xmage", default="xmage", help="XMage distribution built by integration/xmage/build.py")
     p.add_argument("--heap", default="4G", help="engine Java heap")
     p.add_argument("--no-browser", action="store_true", help="do not open a browser window")
     p.set_defaults(func=cmd_web)

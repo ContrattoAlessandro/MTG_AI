@@ -8,9 +8,11 @@ dist/
 /.pytest_cache/
 /.ruff_cache/
 
-# Local engine checkout, XMage distribution and run outputs (see docs/xmage-integration.md)
+# XMage distribution, release download cache and run outputs (see docs/xmage-integration.md)
 /.mz_engine/
+/.mz_cache/
 /xmage/
+/xmage-src/
 /artifacts/
 
 # Logs and editor state

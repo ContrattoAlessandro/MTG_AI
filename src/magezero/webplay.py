@@ -21,15 +21,14 @@ import unicodedata
 import urllib.request
 from pathlib import Path
 
-import yaml
 from flask import Flask, jsonify, request, send_from_directory
 
-from .engine import PersistentEngine
+from .engine import PersistentEngine, write_game_file
 
 WEB_DIR = Path(__file__).parent / "web"
 # An engine decision request is held this long before the engine is told to ask again.
 HOLD_SECONDS = 20.0
-SOURCES = ("src",)  # adapter source folders under integration/xmage
+SOURCES = ("src", "src-ma")  # adapter source folders under integration/xmage
 
 
 def strip_tags(message: str) -> str:
@@ -64,8 +63,8 @@ def read_deck(path: Path) -> tuple[int, set[str], list[str]]:
 def compile_adapter(repo: Path, xmage: Path, classes: Path) -> None:
     """Compile the adapter sources into `classes` when they are newer than the last build.
 
-    The classes come first on the engine's classpath, so they override the copies
-    in xmage/lib without touching the jars that training runs use.
+    The classes come first on the engine's classpath, so they override the
+    adapter jar (xmage/mz) without touching the jars that training runs use.
     """
     sources = [p for folder in SOURCES for p in (repo / "integration" / "xmage" / folder).rglob("*.java")]
     stamp = classes / ".built"
@@ -75,7 +74,7 @@ def compile_adapter(repo: Path, xmage: Path, classes: Path) -> None:
     classes.mkdir(parents=True, exist_ok=True)
     separator = ";" if sys.platform == "win32" else ":"
     result = subprocess.run(
-        ["javac", "-nowarn", "-encoding", "UTF-8", "-cp", f"{xmage / 'lib'}{separator}{xmage / 'lib' / '*'}",
+        ["javac", "-nowarn", "-encoding", "UTF-8", "-cp", f"{xmage / 'lib' / '*'}{separator}{xmage / 'plugins' / '*'}",
          "-d", str(classes), *map(str, sources)],
         capture_output=True, text=True,
     )  # fmt: skip
@@ -93,7 +92,7 @@ def engine_launcher(folder: Path, xmage: Path, classes: Path, heap: str) -> Path
         script.write_text(
             "@echo off\r\n"
             f'pushd "{xmage}"\r\n'
-            f'java -Xmx{heap} -Dh2.bindAddress=127.0.0.1 -cp "{classes};lib/*" {main} %*\r\n'
+            f'java -Xmx{heap} -Dh2.bindAddress=127.0.0.1 -cp "{classes};mz/*;lib/*;plugins/*" {main} %*\r\n'
             "popd\r\n",
             encoding="utf-8",
         )
@@ -102,7 +101,7 @@ def engine_launcher(folder: Path, xmage: Path, classes: Path, heap: str) -> Path
         script.write_text(
             "#!/bin/sh\n"
             f'cd "{xmage}" || exit 2\n'
-            f'exec java -Xmx{heap} -Dh2.bindAddress=127.0.0.1 -cp "{classes}:lib/*" {main} "$@"\n',
+            f'exec java -Xmx{heap} -Dh2.bindAddress=127.0.0.1 -cp "{classes}:mz/*:lib/*:plugins/*" {main} "$@"\n',
             encoding="utf-8",
         )
         script.chmod(0o755)
@@ -355,8 +354,7 @@ class WebGame:
                 table.decks = {"you": names[human_deck], "opponent": names[bot_deck]}
                 table.changed()
                 game = table.game
-            path = self.workdir / f"web-game-{game}.yml"
-            path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+            path = write_game_file(self.workdir / f"web-game-{game}.json", config)
             self.runner = threading.Thread(target=self._play, args=(path, game), name="web-game", daemon=True)
             self.runner.start()
 
@@ -507,10 +505,10 @@ def run(checkpoint, *, xmage="xmage", port=8765, policy_port=50071, device="cpu"
 
     repo = Path(__file__).resolve().parents[2]
     xmage = Path(xmage).resolve()
-    if not (xmage / "lib").is_dir():
-        sys.exit(f"XMage distribution not found: {xmage / 'lib'} (see docs/xmage-integration.md)")
+    if not (xmage / "mz" / "build.json").is_file():
+        sys.exit(f"no XMage distribution in {xmage}: build it with python integration/xmage/build.py")
     workdir = Path(tempfile.mkdtemp(prefix="mz-web-"))
-    classes = repo / "artifacts" / "web-engine" / "classes"
+    classes = xmage / "mz" / "web-classes"
     compile_adapter(repo, xmage, classes)
     launcher = engine_launcher(workdir, xmage, classes, heap)
     policy_log = workdir / "policy.log"

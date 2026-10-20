@@ -26,7 +26,7 @@ import yaml
 
 from .belief import constrained_hand_belief
 from .checkpoint import load_checkpoint, resolve_device, save_checkpoint
-from .engine import RESULT_FIELDS, PersistentEngine, batch_timeout, game_config
+from .engine import RESULT_FIELDS, PersistentEngine, batch_timeout, game_config, write_game_file
 from .learner import (
     carry_memory,
     chunk_windows,
@@ -421,8 +421,7 @@ def collect_teacher_games(
         while summary["games_played"] < games:
             count = min(batch_games, games - summary["games_played"])
             config = teacher_game_config(base, count, port, ai_skill, ai_think, seats)
-            config_file = root / "teacher-game.yml"
-            config_file.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+            config_file = write_game_file(root / "teacher-game.json", config)
             for attempt in range(max_retries + 1):
                 try:
                     if engine is None:

@@ -62,7 +62,7 @@ public final class PolicyEncoder {
             game.getState().addWatcher(history);
         }
         // XMage may restore a copied state during rules processing.
-        history = (PolicyHistory) game.getState().getWatchers().get(history.getKey());
+        history = (PolicyHistory) game.getState().getWatcher(history.getKey());
     }
 
     public static Map<String, Object> map(Object... pairs) {

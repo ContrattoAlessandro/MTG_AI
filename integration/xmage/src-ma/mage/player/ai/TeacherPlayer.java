@@ -11,7 +11,10 @@ import mage.game.combat.CombatGroup;
 import mage.game.permanent.Permanent;
 import mage.player.ai.policy.*;
 import mage.target.Target;
+import mage.target.TargetCard;
+import java.io.Serializable;
 import java.util.*;
+import java.util.function.Predicate;
 
 /**
  * XMage's Mad AI (ComputerPlayer7) playing normally while its decisions are recorded
@@ -28,7 +31,7 @@ import java.util.*;
  * Decisions the policy is never asked for, or answers outside the candidate list
  * (e.g. targets the AI's search fixed in advance), are played but not recorded.
  */
-public final class TeacherPlayer extends ComputerPlayer7 implements RecordingPlayer {
+public final class TeacherPlayer extends XMageAiPlayer implements RecordingPlayer {
 
     /** Shared by every copy: XMage restores saved player copies during rules processing. */
     private static final class Session {
@@ -40,6 +43,7 @@ public final class TeacherPlayer extends ComputerPlayer7 implements RecordingPla
         int records;
         int priorityDepth;   // inside the AI's priority()
         int activating;      // inside an activation it already recorded
+        int planning;        // inside the AI's own answer, before it is recorded
         Map<UUID, UUID> attackPlan;          // attacker -> defender, while capturing
         Map<UUID, List<UUID>> blockPlan;     // blocker -> attackers, while capturing
         Session(String endpoint) { this.endpoint = endpoint; }
@@ -78,7 +82,7 @@ public final class TeacherPlayer extends ComputerPlayer7 implements RecordingPla
     }
 
     private boolean live(Game game) {
-        return !game.isSimulation() && session.encoder != null;
+        return !game.isSimulation() && session.encoder != null && session.planning == 0;
     }
 
     /** Records the AI's choice `label` among `candidates`, exactly as PolicyPlayer.select would see it. */
@@ -114,6 +118,10 @@ public final class TeacherPlayer extends ComputerPlayer7 implements RecordingPla
 
     @Override public boolean activateAbility(ActivatedAbility ability, Game game) {
         if (!recordsPriority(game) || ability.isManaAbility()) return super.activateAbility(ability, game);
+        if (overActivationCap(ability, game)) {
+            stopActing(ability, game);  // its pass is recorded
+            return false;
+        }
         PolicyCandidates<ActivatedAbility> candidates = PolicyCandidates.priority(this, game, session.client, Collections.emptySet());
         int label = 0; // PassAbility
         if (!(ability instanceof PassAbility)) {
@@ -127,7 +135,7 @@ public final class TeacherPlayer extends ComputerPlayer7 implements RecordingPla
         // The activation's own pass (PassAbility) and mana payments are part of this decision.
         session.activating++;
         try {
-            return super.activateAbility(ability, game);
+            return activateUnchecked(ability, game);
         } finally {
             session.activating--;
         }
@@ -206,12 +214,42 @@ public final class TeacherPlayer extends ComputerPlayer7 implements RecordingPla
 
     // ---- targets: the AI chooses on a copy; the targets are then added one at a time ----
 
-    @Override protected boolean makeChoice(Outcome outcome, Target target, Ability source, Game game, Cards fromCards) {
-        if (!live(game)) return super.makeChoice(outcome, target, source, game, fromCards);
+    @Override public boolean choose(Outcome outcome, Target target, Ability source, Game game) {
+        if (!live(game)) return super.choose(outcome, target, source, game);
+        return recordTargets(target, source, game, null, plan -> super.choose(outcome, plan, source, game));
+    }
+
+    @Override public boolean choose(Outcome outcome, Target target, Ability source, Game game, Map<String, Serializable> options) {
+        if (!live(game)) return super.choose(outcome, target, source, game, options);
+        return recordTargets(target, source, game, null, plan -> super.choose(outcome, plan, source, game, options));
+    }
+
+    @Override public boolean choose(Outcome outcome, Cards cards, TargetCard target, Ability source, Game game) {
+        if (!live(game)) return super.choose(outcome, cards, target, source, game);
+        return recordTargets(target, source, game, cards, plan -> super.choose(outcome, cards, (TargetCard) plan, source, game));
+    }
+
+    @Override public boolean chooseTarget(Outcome outcome, Target target, Ability source, Game game) {
+        if (!live(game)) return super.chooseTarget(outcome, target, source, game);
+        return recordTargets(target, source, game, null, plan -> super.chooseTarget(outcome, plan, source, game));
+    }
+
+    @Override public boolean chooseTarget(Outcome outcome, Cards cards, TargetCard target, Ability source, Game game) {
+        if (!live(game)) return super.chooseTarget(outcome, cards, target, source, game);
+        return recordTargets(target, source, game, cards, plan -> super.chooseTarget(outcome, cards, (TargetCard) plan, source, game));
+    }
+
+    /** The AI chooses on a copy of the target (`ai`); its targets are then added one at a time and recorded. */
+    private boolean recordTargets(Target target, Ability source, Game game, Cards fromCards, Predicate<Target> ai) {
         UUID controller = target.getAffectedAbilityControllerId(getId());
         if (target.isChoiceCompleted(controller, source, game, fromCards)) return target.isChosen(game);
         Target plan = target.copy();
-        super.makeChoice(outcome, plan, source, game, fromCards);
+        session.planning++;
+        try {
+            ai.test(plan);
+        } finally {
+            session.planning--;
+        }
         List<UUID> wanted = new ArrayList<>(plan.getTargets());
         wanted.removeAll(target.getTargets());
         while (!target.isChoiceCompleted(controller, source, game, fromCards)) {
@@ -263,13 +301,34 @@ public final class TeacherPlayer extends ComputerPlayer7 implements RecordingPla
         return result;
     }
 
-    @Override protected int makeChoiceAmount(int min, int max, Game game, Ability source, boolean isManaPay) {
-        int chosen = super.makeChoiceAmount(min, max, game, source, isManaPay);
-        if (live(game) && min < max) {
-            PolicyCandidates<Integer> candidates = PolicyCandidates.amount(min, max, source, game, session.client);
-            record(game, candidates, candidates.options.indexOf(chosen));
-        }
+    @Override public int getAmount(int min, int max, String message, Ability source, Game game) {
+        if (!live(game)) return super.getAmount(min, max, message, source, game);
+        int chosen = planned(() -> super.getAmount(min, max, message, source, game));
+        recordAmount(min, max, chosen, source, game);
         return chosen;
+    }
+
+    @Override public int announceX(int min, int max, String message, Game game, Ability source, boolean isManaPay) {
+        if (!live(game)) return super.announceX(min, max, message, game, source, isManaPay);
+        int chosen = planned(() -> super.announceX(min, max, message, game, source, isManaPay));
+        // The policy is offered the same range (PolicyPlayer.announceX).
+        recordAmount(min, PolicyCandidates.announceMax(this, max, source, game, isManaPay), chosen, source, game);
+        return chosen;
+    }
+
+    private int planned(java.util.function.IntSupplier ai) {
+        session.planning++;
+        try {
+            return ai.getAsInt();
+        } finally {
+            session.planning--;
+        }
+    }
+
+    private void recordAmount(int min, int max, int chosen, Ability source, Game game) {
+        if (min >= max) return;
+        PolicyCandidates<Integer> candidates = PolicyCandidates.amount(min, max, source, game, session.client);
+        record(game, candidates, candidates.options.indexOf(chosen));
     }
 
     @Override public Mode chooseMode(Modes modes, Ability source, Game game) {

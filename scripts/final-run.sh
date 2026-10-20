@@ -16,8 +16,7 @@ if [ ! -f "$OUT/provenance.txt" ]; then
     {
         echo "commit $(git rev-parse HEAD) $(git describe --tags --always)"
         sha256sum "$CLONE" configs/final.yml configs/commander-mirror.yml xmage/decks/winota.dck \
-            xmage/decks/kinnan.dck xmage/lib/mage-player-ai-1.4.58.jar xmage/lib/mage-player-ai-ma-1.4.58.jar \
-            xmage/lib/mage-magezero-1.4.58.jar
+            xmage/decks/kinnan.dck xmage/mz/*.jar xmage/mz/build.json
     } > "$OUT/provenance.txt"
 fi
 

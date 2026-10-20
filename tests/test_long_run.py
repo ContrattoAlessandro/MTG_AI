@@ -232,7 +232,7 @@ class _FakeCollector:
         self.services, self.restarts = services, 0
 
     def run(self, config_file, timeout):
-        config = yaml.safe_load(config_file.read_text(encoding="utf-8"))
+        config = json.loads(config_file.read_text(encoding="utf-8"))  # the engine reads JSON
         assert config["server"]["alternate_seats"] is True and timeout > 0
         _FakeCollector.last_config = config_file.name
         _FakeCollector.configs.append((config_file.name, config))
@@ -456,7 +456,7 @@ def test_gauntlet_generations_pin_the_learner_deck(components, tmp_path, monkeyp
         eval_greedy=True,
     )
     configs = dict(_FakeCollector.configs)
-    selfplay, versus = configs["game.yml"], configs["gauntlet.yml"]
+    selfplay, versus = configs["game.json"], configs["gauntlet.json"]
     assert selfplay["training"]["games"] == 6 and versus["training"]["games"] == 2
     assert selfplay["player_b"]["type"] == "policy" and selfplay["server"]["sample"] is True
     # The learner keeps its own deck in every seat; the gauntlet deck is XMage's AI.
@@ -471,8 +471,8 @@ def test_gauntlet_generations_pin_the_learner_deck(components, tmp_path, monkeyp
     assert metrics["games_by_kind"]["gauntlet:kinnan"]["learner_results"]["win"] == 50
     # Evaluation covers the mirror and each gauntlet deck against XMage's AI, greedily.
     evaluations = {name: config for name, config in _FakeCollector.configs if name.startswith("eval-")}
-    assert set(evaluations) == {"eval-xmage-ai.yml", "eval-xmage-ai-kinnan.yml"}
-    assert evaluations["eval-xmage-ai-kinnan.yml"]["player_b"]["deckPath"] == str(gauntlet.resolve())
+    assert set(evaluations) == {"eval-xmage-ai.json", "eval-xmage-ai-kinnan.json"}
+    assert evaluations["eval-xmage-ai-kinnan.json"]["player_b"]["deckPath"] == str(gauntlet.resolve())
     assert all(
         config["server"]["sample"] is False and config["opponent_ai"] == {"skill": 5} for config in evaluations.values()
     )

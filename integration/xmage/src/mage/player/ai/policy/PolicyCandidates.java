@@ -3,6 +3,7 @@ package mage.player.ai.policy;
 import mage.MageObject;
 import mage.abilities.*;
 import mage.abilities.common.PassAbility;
+import mage.abilities.costs.mana.AlternateManaPaymentAbility;
 import mage.cards.Card;
 import mage.cards.Cards;
 import mage.choices.Choice;
@@ -11,6 +12,7 @@ import mage.game.combat.CombatGroup;
 import mage.game.permanent.Permanent;
 import mage.players.Player;
 import mage.target.Target;
+import mage.util.CardUtil;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -181,6 +183,20 @@ public final class PolicyCandidates<T> {
                 keyed ? choice.getKeyChoices().get(options.get(i)) : options.get(i)), i));
         }
         return result;
+    }
+
+    /**
+     * The largest X offered when announcing X: paid with mana, at most what the pool
+     * holds beyond the rest of the cost, unless the card sets X itself (cost adjuster)
+     * or is paid another way.
+     */
+    public static int announceMax(Player player, int max, Ability source, Game game, boolean isManaPay) {
+        if (!isManaPay) return max;
+        MageObject object = source.getSourceObject(game);
+        boolean alternatePayment = object != null && CardUtil.getAbilities(object, game).stream()
+            .anyMatch(ability -> ability instanceof AlternateManaPaymentAbility);
+        if (source.getCostAdjuster() != null || alternatePayment) return max;
+        return Math.min(max, player.getManaPool().getMana().count() - source.getManaCostsToPay().getUnpaid().manaValue());
     }
 
     /**

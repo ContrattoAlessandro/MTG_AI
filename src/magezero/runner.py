@@ -15,7 +15,7 @@ from pathlib import Path
 import yaml
 
 from .checkpoint import load_checkpoint, read_policy_version, strip_optimizer
-from .engine import RESULT_FIELDS, PersistentEngine, batch_timeout, game_config, gauntlet_config
+from .engine import RESULT_FIELDS, PersistentEngine, batch_timeout, game_config, gauntlet_config, write_game_file
 from .league import League
 from .learner import PPOConfig, train_from_files
 from .service_client import ServicePool, collect_results, service_stats
@@ -113,8 +113,7 @@ def evaluate(
                     for i, port in enumerate(actor_ports)
                 }
             )
-        config_file = folder / f"eval-{name.replace(':', '-').replace(' ', '_')}.yml"
-        config_file.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+        config_file = write_game_file(folder / f"eval-{name.replace(':', '-').replace(' ', '_')}.json", config)
         started = time.perf_counter()
         try:
             collector.services.prepare(targets)
@@ -427,8 +426,7 @@ class SelfPlayRun:
         batches = []
         if games - gauntlet_games:
             config = game_config(self.base, games - gauntlet_games, self.actor_ports, opponent_ports)
-            config_file = folder / "game.yml"
-            config_file.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+            config_file = write_game_file(folder / "game.json", config)
             targets = {
                 port: (self.current, episodes / "selfplay", learner_version, f"actor-{i}")
                 for i, port in enumerate(self.actor_ports)
@@ -448,8 +446,7 @@ class SelfPlayRun:
                 self.gauntlet_ai_skill,
                 think_seconds=self.gauntlet_ai_think,
             )
-            config_file = folder / "gauntlet.yml"
-            config_file.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+            config_file = write_game_file(folder / "gauntlet.json", config)
             targets = {
                 port: (self.current, episodes / "gauntlet", learner_version, f"actor-{i}")
                 for i, port in enumerate(self.actor_ports)

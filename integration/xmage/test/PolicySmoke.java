@@ -12,7 +12,8 @@ public final class PolicySmoke {
     private static final class SmokeCard extends CardImpl {
         SmokeCard(UUID owner, boolean creature) {
             super(owner, new CardSetInfo(creature ? "Card 1" : "Card 2", "TST", "1", Rarity.COMMON),
-                new CardType[]{creature ? CardType.CREATURE : CardType.LAND}, "");
+                // {0}: free to cast (a card with no mana cost cannot be cast at all)
+                new CardType[]{creature ? CardType.CREATURE : CardType.LAND}, creature ? "{0}" : "");
             if (creature) { power = new mage.MageInt(3); toughness = new mage.MageInt(3); }
         }
         private SmokeCard(SmokeCard other) { super(other); }
@@ -31,13 +32,6 @@ public final class PolicySmoke {
         org.apache.log4j.BasicConfigurator.configure();
         org.apache.log4j.Logger.getRootLogger().setLevel(org.apache.log4j.Level.WARN);
         String endpoint = args.length == 0 ? "http://127.0.0.1:50054" : args[0];
-        if (args.length > 1) {
-            org.mage.magezero.Config.load(args[1]);
-            if (org.mage.magezero.Config.INSTANCE.playerA.hiddenInfo.opponentHand
-                    || org.mage.magezero.Config.INSTANCE.playerB.hiddenInfo.opponentHand) {
-                throw new IllegalStateException("default v2 game configuration exposes private hands");
-            }
-        }
         Game game = new TwoPlayerDuel(MultiplayerAttackOption.LEFT, RangeOfInfluence.ONE,
             MulliganType.GAME_DEFAULT.getMulligan(0), 0, 6, 3);
         PolicyPlayer a = new PolicyPlayer("Smoke A", RangeOfInfluence.ONE, endpoint);
@@ -45,7 +39,8 @@ public final class PolicySmoke {
         load(game, a); load(game, b);
         a.initializeKnownDeck(game, b.getId()); b.initializeKnownDeck(game, a.getId());
         GameOptions options = new GameOptions();
-        options.testMode = true; options.stopOnTurn = 20; options.stopAtStep = PhaseStep.END_TURN;
+        // A real game: XMage's test mode (for its unit tests) deals no opening hands.
+        options.testMode = false; options.stopOnTurn = 20; options.stopAtStep = PhaseStep.END_TURN;
         game.setGameOptions(options); game.setStartingPlayerId(a.getId());
         boolean terminal = false;
         try {

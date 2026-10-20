@@ -3,6 +3,7 @@ package mage.player.ai.policy;
 import mage.MageObject;
 import mage.abilities.*;
 import mage.abilities.common.PassAbility;
+import mage.abilities.costs.mana.ManaCost;
 import mage.cards.*;
 import mage.choices.Choice;
 import mage.constants.*;
@@ -13,7 +14,9 @@ import mage.game.permanent.Permanent;
 import mage.player.ai.ComputerPlayer;
 import mage.target.Target;
 import mage.target.TargetAmount;
+import mage.target.TargetCard;
 import mage.players.PlayerImpl;
+import java.io.Serializable;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -65,12 +68,12 @@ public class PolicyPlayer extends ComputerPlayer implements RecordingPlayer {
         this.endpoint = endpoint;
         this.recording = recording;
         this.sample = sample;
-        this.autoTap = true; // engine legality/payment, not strategic lookahead
-        this.allowMulligans = true;
     }
 
     protected PolicyPlayer(PolicyPlayer other) {
         super(other);
+        // PlayerImpl's copy constructor drops this flag (XMage 1.4.58 to 1.4.62 at least).
+        setFastFailInTestMode(other.isFastFailInTestMode());
         this.endpoint = other.endpoint;
         this.recording = other.recording;
         this.sample = other.sample;
@@ -181,7 +184,6 @@ public class PolicyPlayer extends ComputerPlayer implements RecordingPlayer {
         if (!window.equals(rejectedWindow)) { rejected.clear(); rejectedWindow = window; }
         int firstStep = encoder == null ? 0 : encoder.decisions();
         ActivatedAbility chosen = select(game, PolicyCandidates.priority(this, game, client, rejected, tapsForMana()));
-        game.setLastPriority(getId());
         if (chosen == null) { pass(game); return false; }
         if (!activateAbility(chosen, game) && !cancelledPayment()) {
             // XMage lists some abilities as playable that then fail during payment or
@@ -206,23 +208,47 @@ public class PolicyPlayer extends ComputerPlayer implements RecordingPlayer {
      */
     protected boolean tapsForMana() { return false; }
 
-    @Override protected boolean makeChoice(Outcome outcome, Target target, Ability source, Game game, Cards fromCards) {
-        if (target.isChoiceCompleted(target.getAffectedAbilityControllerId(getId()), source, game, fromCards)) return target.isChosen(game);
-        PolicyCandidates<UUID> candidates = PolicyCandidates.target(this, target, source, game, fromCards, client);
-        if (candidates.size() == 0) return target.isChosen(game);
-        UUID chosen = select(game, candidates);
-        if (chosen == null) return true; // stop
-        target.addTarget(chosen, source, game);
-        if (!target.contains(chosen)) throw new IllegalStateException("engine rejected supplied target");
-        getPlayerHistory().targetSequence.add(chosen);
-        return makeChoice(outcome, target, source, game, fromCards);
+    // Every way XMage asks for targets or cards (the Player interface) goes to chooseTargets.
+    @Override public boolean choose(Outcome outcome, Target target, Ability source, Game game) {
+        return chooseTargets(outcome, target, source, game, null);
+    }
+
+    @Override public boolean choose(Outcome outcome, Target target, Ability source, Game game, Map<String, Serializable> options) {
+        return chooseTargets(outcome, target, source, game, null);
+    }
+
+    @Override public boolean choose(Outcome outcome, Cards cards, TargetCard target, Ability source, Game game) {
+        return chooseTargets(outcome, target, source, game, cards);
+    }
+
+    @Override public boolean chooseTarget(Outcome outcome, Target target, Ability source, Game game) {
+        return chooseTargets(outcome, target, source, game, null);
+    }
+
+    @Override public boolean chooseTarget(Outcome outcome, Cards cards, TargetCard target, Ability source, Game game) {
+        return chooseTargets(outcome, target, source, game, cards);
+    }
+
+    /** Targets one at a time (with stop once the target is legal), until the target is complete. */
+    protected boolean chooseTargets(Outcome outcome, Target target, Ability source, Game game, Cards fromCards) {
+        while (!target.isChoiceCompleted(target.getAffectedAbilityControllerId(getId()), source, game, fromCards)) {
+            PolicyCandidates<UUID> candidates = PolicyCandidates.target(this, target, source, game, fromCards, client);
+            if (candidates.size() == 0) break;
+            UUID chosen = select(game, candidates);
+            if (chosen == null) return true; // stop
+            target.addTarget(chosen, source, game);
+            if (!target.contains(chosen)) throw new IllegalStateException("engine rejected supplied target");
+        }
+        return target.isChosen(game);
+    }
+
+    @Override public boolean chooseUse(Outcome outcome, String message, Ability source, Game game) {
+        return chooseUse(outcome, message, null, null, null, source, game);
     }
 
     @Override public boolean chooseUse(Outcome outcome, String message, String secondMessage,
             String trueText, String falseText, Ability source, Game game) {
-        boolean chosen = select(game, PolicyCandidates.use(message, trueText, falseText, source, game, client));
-        getPlayerHistory().useSequence.add(chosen);
-        return chosen;
+        return select(game, PolicyCandidates.use(message, trueText, falseText, source, game, client));
     }
 
     @Override public boolean chooseMulligan(Game game) {
@@ -236,15 +262,41 @@ public class PolicyPlayer extends ComputerPlayer implements RecordingPlayer {
         if (candidates.size() == 0) return false;
         String selected = select(game, candidates);
         if (choice.getKeyChoices().isEmpty()) choice.setChoice(selected); else choice.setChoiceByKey(selected);
-        getPlayerHistory().choiceSequence.add(selected);
         return true;
     }
 
-    @Override protected int makeChoiceAmount(int min, int max, Game game, Ability source, boolean isManaPay) {
+    /** XMage's own AI answer to a choice (for WebPlayer: mana colours during an automatic payment). */
+    protected boolean chooseAsXMageAi(Outcome outcome, Choice choice, Game game) {
+        return super.choose(outcome, choice, game);
+    }
+
+    @Override public int getAmount(int min, int max, String message, Ability source, Game game) {
+        return chooseAmount(min, max, game, source);
+    }
+
+    @Override public int announceX(int min, int max, String message, Game game, Ability source, boolean isManaPay) {
+        return chooseAmount(min, PolicyCandidates.announceMax(this, max, source, game, isManaPay), game, source);
+    }
+
+    protected int chooseAmount(int min, int max, Game game, Ability source) {
         if (min >= max) return min;
-        int chosen = select(game, PolicyCandidates.amount(min, max, source, game, client));
-        getPlayerHistory().numSequence.add(chosen - min);
-        return chosen;
+        return select(game, PolicyCandidates.amount(min, max, source, game, client));
+    }
+
+    // Nested payments: mana abilities that cost mana (Prismite, Energy Refractor, Urn of
+    // Godfire) can pay for each other without end and overflow the stack. Paying through
+    // more than a few nested mana abilities is never needed.
+    private static final int MAX_MANA_PAYMENT_DEPTH = 8;
+    private transient int manaPaymentDepth = 0;
+
+    @Override public boolean playMana(Ability ability, ManaCost unpaid, String promptText, Game game) {
+        if (manaPaymentDepth >= MAX_MANA_PAYMENT_DEPTH) return false;
+        manaPaymentDepth++;
+        try {
+            return super.playMana(ability, unpaid, promptText, game);
+        } finally {
+            manaPaymentDepth--;
+        }
     }
 
     @Override public Mode chooseMode(Modes modes, Ability source, Game game) {
@@ -350,7 +402,7 @@ public class PolicyPlayer extends ComputerPlayer implements RecordingPlayer {
             int maximum = remaining - mandatory;
             if (maximum < 1) throw new IllegalStateException("infeasible target amount allocation");
             int minimum = (candidates.size() == 1 || target.getSize() + 1 == target.getMaxNumberOfTargets()) ? remaining : 1;
-            int amount = makeChoiceAmount(minimum, maximum, game, source, false);
+            int amount = chooseAmount(minimum, maximum, game, source);
             target.addTarget(UUID.fromString((String) chosen.get("id")), amount, source, game);
         }
         return target.isChosen(game);

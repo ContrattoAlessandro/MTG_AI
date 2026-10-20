@@ -63,15 +63,14 @@ python scripts/policy_smoke.py --output artifacts/smoke --device cpu
 
 The smoke script builds a synthetic catalog and checkpoint, plays two in-process games through the inference service, runs a PPO update, reloads the result and times a forward pass. It needs no XMage installation.
 
-Playing real games requires the XMage adapter: a JDK and Maven, a checkout of the pinned engine fork in `.mz_engine/`, the adapter installed with `integration/xmage/install.py`, and the built distribution extracted to `xmage/`. [XMage integration](docs/xmage-integration.md) gives the steps. Below, `ENGINE` stands for the launcher in that distribution: `xmage/mz-policy.sh`, or `xmage/mz-policy.bat` on Windows.
+Playing real games requires XMage. The adapter runs on official, unmodified XMage releases: with a JDK 21 on the `PATH`, `python integration/xmage/build.py` downloads the release pinned in `integration/xmage/xmage-release.txt`, compiles the adapter against it and writes the distribution to `xmage/` ([XMage integration](docs/xmage-integration.md), which also covers updating XMage). Below, `ENGINE` stands for the launcher in that distribution: `xmage/mz-policy.sh`, or `xmage/mz-policy.bat` on Windows.
 
 ## Playing the trained agent
 
 The trained Winota agent is published as a release asset: [`winota-agent.pt`](https://github.com/ContrattoAlessandro/MTG_AI/releases/download/v0.3.0-alpha/winota-agent.pt) (20 MB, release [v0.3.0-alpha](https://github.com/ContrattoAlessandro/MTG_AI/releases/tag/v0.3.0-alpha)). It pilots Winota, Joiner of Forces in Commander Duel and beats XMage's AI (skill 3) piloting Kinnan, Bonder Prodigy in about 7 of 8 games. To play it:
 
-1. Install the package (above) and build the XMage distribution into `xmage/` ([XMage integration](docs/xmage-integration.md)).
-2. Copy the two decks it knows into the distribution: `decks/winota.dck` and `decks/kinnan.dck` to `xmage/decks/`.
-3. Download the weights and start the browser app (http://127.0.0.1:8765):
+1. Install the package (above) and build the XMage distribution: `python integration/xmage/build.py` (it also installs the two decks the agent knows, `decks/winota.dck` and `decks/kinnan.dck`, in `xmage/decks/`).
+2. Download the weights and start the browser app (http://127.0.0.1:8765):
 
 ```bash
 curl -L -o winota-agent.pt https://github.com/ContrattoAlessandro/MTG_AI/releases/download/v0.3.0-alpha/winota-agent.pt
@@ -84,13 +83,17 @@ Choose Kinnan for yourself and Winota for MageZero. [Playing the agent](docs/pla
 
 ```bash
 # 1. Decks: convert the lists in decks-src/ to XMage .dck files (the commander is the sideboard).
+#    (decks/ already holds the converted lists; on Windows, separate the classpath with ";".)
 cd xmage
-java -Dh2.bindAddress=127.0.0.1 -cp "lib/*" org.mage.magezero.DeckListConverter ../decks-src/winota.txt decks/winota.dck
-java -Dh2.bindAddress=127.0.0.1 -cp "lib/*" org.mage.magezero.DeckListConverter ../decks-src/kinnan.txt decks/kinnan.dck
+CP="mz/*:lib/*:plugins/*"
+java -Dh2.bindAddress=127.0.0.1 -cp "$CP" org.mage.magezero.DeckListConverter ../decks-src/winota.txt decks/winota.dck
+java -Dh2.bindAddress=127.0.0.1 -cp "$CP" org.mage.magezero.DeckListConverter ../decks-src/kinnan.txt decks/kinnan.dck
 
-# 2. Card catalog with tokens and other faces, then the reviewed roles of every card.
-java -Xmx8G -Dh2.bindAddress=127.0.0.1 -cp "lib/*" org.mage.magezero.PolicyCatalogExporter \
-    ../artifacts/commander-cards.json --sources ../.mz_engine/Mage.Sets/src decks/winota.dck decks/kinnan.dck
+# 2. Card catalog with tokens and other faces (token scan over the release's card sources),
+#    then the reviewed roles of every card.
+git clone --depth 1 --branch "$(cat ../integration/xmage/xmage-release.txt)" https://github.com/magefree/mage ../xmage-src
+java -Xmx8G -Dh2.bindAddress=127.0.0.1 -cp "$CP" org.mage.magezero.PolicyCatalogExporter \
+    ../artifacts/commander-cards.json --sources ../xmage-src/Mage.Sets/src decks/winota.dck decks/kinnan.dck
 cd ..
 python scripts/annotate_policy_catalog.py --catalog artifacts/commander-cards.json \
     --annotations configs/card-roles.json --output artifacts/commander-cards-roles.json

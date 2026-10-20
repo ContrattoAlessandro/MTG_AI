@@ -129,6 +129,13 @@ class PersistentEngine:
         self.process.wait(timeout=10)
 
 
+def write_game_file(path, config: dict) -> Path:
+    """Write a batch configuration for the engine (`PolicyGames` reads JSON)."""
+    path = Path(path)
+    path.write_text(json.dumps(config, indent=2), encoding="utf-8")
+    return path
+
+
 def game_config(base: dict, games: int, ports, opponent_ports, *, keep_deck: bool = False, sample: bool = True) -> dict:
     """A batch of `games` policy-versus-policy games from the base game YAML.
 

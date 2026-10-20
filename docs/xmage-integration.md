@@ -1,76 +1,84 @@
 # XMage integration
 
-The policy plays inside the XMage rules engine through a Java adapter. The original MageZero engine fork sends sparse hashed features and asks for MCTS priors, so it cannot drive this policy. The adapter adds a direct `PolicyPlayer` with its observation encoder and history watcher, a recording `TeacherPlayer`, a batch game runner, and a catalog exporter.
+The policy plays inside the XMage rules engine through a Java adapter: a direct `PolicyPlayer` with its observation encoder and history watcher, a recording `TeacherPlayer`, a batch game runner, and a catalog exporter.
 
-The adapter targets [WillWroble/mage](https://github.com/WillWroble/mage) at commit `cb7e9c6fe2dcbe2f650a77dd98a87771e730f22f`. XMage is a separate repository, so the sources live in `integration/xmage/` and are copied into a checkout of that commit:
+The adapter runs on **official XMage releases** ([magefree/mage](https://github.com/magefree/mage/releases)), unmodified. XMage is never patched or rebuilt: the adapter is compiled against a release's jars and only extends XMage's public player API (the `Player` interface methods that a human player answers too). Updating XMage is therefore a one-line change ([below](#updating-xmage)).
 
 | Path | Contents |
 |---|---|
 | `src/mage/player/ai/policy/` | `PolicyPlayer` (the policy as an XMage player), `PolicyEncoder`, `PolicyHistory`, `PolicyCandidates`, `PolicyClient`, `HandSummary`, `RecordingPlayer`, `WebPlayer` (a person in the browser, `mz web`) |
-| `src-ma/mage/player/ai/TeacherPlayer.java` | XMage's Mad AI with every decision recorded over the policy's candidate list (behaviour cloning) |
-| `src/org/mage/magezero/` | `PolicyGames` (batch runner), `PolicyArena` (fixed-opponent arena), `PolicyCatalogExporter`, `DeckListConverter` |
-| `patches/` | Engine fixes, as git diffs against the pinned commit |
-| `mz-policy.sh`, `mz-policy.bat` | Launchers for `PolicyGames`, copied into the distribution |
-| `server-config.xml` | XMage server configuration for human play |
+| `src-ma/mage/player/ai/` | `XMageAiPlayer` (XMage's Mad AI, the gauntlet opponent, with the fixes below) and `TeacherPlayer` (the same AI with every decision recorded over the policy's candidate list, for behaviour cloning) |
+| `src/org/mage/magezero/` | `PolicyGames` (batch runner), `PolicyCatalogExporter`, `DeckListConverter` |
+| `patches/` | Optional engine fixes, as diffs against the release's own sources (see [below](#engine-fixes)) |
+| `xmage-release.txt` | The official release the repository is tested with |
+| `build.py` | Builds the distribution from that release |
 | `test/PolicySmoke.java` | A synthetic-card game over HTTP (`scripts/validate_xmage_policy.py`) |
-
-`install.py` verifies the checkout's commit, copies the sources and launchers, and applies the patches (already-applied ones are skipped). It leaves the original MCTS implementation in the fork untouched.
-
-## Engine patches
-
-| Patch | Why |
-|---|---|
-| `computer-player.patch` (1) | `ComputerPlayer` auto-payment recursed without end when mana abilities that cost mana (Prismite, Energy Refractor and Urn of Godfire in the Kinnan deck) paid for each other, overflowing the stack inside XMage AI simulations. Payment now gives up below 8 nested mana abilities. |
-| `computer-player.patch` (2) | Every XMage AI player in a JVM shares one pool of 5 search threads, so 16 concurrent gauntlet games queued on it and hit their think-time cap on most decisions. The pool size now reads `-Dxmage.ai.simulationThreads` (default 5); `PolicyGames` sets it to the CPU count unless given. The old value was a compile-time constant inlined into `ComputerPlayer6`, so that class is recompiled into `mage-player-ai-ma` too. |
-| `mana-options.patch` | `ManaOptions` (the "what can this player afford" estimate behind `getPlayable`) simulated repeatable mana abilities that cost mana an unlimited number of times and kept every combination, with quadratic duplicate checks. On a Kinnan board one call ran for over 7 CPU-minutes, ignoring the game's timeout. Repeats are now capped at 4 and the options at the 64 largest. Only affordability estimates change; actual payment does not. |
-| `ai-activation-cap.patch` | XMage's AI repeated one activated ability for the whole turn (Basalt Monolith's untap with Kinnan, a real infinite-mana loop; Freed from the Real) until the per-turn watchdog or the 8,192-event limit ended the game, in about 8% of Kinnan games. `ComputerPlayer6` now passes instead of activating the same ability more than 50 times in one turn (`-Dxmage.ai.maxActivationsPerTurn`). Spells are not counted. |
-| `player-fast-fail.patch` | `PlayerImpl`'s copy constructor dropped the fast-fail flag, so the setting described under [Commander Duel](#commander-duel) reverted on every state copy. |
 
 ## Building the distribution
 
-Requirements: a JDK (the distribution used here was built with JDK 21), Maven, and a clone of the fork.
+Requirements: a JDK 21 or newer (`javac` on `PATH`, or `JAVA_HOME`), Python, git and an internet connection. No Maven and no XMage checkout.
 
 ```bash
-git clone https://github.com/WillWroble/mage .mz_engine
-git -C .mz_engine checkout cb7e9c6fe2dcbe2f650a77dd98a87771e730f22f
-python integration/xmage/install.py .mz_engine
-mvn -B -ntp -f .mz_engine/pom.xml -pl Mage.MageZero -am -Dmaven.test.skip=true package
+python integration/xmage/build.py
 ```
 
-All 35 modules build. Extract the distribution ZIP from `.mz_engine/Mage.MageZero/target/` (check the file name Maven produced) into `xmage/`. It contains `lib/` and the `mz-policy` launchers. The launchers use the `lib/*` classpath and an 8 GB Java heap, which leaves memory for the Python learner. XMage's H2 card database needs local socket access, so every command binds it to localhost (`-Dh2.bindAddress=127.0.0.1`).
+The script downloads the release named in `integration/xmage/xmage-release.txt` (its `mage-full` ZIP, about 250 MB, cached in `.mz_cache/`) and writes `xmage/`:
 
-`PolicyGames game.yml` plays one batch and exits. `PolicyGames --serve`, which `mz selfplay` and `mz teacher-collect` use, boots once (card database, card scan, JIT warm-up) and then plays one batch per `game.yml` path read from stdin. It replies with a single line, `MZ-POLICY RESULT <terminal> <requested> <truncated> <errors> <timeouts>` or `MZ-POLICY ERROR <message>`, and EOF on stdin ends it. An optional `server.ports` / `server.opponent_ports` list in the game YAML spreads games across policy-service shards (game g uses entry g mod n).
+| Path | Contents |
+|---|---|
+| `lib/`, `plugins/`, `config/` | The release's XMage server, as published |
+| `mz/magezero-adapter.jar` | The adapter, compiled against those jars |
+| `mz/engine-fixes.jar` | The engine fixes that apply to this release |
+| `mz/build.json` | Release, XMage version, adapter source hash and the status of each fix |
+| `mz-policy.sh`, `mz-policy.bat` | Launchers for `PolicyGames`, with `mz/` ahead of XMage's jars on the classpath and an 8 GB heap (`MZ_HEAP` overrides it), which leaves memory for the Python learner |
+| `config/magezero-server.xml` | The release's `config.xml` for `mz play`: local only, with the policy as a player type |
+| `decks/` | The decks in `decks/` |
 
-### Rebuilding after a Java change
+Run it again after changing the adapter's Java sources (it takes seconds once the release is cached). Rebuilding keeps `decks/`, logs and, for the same XMage version, the card database; stop every Java process that uses `xmage/` first. XMage's H2 card database needs local socket access, so every command binds it to localhost (`-Dh2.bindAddress=127.0.0.1`). The first start of a new version builds the database (about a minute).
 
-A full Maven build is slow. After editing the adapter or a patched engine class, compile only those classes against the existing distribution and update the four affected jars. Stop every Java process that uses `xmage/lib` first, and keep a backup of the jars.
+`PolicyGames game.json` plays one batch and exits. `PolicyGames --serve`, which `mz selfplay`, `mz evaluate` and `mz teacher-collect` use, boots once (card database, card scan, JIT warm-up) and then plays one batch per game file path read from stdin. It replies with a single line, `MZ-POLICY RESULT <terminal> <requested> <truncated> <errors> <timeouts>` or `MZ-POLICY ERROR <message>`, and EOF on stdin ends it. The game files are JSON, written by the Python runner from the game YAML in `configs/`. An optional `server.ports` / `server.opponent_ports` list spreads games across policy-service shards (game g uses entry g mod n). With `-Dmagezero.gameLog=true` (for example in `JAVA_TOOL_OPTIONS`) the engine log also shows each game's own log, as an XMage client would.
+
+## Updating XMage
 
 ```bash
-python integration/xmage/install.py .mz_engine
-OUT=$(mktemp -d)
-AI=.mz_engine/Mage.Server.Plugins/Mage.Player.AI/src/main/java/mage/player/ai
-MA=.mz_engine/Mage.Server.Plugins/Mage.Player.AI.MA/src/mage/player/ai
-javac -nowarn -encoding UTF-8 -cp "xmage/lib/*" -d "$OUT" \
-    $(find integration/xmage/src integration/xmage/src-ma -name '*.java') \
-    $AI/ComputerPlayer.java $MA/ComputerPlayer6.java \
-    .mz_engine/Mage/src/main/java/mage/abilities/mana/ManaOptions.java \
-    .mz_engine/Mage/src/main/java/mage/players/PlayerImpl.java
-LIB=$PWD/xmage/lib
-(cd "$OUT" &&
- jar uf "$LIB/mage-player-ai-1.4.58.jar" mage/player/ai/policy/*.class mage/player/ai/ComputerPlayer.class 'mage/player/ai/ComputerPlayer$PickedCard.class' &&
- jar uf "$LIB/mage-player-ai-ma-1.4.58.jar" mage/player/ai/ComputerPlayer6*.class mage/player/ai/TeacherPlayer*.class &&
- jar uf "$LIB/mage-1.4.58.jar" mage/abilities/mana/ManaOptions*.class mage/players/PlayerImpl*.class &&
- jar uf "$LIB/mage-magezero-1.4.58.jar" org/mage/magezero/*.class)
+python integration/xmage/build.py --check --release latest   # does the adapter compile against the newest release?
+python integration/xmage/build.py --release latest           # build xmage/ on it
 ```
+
+To move the repository to a new release, put its tag in `xmage-release.txt`. The `xmage` CI workflow compiles the adapter against the pinned release on every change and against the newest release every Monday, so a release that breaks the adapter shows up as a failed run. A compile failure names the XMage API that changed; the adapter uses few of them (see `PolicyPlayer`, `XMageAiPlayer`, `TeacherPlayer`).
+
+After an update, play a short evaluation before relying on it, for example `mz evaluate --games 64` ([Playing the agent](playing-the-agent.md#how-strong-it-is) lists the published scores). Compiling proves the API still fits, not that the rules behave the same: a release can change cards or rules the policy was trained on. Cards of a deck that a release renames or removes fail at deck import.
+
+## Engine fixes
+
+The adapter needs no change to XMage. Three problems seen in training are handled in the adapter's own classes:
+
+| Problem | Fix |
+|---|---|
+| XMage's AI repeated one activated ability for the whole turn (Basalt Monolith's untap with Kinnan, a real infinite-mana loop; Freed from the Real) until the per-turn watchdog ended the game, in about 8% of Kinnan games | `XMageAiPlayer` passes instead of activating the same ability more than 50 times in one turn (`-Dxmage.ai.maxActivationsPerTurn`), and skips the rest of that priority's plan. Spells are not counted. |
+| Every XMage AI player in a JVM shares one pool of 5 search threads, so 16 concurrent gauntlet games queued on it and hit their think-time cap on most decisions | `PolicyGames` resizes the pool to the CPU count (`-Dxmage.ai.simulationThreads`). If a release moves the pool, a warning is logged and the default size stays. |
+| `PlayerImpl`'s copy constructor drops the fast-fail flag, so the setting described under [Commander Duel](#commander-duel) reverted on every state copy | `PolicyPlayer` and `XMageAiPlayer` copy it themselves. |
+
+Two fixes are inside XMage classes, so `build.py` applies them to the release's own copy of each file (downloaded for the release's tag), compiles them into `mz/engine-fixes.jar` and puts that jar first on the classpath. A fix that no longer applies or compiles against a release is skipped with a warning (in the build output, `mz/build.json` and the CI run); games still run without it.
+
+| Patch | Why |
+|---|---|
+| `mana-payment-depth.patch` | `ComputerPlayer` auto-payment recursed without end when mana abilities that cost mana (Prismite, Energy Refractor and Urn of Godfire in the Kinnan deck) paid for each other, overflowing the stack inside XMage AI simulations. Payment now gives up below 8 nested mana abilities. (`PolicyPlayer` and `XMageAiPlayer` also stop there for their own payments.) |
+| `mana-options.patch` | `ManaOptions` (the "what can this player afford" estimate behind `getPlayable`) simulated repeatable mana abilities that cost mana an unlimited number of times and kept every combination, with quadratic duplicate checks. On a Kinnan board one call ran for over 7 CPU-minutes, ignoring the game's timeout. Repeats are now capped at 4 and the options at the 64 largest. Only affordability estimates change; actual payment does not. |
+
+### History
+
+Until October 2026 the adapter was installed into [WillWroble/mage](https://github.com/WillWroble/mage) at commit `cb7e9c6f` (MageZero's fork of XMage 1.4.58) and patched five engine files. The trained agent, its training run and the evaluations in [Playing the agent](playing-the-agent.md) used that fork. Two differences mattered when moving to official XMage: official XMage runs game code only on threads named as game threads (`PolicyGames` names its workers so), and its test mode deals no opening hands (the fork had changed that), so `PolicyGames` plays real games instead.
 
 ## Exporting the card catalog
 
-The policy embeds cards by catalog ID, so the catalog must be exported once for the whole deck pool before a policy is initialized, and must not change afterwards. Place the decks in `xmage/decks/`, then:
+The policy embeds cards by catalog ID, so the catalog must be exported once for the whole deck pool before a policy is initialized, and must not change afterwards. Place the decks in `xmage/decks/`, then (on Windows, separate the classpath with `;`):
 
 ```bash
+git clone --depth 1 --branch "$(cat integration/xmage/xmage-release.txt)" https://github.com/magefree/mage xmage-src
 cd xmage
-java -Xmx8G -Dh2.bindAddress=127.0.0.1 -cp "lib/*" org.mage.magezero.PolicyCatalogExporter \
-    ../artifacts/cards.json --sources ../.mz_engine/Mage.Sets/src decks/first.dck decks/second.dck
+java -Xmx8G -Dh2.bindAddress=127.0.0.1 -cp "mz/*:lib/*:plugins/*" org.mage.magezero.PolicyCatalogExporter \
+    ../artifacts/cards.json --sources ../xmage-src/Mage.Sets/src decks/first.dck decks/second.dck
 cd ..
 python scripts/annotate_policy_catalog.py --catalog artifacts/cards.json \
     --annotations configs/card-roles.json --output artifacts/cards-with-roles.json
@@ -89,10 +97,10 @@ The learner pilots **Winota, Joiner of Forces** and the gauntlet opponent is **K
 - The commander is the deck's sideboard. `GameCommanderImpl` moves it to the command zone, and the encoder shows both commanders there ([protocol](policy-protocol.md#feature-layout-in-the-java-adapter)).
 - `server.learner_keeps_deck: true` moves the learner's deck with it when seats swap, so the learner always plays player_a's deck. `server.sample: false` makes policy players greedy (evaluation only; unsampled games are never recorded). `opponent_ai.think_seconds` caps XMage's AI search per decision (by default 3 s per skill level).
 - Game configurations: `configs/commander-mirror.yml` (Winota against Winota, both policy) and `configs/commander-gauntlet.yml` (the policy's Winota against XMage's AI with Kinnan).
-- The deck lists in `decks-src/` are converted with `org.mage.magezero.DeckListConverter list.txt deck.dck`. Lines after the first blank line are the sideboard (the commander), and unknown names fail. Three cards of the original lists are missing from this XMage build and were substituted: Mayor Tong of Chin Village → Ragavan, Nimble Pilferer (Winota); Avatar Sanctuary → Breeding Pool and Tidus, Zanarkand Fayth → Bounding Krasis (Kinnan).
+- The deck lists in `decks-src/` are converted with `org.mage.magezero.DeckListConverter list.txt deck.dck`. Lines after the first blank line are the sideboard (the commander), and unknown names fail. Three cards of the original lists were missing from XMage 1.4.58 and are still missing in 1.4.62, so they were substituted: Mayor Tong of Chin Village → Ragavan, Nimble Pilferer (Winota); Avatar Sanctuary → Breeding Pool and Tidus, Zanarkand Fayth → Bounding Krasis (Kinnan).
 - The resulting catalog has 173 card kinds: 158 deck cards, 5 other faces and 10 tokens. The [README](../README.md#training-the-commander-agent) lists the commands.
 
-Players run in XMage's test mode, where some checks throw instead of being skipped as in a real game ("AI can't find good blocker combination", errors inside AI simulations). `PolicyGames` and `PolicyArena` therefore turn off `fastFailInTestMode` for every player, and `player-fast-fail.patch` keeps that setting across state copies.
+Players run in XMage's player test mode, where some checks throw instead of being skipped as in a real game ("AI can't find good blocker combination", errors inside AI simulations). `PolicyGames` therefore turns off `fastFailInTestMode` for every player, and the adapter's players keep that setting across state copies. The game itself is a real game, not XMage's game test mode (which deals no opening hands).
 
 Fixes made in the adapter while bringing up the Commander games (in `PolicyPlayer` unless noted):
 
@@ -121,13 +129,13 @@ Each generation serves the frozen learner checkpoint on port 50052 (and a histor
 
 ## Playing against the policy
 
-`mz play` starts a policy service for a checkpoint, then the fork's own XMage server from `xmage/lib` with [`integration/xmage/server-config.xml`](../integration/xmage/server-config.xml). That configuration maps the **"Computer - monte carlo"** opponent type to `PolicyPlayer`. Stock XMage clients already list that type, so no client changes are needed (upstream MageZero used the same slot). The server listens on `localhost:17171` only.
+`mz play` starts a policy service for a checkpoint, then the release's XMage server from `xmage/` with `xmage/config/magezero-server.xml` (written by `build.py` from the release's own `config.xml`). That configuration maps the **"Computer - monte carlo"** opponent type to `PolicyPlayer`. Stock XMage clients already list that type, so no client changes are needed. The server listens on `localhost:17171` only.
 
 ```bash
 mz play --checkpoint artifacts/commander-run/best.pt --greedy   # --device cuda is optional
 ```
 
-1. Open an XMage client of the server's version (1.4.58) and connect to `localhost`, port 17171.
+1. Open an XMage client of the server's version (`xmage_version` in `xmage/mz/build.json`; the client is in the same release's `mage-full` ZIP) and connect to `localhost`, port 17171.
 2. Create a table (Commander Two Player Duel for the Commander agent) and add a **Computer - monte carlo** player.
 3. Give the policy a deck from its card pool and play a deck from the same pool yourself. The policy reads its opponent's announced deck list at game start, and every card in that list must be in the checkpoint's catalog.
 
@@ -141,25 +149,22 @@ mz web --checkpoint artifacts/anchors/a5-b-gen24.pt     # then open http://127.0
 
 It starts the bot's policy service (port 50071), an engine (`PolicyGames --serve`) and a web server on `127.0.0.1:8765`, and opens the page. Pick your deck and the bot's (only decks in `xmage/decks/` whose cards are all in the checkpoint's catalog are offered; two 99-card decks play Commander Duel), who goes first, and whether the bot plays its most likely action (default) or samples. One game runs at a time. New game abandons the running one, and Concede ends it as a loss.
 
-Your seat is a `WebPlayer` (game YAML `player_b.type: web`, `server.web_endpoint`). It is a `PolicyPlayer` whose decisions go to the browser instead of the policy service, so you choose among exactly the candidates the policy is offered (`PolicyCandidates`), with readable labels, and XMage pays mana automatically for both players. Decisions with one legal option are not asked. The engine posts each decision with a snapshot of what you may see (both battlefields, your hand, public zones, hidden counts, the stack, combat and XMage's game log) to `/engine/decide`, and the server holds the request until you click. The board also refreshes at each of your priority passes, so the bot's actions show while they happen. The page auto-passes priority on an empty stack outside your main phases, and when your own spell is on top of the stack; both can be switched off, and Space or Enter passes. Card images come from Scryfall.
+Your seat is a `WebPlayer` (game file `player_b.type: web`, `server.web_endpoint`). It is a `PolicyPlayer` whose decisions go to the browser instead of the policy service, so you choose among exactly the candidates the policy is offered (`PolicyCandidates`), with readable labels, and XMage pays mana automatically for both players. Decisions with one legal option are not asked. The engine posts each decision with a snapshot of what you may see (both battlefields, your hand, public zones, hidden counts, the stack, combat and XMage's game log) to `/engine/decide`, and the server holds the request until you click. The board also refreshes at each of your priority passes, so the bot's actions show while they happen. The page auto-passes priority on an empty stack outside your main phases, and when your own spell is on top of the stack; both can be switched off, and Space or Enter passes. Card images come from Scryfall.
 
-`mz web` compiles the adapter into `artifacts/web-engine/classes` (again whenever a source is newer) and puts that folder ahead of `xmage/lib` on the engine's classpath, so it runs the current sources without rebuilding the jars that training uses. Its logs are in a temporary `mz-web-*` folder printed at start.
+`mz web` compiles the adapter into `xmage/mz/web-classes` (again whenever a source is newer; `build.py` clears it) and puts that folder ahead of the adapter jar on the engine's classpath, so it runs the current sources without rebuilding the jar that training uses. Its logs are in a temporary `mz-web-*` folder printed at start.
 
 Games against people are inference only: nothing is recorded, and no privileged labels are sent. `PolicyPlayer` reads its endpoint from `-Dmagezero.policy.endpoint` (or `MAGEZERO_POLICY_ENDPOINT`) and initializes itself in `beginTurn`, which `GameImpl.init` calls for every player before shuffling and opening hands. Each new game of a match starts a new recurrent session. Player copies share the live session, so XMage state restores (failed payments, a human's undo) keep the policy's memory.
 
 ## Validation
 
-- `scripts/validate_xmage_policy.py` compiles the adapter against a core engine build, plays one real XMage rules game with synthetic free creatures and lands over HTTP (12-card decks, six life, three starting cards), and trains on its two trajectories. It caught engine API, watcher-copy, batched-event, mulligan, action-application, privacy-schema and transport issues. It needs the modules `Mage`, `Mage.Common`, `Mage.MageZero`, `Mage.Server.Plugins/Mage.Player.AI` and `Mage.Server.Plugins/Mage.Game.TwoPlayerDuel` built with their dependencies in `artifacts/maven`:
+- `scripts/validate_xmage_policy.py` plays one real XMage rules game with the built adapter and synthetic free creatures and lands over HTTP (12-card decks, six life, three starting cards), and trains on its two trajectories. It caught engine API, watcher-copy, batched-event, mulligan, action-application, privacy-schema and transport issues:
 
   ```bash
-  mvn -B -ntp -f .mz_engine/Mage/pom.xml -Dmaven.repo.local=$PWD/artifacts/maven -DskipTests compile
-  mvn -N -B -ntp -f .mz_engine/Mage/pom.xml -Dmaven.repo.local=$PWD/artifacts/maven dependency:get \
-      -Dartifact=org.yaml:snakeyaml:2.2 -Dtransitive=false
   python scripts/policy_smoke.py --output artifacts/smoke --device cpu
   python scripts/validate_xmage_policy.py --checkpoint artifacts/smoke/initial.pt --output artifacts/java-smoke
   ```
 
-- With the full distribution, two normal 60-card games of the fork's `simplegreen` mirror (`configs/smoke/real-card-smoke.yml`) completed through `mz selfplay`, producing four terminal trajectories with 1,172 decisions that passed validation and trained a new checkpoint. This exercises deck import, real cards, mana payment, combat, the engine collector, the service lifecycle and the learner; it is not a win-rate or card-coverage test.
+- With the full distribution (on the fork), two normal 60-card games of the `simplegreen` mirror (`configs/smoke/real-card-smoke.yml`) completed through `mz selfplay`, producing four terminal trajectories with 1,172 decisions that passed validation and trained a new checkpoint. This exercises deck import, real cards, mana payment, combat, the engine collector, the service lifecycle and the learner; it is not a win-rate or card-coverage test.
 - Human play was checked by starting the server (4 player types loaded) and by two games against XMage's AI built through the server's player constructor, with zero engine errors.
 
 ## Coverage and remaining limits

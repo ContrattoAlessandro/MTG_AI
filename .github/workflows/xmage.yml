@@ -1,0 +1,53 @@
+name: xmage
+
+# Compiles the XMage adapter against official XMage releases: the pinned one
+# (integration/xmage/xmage-release.txt) on every change to the adapter, and the
+# newest one every Monday, so a breaking XMage release shows up as a failed run.
+on:
+  push:
+    paths:
+      - "integration/xmage/**"
+      - ".github/workflows/xmage.yml"
+  pull_request:
+    paths:
+      - "integration/xmage/**"
+      - ".github/workflows/xmage.yml"
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  adapter:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        release: [pinned, latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: actions/cache@v4
+        with:
+          path: .mz_cache/xmage
+          key: xmage-${{ matrix.release }}-${{ github.run_id }}
+          restore-keys: xmage-${{ matrix.release }}-
+      - name: Compile the adapter and engine fixes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ matrix.release }}" = latest ]; then
+            python integration/xmage/build.py --check --release latest | tee build.log
+          else
+            python integration/xmage/build.py --check | tee build.log
+          fi
+      - name: Report engine fixes that no longer apply
+        run: |
+          if grep -q "WARNING: engine fix" build.log; then
+            grep "WARNING" build.log | sed 's/^/::warning::/'
+          fi

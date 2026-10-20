@@ -1,0 +1,32 @@
+diff --git a/Mage.Server.Plugins/Mage.Player.AI/src/mage/player/ai/ComputerPlayer.java b/Mage.Server.Plugins/Mage.Player.AI/src/mage/player/ai/ComputerPlayer.java
+index 9d148fb..a6a0fb1 100644
+--- a/Mage.Server.Plugins/Mage.Player.AI/src/mage/player/ai/ComputerPlayer.java
++++ b/Mage.Server.Plugins/Mage.Player.AI/src/mage/player/ai/ComputerPlayer.java
+@@ -391,8 +391,27 @@ public class ComputerPlayer extends PlayerImpl {
+         return false;
+     }
+ 
++    // MageZero engine fix: mana abilities that cost mana (Prismite, Energy Refractor, Urn of
++    // Godfire) can pay for each other without end, and the nested payments overflow the
++    // stack (also inside AI simulations). Paying through more than 8 nested mana abilities
++    // is never needed.
++    private static final int MAX_MANA_PAYMENT_DEPTH = 8;
++    private transient int manaPaymentDepth = 0;
++
+     @Override
+     public boolean playMana(Ability ability, ManaCost unpaid, String promptText, Game game) {
++        if (manaPaymentDepth >= MAX_MANA_PAYMENT_DEPTH) {
++            return false;
++        }
++        manaPaymentDepth++;
++        try {
++            return playManaGuarded(ability, unpaid, promptText, game);
++        } finally {
++            manaPaymentDepth--;
++        }
++    }
++
++    private boolean playManaGuarded(Ability ability, ManaCost unpaid, String promptText, Game game) {
+         payManaMode = true;
+         lastUnpaidMana.put(ability.getId(), unpaid.copy());
+         try {
