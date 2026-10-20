@@ -147,7 +147,9 @@ class Table:
                 "version": self.version,
                 "state": state,
                 # A searched choice's names (every card in XMage) stay here: GET /api/search.
-                "decision": None if self.decision is None else {
+                "decision": None
+                if self.decision is None
+                else {
                     **{k: v for k, v in self.decision.items() if k not in ("state", "names")},
                     **({"count": len(self.decision["names"])} if "names" in self.decision else {}),
                 },
@@ -169,7 +171,12 @@ class Table:
             if not all(word in folded for word in words):
                 continue
             starts = folded.split()
-            rank = 0 if folded.startswith(" ".join(words)) else 1 if all(any(s.startswith(w) for s in starts) for w in words) else 2
+            if folded.startswith(" ".join(words)):
+                rank = 0
+            elif all(any(s.startswith(w) for s in starts) for w in words):
+                rank = 1
+            else:
+                rank = 2
             ranked.append((rank, len(name), name))
         ranked.sort()
         return [name for _, _, name in ranked[:limit]]

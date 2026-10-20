@@ -94,8 +94,11 @@ def test_only_the_controlling_tab_answers(monkeypatch):
 def test_trigger_order_must_list_every_trigger_once(monkeypatch):
     monkeypatch.setattr(webplay, "HOLD_SECONDS", 0.05)
     table = Table()
-    ask = {**decision(), "kind": "triggers",
-           "options": [{"id": "a", "type": "order", "label": "A"}, {"id": "b", "type": "order", "label": "B"}]}
+    ask = {
+        **decision(),
+        "kind": "triggers",
+        "options": [{"id": "a", "type": "order", "label": "A"}, {"id": "b", "type": "order", "label": "B"}],
+    }
     table.decide(ask)
     for wrong in ("a", "a,a", "a,b,c"):
         with pytest.raises(ValueError, match="every trigger once"):
@@ -107,9 +110,14 @@ def test_trigger_order_must_list_every_trigger_once(monkeypatch):
 def test_combat_declaration_lists_offered_pairs_once(monkeypatch):
     monkeypatch.setattr(webplay, "HOLD_SECONDS", 0.05)
     table = Table()
-    ask = {**decision(), "kind": "blockers",
-           "options": [{"id": "b1>a1", "type": "block", "label": "Bear blocks Goblin", "max": 1},
-                       {"id": "b2>a1", "type": "block", "label": "Elf blocks Goblin", "max": 1}]}
+    ask = {
+        **decision(),
+        "kind": "blockers",
+        "options": [
+            {"id": "b1>a1", "type": "block", "label": "Bear blocks Goblin", "max": 1},
+            {"id": "b2>a1", "type": "block", "label": "Elf blocks Goblin", "max": 1},
+        ],
+    }
     table.decide(ask)
     for wrong in ("b1>a2", "b1>a1,b1>a1"):
         with pytest.raises(ValueError, match="offered pairs"):
