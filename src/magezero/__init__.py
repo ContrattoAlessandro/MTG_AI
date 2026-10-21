@@ -17,7 +17,8 @@ Modules, from observation to training run:
     league          historical self-play opponents
     runner          resumable self-play training runs
     diagnostics     hand-prediction evaluation and decision traces
+    webplay         `mz web`: play against a checkpoint in the browser
     cli             the `mz` command
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

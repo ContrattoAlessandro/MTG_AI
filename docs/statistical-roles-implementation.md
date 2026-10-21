@@ -53,7 +53,7 @@ Checkpoints record their architecture name (`entity_statistical_roles_recurrent_
 
 The tests compare the prior with exhaustive enumeration of small pools and with the count-DP model given binomial count scores, and cover overlapping role unions, known and empty hands, deck reordering and batch padding, role metadata validation, service retries, CPU and CUDA PPO gradients, and statistical checkpoint reloads.
 
-The measurements below were taken when the mode was introduced, with the checkpoint format of that time; [aggregate validation data](statistical-roles-validation.json) records them. Comparing checkpoints before and after one update confirmed nonzero changes in both the role encoder and the action scorer, while the role probabilities for the same public observation stayed identical, as they have no trainable parameters.
+The measurements below were taken when the mode was introduced, with the checkpoint format of that time; [aggregate validation data](history/statistical-roles-validation.json) records them. Comparing checkpoints before and after one update confirmed nonzero changes in both the role encoder and the action scorer, while the role probabilities for the same public observation stayed identical, as they have no trainable parameters.
 
 On the real engine, two normal `simplegreen` mirror games produced four complete player trajectories with **1,223 decisions**, and a CPU PPO update trained the role encoder and policy. Collection took 30.95 seconds, learning 23.98 seconds, and the whole generation 55.20 seconds. This is integration evidence, not evidence of playing strength. In this mode the hand NLL is a diagnostic of the fixed prior, not a learned-head loss.
 
@@ -68,16 +68,12 @@ The statistical model's CPU median was approximately 35% lower for this workload
 
 ## Reproduction
 
-With the `simplegreen` catalog exported as in [XMage integration](xmage-integration.md#exporting-the-card-catalog) and fresh output paths:
+The measurements above used the fork's `simplegreen` deck, which official XMage releases do not ship; their configurations are in git history ([Earlier pilots](history/README.md)). The same checks on the Commander pool, with the catalog from the [README](../README.md#training-the-commander-agent) (steps 2 and 3):
 
 ```bash
-python scripts/annotate_policy_catalog.py --catalog artifacts/simplegreen-cards.json \
-    --annotations configs/card-roles.json --output artifacts/simplegreen-roles.json
-mz init --catalog artifacts/simplegreen-roles.json --config configs/policy.yml \
-    --output artifacts/roles-initial.pt --seed 20261012
-mz selfplay --checkpoint artifacts/roles-initial.pt --game configs/smoke/real-card-smoke.yml \
-    --config configs/smoke/policy-statistical-smoke.yml --engine-script $ENGINE \
-    --output artifacts/roles-run --iterations 1 --games 2 --actor-device cpu --device cpu
+mz selfplay --checkpoint artifacts/commander-initial.pt --game configs/commander-mirror.yml \
+    --config configs/policy-smoke.yml --engine-script $ENGINE \
+    --output artifacts/roles-run --iterations 1 --games 2 --engine-threads 2 --actor-device cpu --device cpu
 python scripts/benchmark_statistical_roles.py --output artifacts/roles-benchmark.json
 ```
 

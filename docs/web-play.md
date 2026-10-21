@@ -5,7 +5,7 @@
 ## Starting it
 
 ```bash
-mz web --checkpoint artifacts/anchors/a5-b-gen24.pt
+mz web --checkpoint artifacts/winota-agent.pt
 ```
 
 This starts three things and opens http://127.0.0.1:8765 in your browser:
@@ -14,7 +14,7 @@ This starts three things and opens http://127.0.0.1:8765 in your browser:
 2. the rules engine: an XMage JVM (`PolicyGames --serve`) that plays one game at a time;
 3. the web server, on `127.0.0.1` only.
 
-The first start compiles the Java adapter into `artifacts/web-engine/classes` (about 20 s); later starts recompile only when a source changed. Booting the engine takes up to a minute; the page shows "Preparing the table" meanwhile. Ctrl+C stops everything.
+The first start compiles the Java adapter into `xmage/mz/web-classes` (about 20 s); later starts recompile only when a source changed. Booting the engine takes up to a minute; the page shows "Preparing the table" meanwhile. Ctrl+C stops everything.
 
 | Option | Default | Meaning |
 |---|---|---|

@@ -29,5 +29,5 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
-      - run: pip install -e ".[test,analysis]"
+      - run: pip install -e ".[test]"
       - run: pytest

@@ -1,0 +1,25 @@
+# Integration checks: the architecture of configs/policy.yml with a very short
+# learner (one PPO epoch, one cloning epoch). Not for training a real agent.
+model:
+  belief_mode: statistical_roles
+  auxiliary_belief: false
+  width: 256
+  entity_layers: 2
+  attention_heads: 4
+  max_events: 8192
+
+training:
+  epochs: 1
+  episodes_per_batch: 4
+  sequence_length: 32
+  gae_lambda: 0.95
+  shaping_coefficient: 0.5
+  reference_kl_coefficient: 0.05
+  belief_coefficient: 0.0
+
+clone:
+  epochs: 1
+  episodes_per_batch: 4
+  sequence_length: 32
+  validation_fraction: 0.25
+  shaping_coefficient: 0.5

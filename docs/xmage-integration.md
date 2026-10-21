@@ -112,7 +112,7 @@ Fixes made in the adapter while bringing up the Commander games (in `PolicyPlaye
 | A failed activation restored a saved state, including the history watcher, so events were sent twice | The event sequence counter and the "already sent" mark are shared by every copy of `PolicyHistory`. |
 | `chooseReplacementEffect` parsed effect IDs as numbers | It returns the index in XMage's map order. |
 | XMage's AI looped one action for a whole turn; the single 15-minute interrupt then held the entire batch, and the AI clears interrupts while it waits for its search | `PolicyGames` checks every second and keeps interrupting once a game exceeds `training.max_minutes` or one turn exceeds `training.max_turn_seconds` (default 120). Such games count as timeouts and are discarded. |
-| A Kinnan turn emitted more than 1,024 history events between two policy decisions, which the service refuses to truncate | `model.max_events` is 8,192 in `configs/policy-final.yml` (a validation limit; no weights depend on it). |
+| A Kinnan turn emitted more than 1,024 history events between two policy decisions, which the service refuses to truncate | `model.max_events` is 8,192 in `configs/policy.yml` (a validation limit; no weights depend on it). |
 
 The engine log ends each game with a summary line (`policy game N TERMINAL: turn T; PlayerA (policy) won life 35 poison 0 commander damage 0 ...`), which shows how games end.
 
@@ -121,7 +121,7 @@ The engine log ends each game with a summary line (`policy game N TERMINAL: turn
 Both players of a self-play game YAML must be `type: policy` with `hiddenInfo.see_opponent_hand: false`. The known deck list is public; the current hand and the library order remain private. Mana is paid by XMage's automatic payment. Then:
 
 ```bash
-mz selfplay --checkpoint artifacts/initial.pt --game configs/policy-game.yml --engine-script $ENGINE \
+mz selfplay --checkpoint artifacts/initial.pt --game configs/commander-mirror.yml --engine-script $ENGINE \
     --output artifacts/experiment --iterations 1 --games 32
 ```
 
@@ -132,7 +132,7 @@ Each generation serves the frozen learner checkpoint on port 50052 (and a histor
 `mz play` starts a policy service for a checkpoint, then the release's XMage server from `xmage/` with `xmage/config/magezero-server.xml` (written by `build.py` from the release's own `config.xml`). That configuration maps the **"Computer - monte carlo"** opponent type to `PolicyPlayer`. Stock XMage clients already list that type, so no client changes are needed. The server listens on `localhost:17171` only.
 
 ```bash
-mz play --checkpoint artifacts/commander-run/best.pt --greedy   # --device cuda is optional
+mz play --checkpoint artifacts/winota-agent.pt --greedy   # --device cuda is optional
 ```
 
 1. Open an XMage client of the server's version (`xmage_version` in `xmage/mz/build.json`; the client is in the same release's `mage-full` ZIP) and connect to `localhost`, port 17171.
@@ -144,7 +144,7 @@ mz play --checkpoint artifacts/commander-run/best.pt --greedy   # --device cuda 
 `mz web` needs no XMage client ([Playing in the browser](web-play.md) is the user guide):
 
 ```bash
-mz web --checkpoint artifacts/anchors/a5-b-gen24.pt     # then open http://127.0.0.1:8765
+mz web --checkpoint artifacts/winota-agent.pt     # then open http://127.0.0.1:8765
 ```
 
 It starts the bot's policy service (port 50071), an engine (`PolicyGames --serve`) and a web server on `127.0.0.1:8765`, and opens the page. Pick your deck and the bot's (only decks in `xmage/decks/` whose cards are all in the checkpoint's catalog are offered; two 99-card decks play Commander Duel), who goes first, and whether the bot plays its most likely action (default) or samples. One game runs at a time. New game abandons the running one, and Concede ends it as a loss.
@@ -164,7 +164,7 @@ Games against people are inference only: nothing is recorded, and no privileged 
   python scripts/validate_xmage_policy.py --checkpoint artifacts/smoke/initial.pt --output artifacts/java-smoke
   ```
 
-- With the full distribution (on the fork), two normal 60-card games of the `simplegreen` mirror (`configs/smoke/real-card-smoke.yml`) completed through `mz selfplay`, producing four terminal trajectories with 1,172 decisions that passed validation and trained a new checkpoint. This exercises deck import, real cards, mana payment, combat, the engine collector, the service lifecycle and the learner; it is not a win-rate or card-coverage test.
+- With the full distribution (on the fork), two normal 60-card games of the fork's `simplegreen` mirror completed through `mz selfplay`, producing four terminal trajectories with 1,172 decisions that passed validation and trained a new checkpoint. This exercises deck import, real cards, mana payment, combat, the engine collector, the service lifecycle and the learner; it is not a win-rate or card-coverage test.
 - Human play was checked by starting the server (4 player types loaded) and by two games against XMage's AI built through the server's player constructor, with zero engine errors.
 
 ## Coverage and remaining limits

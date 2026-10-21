@@ -145,7 +145,7 @@ def cmd_play(args: argparse.Namespace) -> None:
     service = ServiceProcess(Path(args.checkpoint).resolve(), args.port, None, args.device, log, args.torch_threads)
     try:
         service.wait_ready(read_policy_version(args.checkpoint))
-        print("[play] starting XMage server on localhost:17171. Connect with an XMage client, create a"
+        print("[play] starting XMage server on localhost:17171. Connect with an XMage client, create a Commander"
               " Two Player Duel, and add a \"Computer - monte carlo\" opponent (the policy) using a deck"
               " from the policy's card pool. Ctrl+C stops both.")  # fmt: skip
         subprocess.run(
@@ -206,7 +206,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--checkpoint", required=True)
     p.add_argument("--episodes", nargs="+", required=True, help="teacher trajectory files or directories")
     p.add_argument("--output", required=True)
-    p.add_argument("--config", default="configs/policy-final.yml", help="YAML with a clone: section")
+    p.add_argument("--config", default="configs/policy.yml", help="YAML with a clone: section")
     p.add_argument("--device", default="auto")
     p.set_defaults(func=cmd_clone)
 
@@ -251,7 +251,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--eval-greedy", action="store_true", help="evaluate with the most likely action instead of sampling"
     )
     p.add_argument(
-        "--keep-episodes", action="store_true", help="keep trajectory files after training (about 8.5 KB per decision)"
+        "--keep-episodes",
+        action="store_true",
+        help="keep trajectory files after training (about 18 KB per Commander decision)",
     )
     p.add_argument("--keep-every", type=int, default=50, help="keep every Nth generation checkpoint; others are pruned")
     p.add_argument(

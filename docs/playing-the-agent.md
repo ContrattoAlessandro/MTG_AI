@@ -28,7 +28,7 @@ Then create a **Commander Two Player Duel** table in the client and put "Compute
 
 ## How strong it is
 
-Measured on 16 October 2026 with `scripts/final-evaluate.ps1`: 400 fresh greedy games per opponent against XMage's AI (`ComputerPlayer7`) at skill 3, with seats and the starting player alternating. Scores count a win as 1 and a draw as ½; the brackets are Wilson 95% intervals.
+Measured on 16 October 2026 with `scripts/final-evaluate.sh`: 400 fresh greedy games per opponent against XMage's AI (`ComputerPlayer7`) at skill 3, with seats and the starting player alternating. Scores count a win as 1 and a draw as ½; the brackets are Wilson 95% intervals.
 
 | Checkpoint | vs XMage AI, Kinnan | vs XMage AI, Winota (mirror) | Mean |
 |---|---|---|---|
@@ -49,7 +49,7 @@ For comparison, with the same opponent at skill 3 but sampled play over 256 game
 
 ## The final run
 
-`scripts/final-run.sh` (tag `final-run-1`, `configs/final.yml`): 1,000 generations of 64 games from the 20-epoch behaviour clone, half Winota mirror against itself and league snapshots, half against XMage's AI at skill 1 piloting Kinnan, with a KL term towards the clone. It took 30 hours on 16 engine threads and an RTX 5070 (14–16 October 2026), with no failed or truncated games in any saved generation. The run folder is `artifacts/final/run` (`evaluations.jsonl` holds the 64-game evaluation every 25 generations, `provenance.txt` the commit and jar hashes).
+`scripts/final-run.sh` (tag `final-run-1`; its `configs/final.yml` is now `configs/policy.yml`): 1,000 generations of 64 games from the 20-epoch behaviour clone, half Winota mirror against itself and league snapshots, half against XMage's AI at skill 1 piloting Kinnan, with a KL term towards the clone. It took 30 hours on 16 engine threads and an RTX 5070 (14–16 October 2026), with no failed or truncated games in any saved generation. The run folder is `artifacts/final/run` (`evaluations.jsonl` holds the 64-game evaluation every 25 generations, `provenance.txt` the commit and jar hashes).
 
 Issues seen during the run, all recovered automatically by the supervisor or the runner, and fixed afterwards:
 

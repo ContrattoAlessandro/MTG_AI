@@ -38,7 +38,7 @@ The Winota learner with a Kinnan gauntlet, starting from the behaviour-cloned wa
 
 ```bash
 mz selfplay --checkpoint artifacts/commander-cloned.pt --reference artifacts/commander-cloned.pt \
-    --game configs/commander-mirror.yml --config configs/policy-final.yml --engine-script $ENGINE \
+    --game configs/commander-mirror.yml --config configs/policy.yml --engine-script $ENGINE \
     --output artifacts/commander-run --iterations 1000 --games 64 \
     --gauntlet xmage/decks/kinnan.dck --gauntlet-fraction 0.5 --gauntlet-ai-skill 1 \
     --engine-threads 16 --device cuda --eval-every 25 --eval-games 64 --eval-ai-skill 3 --eval-greedy \
@@ -47,7 +47,7 @@ mz selfplay --checkpoint artifacts/commander-cloned.pt --reference artifacts/com
 
 After an interruption, rerun the same command with `--resume`.
 
-The final run uses `scripts/final-run.sh`, which runs this command with `configs/final.yml` and a 20-epoch clone, through `scripts/final_run.py`. That supervisor reruns `mz selfplay --resume` after a crash, at most 20 times in a row without a completed generation, and stops on a clean finish, the disk guard or the failure guard. It also keeps Windows awake while it runs: a closed lid, a manual sleep or a Windows Update restart still interrupt the run, so pause updates for its duration. It appends selfplay's output to `supervisor.log` and a progress line every 30 minutes to `status.log`, and the script writes the commit, the clone and the jar hashes to `provenance.txt` in the run folder. Rerun the script unchanged to continue. The gauntlet fraction, AI skills and game counts are starting points to be tuned from a short launch check: watch games per hour, `failure_fraction` and `truncation_fraction` (both should stay below a few percent), and the share of time spent in the learner.
+The final run used `scripts/final-run.sh`, which runs this command with a 20-epoch clone, through `scripts/final_run.py`. That supervisor reruns `mz selfplay --resume` after a crash, at most 20 times in a row without a completed generation, and stops on a clean finish, the disk guard or the failure guard. It also keeps Windows awake while it runs: a closed lid, a manual sleep or a Windows Update restart still interrupt the run, so pause updates for its duration. It appends selfplay's output to `supervisor.log` and a progress line every 30 minutes to `status.log`, and the script writes the commit, the clone and the jar hashes to `provenance.txt` in the run folder. Rerun the script unchanged to continue. The gauntlet fraction, AI skills and game counts are starting points to be tuned from a short launch check: watch games per hour, `failure_fraction` and `truncation_fraction` (both should stay below a few percent), and the share of time spent in the learner.
 
 ## Caveats
 
