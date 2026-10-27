@@ -293,11 +293,12 @@ button.chip:hover { border-color: var(--line-2); background: rgba(255,255,255,.0
 .hand .hc { position: relative; width: var(--hw); height: var(--hh); flex: none; margin: 0 calc(var(--overlap, 0px) * -1);
   transition: transform .18s ease; transform-origin: 50% 130%; }
 .hand .hc .card { --cw: var(--hw); }
-.hand .hc:hover { transform: translateY(calc(var(--hh) * -.1)) scale(1.08) !important; z-index: 30 !important; }
-/* A raised card keeps the place it rose from under the pointer (no rise-drop flicker at its lower edge). */
-.hand .hc::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 0; }
-.hand .hc:hover::after { height: calc(var(--hh) * .2); }
-.hand .hc:hover > .card.can { transform: none; }
+/* The slot of a hand card (.hc) stays where the fan puts it and takes the pointer; only the card
+   inside straightens and rises. A slot that moved would leave the pointer near its edges (the
+   top of a tilted card swings most) and drop back under it, over and over. */
+.hand .hc:hover { z-index: 30 !important; }
+.hand .hc > .card { transform-origin: 50% 130%; }
+.hand .hc:hover > .card { transform: translateY(calc(var(--dy) * -1)) rotate(calc(var(--rot) * -1)) translateY(calc(var(--hh) * -.1)) scale(1.08); }
 .hand-label { position: absolute; left: 16px; bottom: 12px; font-size: 10.5px; letter-spacing: 1.3px; text-transform: uppercase; color: var(--text-3); }
 
 /* ---------- side panel ---------- */
@@ -1600,7 +1601,8 @@ function renderTable(s) {
   hand.style.setProperty("--overlap", Math.min(overlap, hwPx * 0.4) + "px");
   hand.replaceChildren(...s.hand.map((c, i) => {
     const mid = (n - 1) / 2, rot = n > 1 ? (i - mid) * Math.min(3.2, 20 / n) : 0;
-    return h("div", { class: "hc", style: `transform: rotate(${rot.toFixed(2)}deg) translateY(${(Math.abs(i - mid) * Math.min(5, 28 / n)).toFixed(1)}px); z-index:${i + 1}` }, cardEl(c));
+    const rotation = `${rot.toFixed(2)}deg`, dy = `${(Math.abs(i - mid) * Math.min(5, 28 / n)).toFixed(1)}px`;
+    return h("div", { class: "hc", style: `transform: rotate(${rotation}) translateY(${dy}); --rot: ${rotation}; --dy: ${dy}; z-index:${i + 1}` }, cardEl(c));
   }));
   $("handLabel").textContent = n ? `Your hand · ${n}` : "";
   renderLog(s);
@@ -1831,6 +1833,12 @@ function renderDecision(s, d) {
     const stop = rest.filter((o) => (!o.target && ["attack", "block", "target"].includes(o.type)) || /^Done/.test(o.label));
     const main = rest.filter((o) => !stop.includes(o));
     hotkeys = main.map((o) => o.id);
+    // Blockers are declared before anyone gets priority in that step: this is the last chance.
+    const me = s && everyone(s).find((p) => p.side === "you");
+    if (pass && main.length && s.step === "DECLARE_ATTACKERS" && s.active !== "you" && me
+      && (s.combat || []).some((g) => g.defending_player === me.id && g.attackers.length)) {
+      kids.push(h("div", { class: "hintline", html: "<b>You are being attacked.</b> Blockers are declared as soon as everyone passes: a creature you put onto the battlefield <b>now</b> can still block, one made after that cannot." }));
+    }
     if (pass && main.length) kids.push(h("div", { class: "hintline", html: "Click a <b>glowing card</b> to cast it or use its ability (a card with several abilities opens a menu), or pick one below. You pay the mana after choosing (Auto pay or one source at a time), so lands only glow here when they have other abilities." }));
     if (pass && opts.some((o) => o.mana)) kids.push(h("div", { class: "hintline", html: "Click an untapped land or mana source to <b>tap it for mana</b> now: the mana waits in your pool (bottom of your box) until the end of this step." }));
     if (d.kind === "target") kids.push(h("div", { class: "hintline", html: "Click a <b>glowing</b> card or player on the table, or pick one below. A glowing graveyard or exile pile holds targets: open it and click the card." }));
