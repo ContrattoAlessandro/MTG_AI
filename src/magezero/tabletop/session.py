@@ -25,14 +25,51 @@ class Engine(Protocol):
 class SeatTable(Table):
     """`mz web`'s decision hand-off for one seat; every change also wakes the table's feed."""
 
-    def __init__(self, feed: ChangeFeed):
+    def __init__(self, feed: ChangeFeed, rewind: Callable[[dict], dict | None] = lambda payload: None):
         super().__init__()
         self.feed = feed
         self.status = "playing"
+        self.rewind = rewind
 
     def changed(self):
         super().changed()
         self.feed.bump()
+
+    def interrupt(self, payload: dict) -> dict | None:
+        return self.rewind(payload)
+
+    def playing(self) -> bool:
+        """Still in the game: neither conceded nor out (as this seat's last board shows)."""
+        with self.cond:
+            if self.concede or self.result:
+                return False
+            players = (self.state or {}).get("players", [])
+        return not any(p.get("side") == "you" and p.get("lost") for p in players)
+
+
+class Rewind:
+    """A request to go back to the start of a turn: every person still playing must agree (bots always do).
+
+    asking -> approved (the next priority of a person unwinds the turn) -> gone, or refused.
+    """
+
+    def __init__(self, by: int, names: dict[int, str], turns: int, turn: int, voters: set[int]):
+        self.by, self.names, self.turns, self.turn = by, names, turns, turn
+        self.voters, self.votes = voters, {by}
+        self.status = "asking" if voters - self.votes else "approved"
+        self.refused_by: str | None = None
+
+    def public(self, seat: int | None) -> dict:
+        waiting = sorted(self.voters - self.votes)
+        return {
+            "by": self.names[self.by],
+            "turn": self.turn,
+            "status": self.status,
+            "waiting": [self.names[i] for i in waiting],
+            "refused_by": self.refused_by,
+            "mine": seat == self.by,
+            "your_vote": self.status == "asking" and seat in waiting,
+        }
 
 
 def game_file(plan: TablePlan, shelf: DeckShelf, engine_url: str) -> dict:
@@ -63,6 +100,7 @@ class TableSession:
         self.runner: threading.Thread | None = None
         self.tables: dict[int, SeatTable] = {}  # by seat index, the people of the current game
         self.game = 0
+        self.rewind: Rewind | None = None  # a request to go back to the start of a turn
         self.status = "starting"  # starting | ready | playing | over | error
         self.message = "Starting the engine…"
         self.state_lock = threading.Lock()
@@ -89,7 +127,9 @@ class TableSession:
             with self.state_lock:
                 self.game += 1
                 game = self.game
-                self.tables = {seat.index: SeatTable(self.feed) for seat in plan.seats if seat.kind == SeatKind.PERSON}
+                self.rewind = None
+                self.tables = {seat.index: SeatTable(self.feed, self._take_rewind) for seat in plan.seats
+                               if seat.kind == SeatKind.PERSON}  # fmt: skip
             self.lobby.lock_for_game(True)
             spec = game_file(plan, self.lobby.shelf, self.engine_url)
             path = write_game_file(self.workdir / f"lan-game-{game}.json", spec)
@@ -107,6 +147,7 @@ class TableSession:
             self._stop_current()
             with self.state_lock:
                 self.tables = {}  # every browser goes back to the lobby
+                self.rewind = None
             self._set("ready", "Game abandoned.")
 
     def concede(self, token: str | None) -> None:
@@ -117,6 +158,64 @@ class TableSession:
         with table.cond:
             table.concede = True
             table.changed()
+
+    # --- going back to the start of a turn
+
+    def ask_rewind(self, token: str | None, turns: int) -> None:
+        """Ask to go back to the start of this turn (0) or the previous one (1)."""
+        table = self.table_of(token)
+        if table is None or self.runner is None or not self.runner.is_alive() or not table.playing():
+            raise ValueError("You are not playing in a game.")
+        if turns not in (0, 1):
+            raise ValueError("Go back to the start of this turn or of the previous one.")
+        turn = ((table.view()["state"] or {}).get("turn")) or 0
+        if turn - turns < 1:
+            raise ValueError("There is no earlier turn to go back to.")
+        me = self.lobby.seat_of(token).index
+        with self.state_lock:
+            tables = dict(self.tables)
+        voters = {index for index, other in tables.items() if other.playing()}
+        names = {entry["index"]: entry["name"] for entry in self.lobby.view(token)["seats"]}
+        with self.state_lock:
+            if self.rewind is not None and self.rewind.status in ("asking", "approved"):
+                raise ValueError("Someone already asked to go back.")
+            self.rewind = Rewind(me, names, turns, turn - turns, voters | {me})
+        self._rewind_changed()
+
+    def answer_rewind(self, token: str | None, accept: bool) -> None:
+        seat = self.lobby.seat_of(token)
+        with self.state_lock:
+            rewind = self.rewind
+            if rewind is None or rewind.status != "asking" or seat is None or seat.index not in rewind.voters:
+                raise ValueError("Nothing to answer.")
+            if accept:
+                rewind.votes.add(seat.index)
+                if not rewind.voters - rewind.votes:
+                    rewind.status = "approved"
+            else:
+                rewind.status, rewind.refused_by = "refused", rewind.names[seat.index]
+        self._rewind_changed()
+
+    def _take_rewind(self, payload: dict) -> dict | None:
+        """The engine's reply to a person's priority once the table agreed (once, at a priority only)."""
+        options = payload.get("options") or []
+        if not options or options[0].get("type") != "pass":
+            return None  # in the middle of a choice: wait for a priority
+        with self.state_lock:
+            rewind = self.rewind
+            if rewind is None or rewind.status != "approved":
+                return None
+            self.rewind = None
+        self.feed.bump()
+        return {"rollback": rewind.turns}
+
+    def _rewind_changed(self) -> None:
+        """Wake every seat: a person waiting at a priority gives way to an agreed rewind."""
+        with self.state_lock:
+            tables = list(self.tables.values())
+        for table in tables:
+            with table.cond:
+                table.changed()
 
     def close(self) -> None:
         if self.engine is not None:
@@ -189,7 +288,13 @@ class TableSession:
             "version": self.feed.version,
             "decks": None,
             "lobby": self.lobby.view(token),
+            "rewind": self._rewind_view(token),
         }
+
+    def _rewind_view(self, token: str | None) -> dict | None:
+        seat = self.lobby.seat_of(token)
+        with self.state_lock:
+            return None if self.rewind is None else self.rewind.public(None if seat is None else seat.index)
 
 
 def playing_message(view: dict) -> str:

@@ -292,3 +292,64 @@ def test_a_push_sends_the_whole_state_when_it_appears_or_goes():
     later = {**playing, "version": 3, "state": {"turn": 1, "log": ["x", "y"]}}
     assert delta(playing, later)["log"] == {"drop": 1, "add": ["x", "y"]}
     assert patched(playing, delta(playing, later)) == later
+
+
+def priority(name, turn=5):
+    state = {"turn": turn, "log": [], "players": []}
+    return {"decision": name, "kind": "pass", "prompt": "", "state": state,
+            "options": [{"id": "pass", "type": "pass", "label": "Pass"}]}  # fmt: skip
+
+
+def test_going_back_waits_for_everyone_still_playing(session, lobby, engine, monkeypatch):
+    monkeypatch.setattr(webplay, "HOLD_SECONDS", 0.05)
+    ann, bob = seated(lobby)  # and two bots, who never vote
+    session.start(ann)
+    for index in (0, 1):
+        session.engine_table(index).publish({"state": priority("x")["state"]})
+    session.ask_rewind(ann, 1)
+    assert session.view(ann)["rewind"] == {"by": "Ann", "turn": 4, "status": "asking", "waiting": ["Bob"],
+                                           "refused_by": None, "mine": True, "your_vote": False}  # fmt: skip
+    assert session.view(bob)["rewind"]["your_vote"]
+    with pytest.raises(ValueError, match="already asked"):
+        session.ask_rewind(bob, 0)
+    # Until Bob agrees, a priority is asked as usual.
+    ann_table = session.engine_table(0)
+    ann_table.pass_mode = "manual"
+    assert ann_table.decide(priority("p1")) == {"wait": True}
+    # Ann waits at her priority; Bob's yes reaches her there.
+    monkeypatch.setattr(webplay, "HOLD_SECONDS", 5)
+    replies = []
+    waiting = threading.Thread(target=lambda: replies.append(ann_table.decide(priority("p1"))))
+    waiting.start()
+    time.sleep(0.1)
+    session.answer_rewind(bob, True)
+    waiting.join(5)
+    assert replies == [{"rollback": 1}]
+    assert session.view(bob)["rewind"] is None  # done once
+    monkeypatch.setattr(webplay, "HOLD_SECONDS", 0.05)
+    target = {**priority("p2"), "kind": "target", "options": [{"id": "t", "type": "target", "label": "Bob"}]}
+    assert ann_table.decide(target) == {"wait": True}
+
+
+def test_going_back_is_off_when_someone_refuses(session, lobby, engine):
+    ann, bob = seated(lobby)
+    session.start(ann)
+    session.engine_table(0).publish({"state": priority("x")["state"]})
+    session.ask_rewind(ann, 0)
+    session.answer_rewind(bob, False)
+    assert session.view(ann)["rewind"]["status"] == "refused" and session.view(ann)["rewind"]["refused_by"] == "Bob"
+    assert session._take_rewind(priority("p")) is None
+    with pytest.raises(ValueError, match="Nothing to answer"):
+        session.answer_rewind(bob, True)
+
+
+def test_alone_with_bots_going_back_needs_no_vote(session, lobby, engine):
+    ann = lobby.join("Ann")
+    for index in (1, 2):
+        lobby.set_seat(ann, index, "bot")
+    session.start(ann)
+    session.engine_table(0).publish({"state": priority("x")["state"]})
+    session.ask_rewind(ann, 0)
+    assert session.view(ann)["rewind"]["status"] == "approved"
+    assert session._take_rewind({**priority("t"), "options": [{"id": "t", "type": "target"}]}) is None
+    assert session._take_rewind(priority("p")) == {"rollback": 0}

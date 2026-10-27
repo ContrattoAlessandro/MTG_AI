@@ -374,8 +374,63 @@
     try { await post("/api/new"); shown = null; } catch (e) { toast(e.message); }
   }
 
+  // ---------- going back to the start of a turn ----------
+  // Anyone still playing may ask; every other person still playing must agree (bots always do).
+  // The engine then plays the turn again from its start (XMage's own rollback).
+  const REWIND_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 010 11H11"/></svg>';
+  let rewindSeen = null;  // the request whose outcome was last announced
+  function renderRewind(v) {
+    let button = $("rewind");
+    if (!button) {
+      button = h("button", { class: "btn", id: "rewind", title: "Go back to the start of a turn (everyone at the table must agree)", onclick: askRewind },
+        h("span", { html: REWIND_ICON }), h("span", null, "Rewind"));
+      $("concede").before(button);
+    }
+    const s = raw && raw.state, me = s && s.players.find((p) => p.side === "you"), r = v.rewind;
+    const playing = v.status === "playing" && !!s && s.turn > 0 && me && !me.lost && !v.result;
+    button.hidden = !playing;
+    button.disabled = !!(r && (r.status === "asking" || r.status === "approved"));
+    let bar = $("rewindBar");
+    if (!bar) { bar = h("div", { id: "rewindBar", class: "rewind-bar", role: "status" }); document.body.append(bar); }
+    const key = r && `${r.by}:${r.turn}`;
+    if (r && r.status === "refused") {
+      if (rewindSeen !== key + ":refused") {
+        rewindSeen = key + ":refused";
+        toast(r.refused_by === r.by ? `${r.by} withdrew the request to go back.` : `${r.refused_by} does not want to go back to turn ${r.turn}.`);
+      }
+    }
+    if (!r || r.status === "refused" || !playing) { bar.classList.remove("show"); return; }
+    const answer = (accept) => post("/api/rewind/answer", { accept }).catch((e) => toast(e.message));
+    const kids = [h("span", { class: "ri", html: REWIND_ICON })];
+    if (r.status === "approved") kids.push(h("span", null, `Going back to the start of turn ${r.turn}…`));
+    else if (r.your_vote) {
+      kids.push(h("span", null, h("b", null, r.by), ` asks to go back to the start of turn ${r.turn}.`),
+        h("button", { class: "btn gold", onclick: () => answer(true) }, "Accept"),
+        h("button", { class: "btn ghost", onclick: () => answer(false) }, "Refuse"));
+    } else {
+      kids.push(h("span", null, `Going back to turn ${r.turn} once ${r.waiting.join(", ")} ${r.waiting.length > 1 ? "agree" : "agrees"}…`));
+      if (r.mine) kids.push(h("button", { class: "btn ghost", onclick: () => answer(false) }, "Withdraw"));
+    }
+    bar.replaceChildren(...kids);
+    bar.classList.add("show");
+  }
+  function askRewind() {
+    const s = raw && raw.state;
+    if (!s) return;
+    const go = (turns) => { closeDialog(); post("/api/rewind", { turns }).catch((e) => toast(e.message)); };
+    const choice = (turns, title, text) => h("button", { class: "rw-choice", onclick: () => go(turns) }, h("b", null, title), h("span", null, text));
+    dialog(h("div", { class: "lobby rewind-ask" },
+      h("div", { class: "dh" }, h("div", null, h("h2", null, "Go back"),
+        h("p", { class: "tag" }, "The game is played again from the start of the turn you choose. Everyone still playing must agree; the bots always do.")),
+        h("button", { class: "btn ghost icon", onclick: closeDialog, title: "Close" }, "✕")),
+      h("div", { class: "db" },
+        choice(0, `Start of this turn (${s.turn})`, `${possessive(activeName(s))} turn, from its untap step`),
+        s.turn > 1 ? choice(1, `Start of the previous turn (${s.turn - 1})`, "From its untap step") : null)));
+  }
+
   function afterRender(v) {
     renderSeatMap(v);
+    renderRewind(v);
     renderAttackTags(v);
     if (fan && !(v.decision && v.decision.kind === "attackers")) closeFan();
     if (v.lobby) {
@@ -463,7 +518,19 @@
 .lan-art { height: 70px; margin: -12px -12px 0; background: #1b2229 center 22%/cover; filter: saturate(.8) brightness(.75); }
 .lan-who { display: flex; flex-direction: column; gap: 6px; flex: 1; } .lan-who b { font-size: 15px; } .lan-who .muted { font-size: 12px; color: var(--text-3); }
 .lan-skill { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-3); }
-@media (max-width: 760px) { .seat-map { --sq: 72px; } }
+.rewind-bar { position: fixed; left: 50%; top: 66px; z-index: 70; transform: translate(-50%, -12px); opacity: 0; pointer-events: none;
+  display: flex; align-items: center; gap: 12px; max-width: calc(100vw - 32px); padding: 10px 12px 10px 14px; border-radius: 14px;
+  background: rgba(16, 22, 29, .96); border: 1px solid var(--gold); box-shadow: 0 10px 30px rgba(0,0,0,.6); font-size: 14px; color: var(--text);
+  transition: opacity .2s, transform .2s; }
+.rewind-bar.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+.rewind-bar .ri { color: var(--gold-2); display: grid; place-items: center; }
+.rewind-bar .btn { padding: 6px 12px; }
+.rewind-ask .db { display: flex; flex-direction: column; gap: 10px; }
+.rw-choice { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; padding: 14px 16px; border-radius: 12px; cursor: pointer;
+  border: 1px solid var(--line-2); background: var(--glass); color: var(--text); font: inherit; text-align: left; }
+.rw-choice:hover { border-color: var(--gold); background: var(--glass-3); }
+.rw-choice b { font-size: 15px; } .rw-choice span { font-size: 12.5px; color: var(--text-3); }
+@media (max-width: 760px) { .seat-map { --sq: 72px; } #rewind span:last-child { display: none; } }
 `;
   document.head.append(style);
 

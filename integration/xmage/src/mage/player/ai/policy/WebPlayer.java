@@ -264,7 +264,19 @@ public final class WebPlayer extends PolicyPlayer {
                 return null;
             }
             if (reply.has("action_id")) return reply.get("action_id").getAsString();
+            // Only at a priority (`mz lan`: the people at the table agreed to go back): see priority.
+            if (reply.has("rollback")) throw new Rewind(reply.get("rollback").getAsInt());
             // nobody has clicked yet
+        }
+    }
+
+    /** The people at the table agreed to go back to the start of a turn: unwinds this priority. */
+    private static final class Rewind extends RuntimeException {
+        final int turns;
+
+        Rewind(int turns) {
+            super(null, null, false, false);
+            this.turns = turns;
         }
     }
 
@@ -388,7 +400,16 @@ public final class WebPlayer extends PolicyPlayer {
             publish(game);
             refreshOthers(game, getId());
         }
-        return super.priority(game);
+        try {
+            return super.priority(game);
+        } catch (Rewind rewind) {
+            // Nothing is half done at a priority. XMage's rollback only marks the turn: the game
+            // loop unwinds it once this priority reports an action, and plays it again from its
+            // start (it says so in the log, or that it cannot).
+            triggerOrder.clear();
+            game.rollbackTurns(rewind.turns);
+            return true;
+        }
     }
 
     @Override public void finish(Game game, boolean terminal, boolean truncated) {

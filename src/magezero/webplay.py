@@ -185,6 +185,10 @@ class Table:
 
     # --- engine side
 
+    def interrupt(self, payload: dict) -> dict | None:
+        """A reply that replaces this decision (at a table: an agreed rewind), or None to ask it."""
+        return None
+
     def decide(self, payload: dict) -> dict:
         deadline = time.monotonic() + HOLD_SECONDS
         with self.cond:
@@ -192,6 +196,9 @@ class Table:
                 return {"abort": True}
             if self.concede:
                 return {"concede": True}
+            stop = self.interrupt(payload)
+            if stop:
+                return stop
             options = payload["options"]
             if self.pass_mode != "manual" and len(options) == 1 and options[0]["type"] == "pass":
                 return {"action_id": options[0]["id"]}  # the board was already published at priority
@@ -213,6 +220,11 @@ class Table:
                 self.message = f"Turn {self.state['turn']}: your move"
                 self.changed()
             while self.answer is None and not self.abort and not self.concede:
+                stop = self.interrupt(payload)
+                if stop:
+                    self.decision = None
+                    self.changed()
+                    return stop
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     return {"wait": True}

@@ -163,6 +163,17 @@ def create_app(session: TableSession, push_port: int, share_url: str | None = No
                 table.pass_mode = value
         return ok()
 
+    @app.post("/api/rewind")
+    def rewind():
+        # Back to the start of this turn (0) or the previous one (1), once everyone still playing agrees.
+        session.ask_rewind(token(), int(body().get("turns", 0)))
+        return ok()
+
+    @app.post("/api/rewind/answer")
+    def rewind_answer():
+        session.answer_rewind(token(), bool(body().get("accept")))
+        return ok()
+
     @app.post("/api/concede")
     def concede():
         session.concede(token())
