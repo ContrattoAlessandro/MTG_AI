@@ -129,6 +129,9 @@ class Table:
         self.history = collections.deque(maxlen=300)
         self.game = 0
         self.version = 0
+        # The page's passing mode (POST /api/mode): outside "manual", a priority with
+        # nothing but "pass" is answered here, without a round trip to the browser.
+        self.pass_mode = "auto"
 
     def changed(self):
         self.version += 1
@@ -189,6 +192,9 @@ class Table:
                 return {"abort": True}
             if self.concede:
                 return {"concede": True}
+            options = payload["options"]
+            if self.pass_mode != "manual" and len(options) == 1 and options[0]["type"] == "pass":
+                return {"action_id": options[0]["id"]}  # the board was already published at priority
             if self.decision is None or self.decision["decision"] != payload["decision"]:
                 self.decision, self.answer = payload, None
                 self.state = payload["state"]
@@ -473,6 +479,15 @@ def create_app(web: WebGame) -> Flask:
     @app.post("/api/claim")
     def claim():
         table.claim(str(request.get_json(force=True).get("client")))
+        return jsonify(ok=True)
+
+    @app.post("/api/mode")
+    def mode():
+        value = str(request.get_json(force=True).get("mode"))
+        if value not in ("manual", "auto", "fast"):
+            raise ValueError("mode must be manual, auto or fast")
+        with table.cond:
+            table.pass_mode = value
         return jsonify(ok=True)
 
     @app.post("/api/concede")

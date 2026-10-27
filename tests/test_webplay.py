@@ -30,9 +30,23 @@ def decision(name="d1"):
         "decision": name,
         "kind": "cast",
         "prompt": "Your turn",
-        "options": [{"id": "priority-0", "type": "pass", "label": "Pass priority"}],
+        "options": [
+            {"id": "priority-0", "type": "pass", "label": "Pass priority"},
+            {"id": "priority-1", "type": "cast", "label": "Cast Sol Ring"},
+        ],
         "state": {"turn": 3, "log": ["<b>Turn 3</b>"]},
     }
+
+
+def test_a_priority_with_only_pass_is_answered_unless_manual(monkeypatch):
+    monkeypatch.setattr(webplay, "HOLD_SECONDS", 0.05)
+    table = Table()
+    only_pass = {**decision(), "options": decision()["options"][:1]}
+    assert table.decide(only_pass) == {"action_id": "priority-0"}
+    assert table.view()["decision"] is None
+    table.pass_mode = "manual"  # the person stops at every priority
+    assert table.decide(only_pass) == {"wait": True}
+    assert table.view()["decision"]["options"] == only_pass["options"]
 
 
 def test_engine_waits_for_the_browser_answer(monkeypatch):

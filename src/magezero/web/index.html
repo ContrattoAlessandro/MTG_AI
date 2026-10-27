@@ -205,6 +205,7 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) var(--side) var(--fl
 .chip svg { width: 14px; height: 14px; opacity: .7; flex: none; }
 button.chip { cursor: pointer; text-align: left; }
 button.chip:hover { border-color: var(--line-2); background: rgba(255,255,255,.08); }
+.chip .eye { display: inline-flex; color: var(--gold-2); } .chip .eye svg { opacity: 1; }
 .chip.alert { border-color: rgba(255,107,107,.45); color: #ffc9c4; }
 .pool { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
 .pool i { font-style: normal; font-size: 10px; font-weight: 700; letter-spacing: 1.1px; text-transform: uppercase; color: var(--text-3); margin-right: 2px; }
@@ -282,18 +283,19 @@ button.chip:hover { border-color: var(--line-2); background: rgba(255,255,255,.0
 .att .card { position: relative; }
 
 /* ---------- hand ---------- */
-.handbar { grid-column: 1 / -1; position: relative; height: calc(var(--hh) * .68 + 14px); z-index: 4;
+/* The hand shows nearly whole cards (only the fan's outer edges dip below the screen). */
+.handbar { grid-column: 1 / -1; position: relative; height: calc(var(--hh) * .96 + 14px); z-index: 4;
   background: linear-gradient(180deg, transparent, rgba(0,0,0,.5)); }
-.hand { position: absolute; left: 50%; bottom: calc(var(--hh) * -.32); transform: translateX(-50%); display: flex; align-items: flex-end; padding: 0 24px; }
+.hand { position: absolute; left: 50%; bottom: calc(var(--hh) * -.04); transform: translateX(-50%); display: flex; align-items: flex-end; padding: 0 24px; }
 .hand .hc { position: relative; width: var(--hw); height: var(--hh); flex: none; margin: 0 calc(var(--overlap, 0px) * -1);
   transition: transform .18s ease; transform-origin: 50% 130%; }
 .hand .hc .card { --cw: var(--hw); }
-.hand .hc:hover { transform: translateY(calc(var(--hh) * -.3)) scale(1.08) !important; z-index: 30 !important; }
+.hand .hc:hover { transform: translateY(calc(var(--hh) * -.1)) scale(1.08) !important; z-index: 30 !important; }
 .hand .hc .card.can:hover { transform: none; }
 .hand-label { position: absolute; left: 16px; bottom: 12px; font-size: 10.5px; letter-spacing: 1.3px; text-transform: uppercase; color: var(--text-3); }
 
 /* ---------- side panel ---------- */
-aside { display: flex; flex-direction: column; min-height: 0; background: linear-gradient(180deg, #0f141a, #0b0f13); border-left: 1px solid var(--line); }
+aside { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; background: linear-gradient(180deg, #0f141a, #0b0f13); border-left: 1px solid var(--line); }
 .panel-h { display: flex; align-items: center; gap: 8px; font-size: 10.5px; font-weight: 700; letter-spacing: 1.3px; text-transform: uppercase; color: var(--text-3); }
 .decision { padding: 16px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 12px; position: relative; min-height: 150px; }
 .decision.mine { background: linear-gradient(180deg, rgba(230,180,80,.1), transparent 75%); }
@@ -353,8 +355,26 @@ aside { display: flex; flex-direction: column; min-height: 0; background: linear
 .toggle input:checked + .sw { background: var(--gold); }
 .toggle input:checked + .sw::after { transform: translateX(13px); background: #fff; }
 .toggle input:focus-visible + .sw { outline: 2px solid var(--gold-2); outline-offset: 2px; }
-.logwrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.logwrap .panel-h { padding: 12px 16px 6px; }
+.passmode { display: flex; } .passmode button { flex: 1; padding: 7px 6px; font-size: 12px; white-space: nowrap; }
+.modehint { font-size: 12px; color: var(--text-3); line-height: 1.4; }
+/* The decision and the passing controls keep their full height; the log keeps a usable one.
+   When they do not fit, the whole column scrolls. */
+.decision, .flow { flex: none; }
+.flow .sec-body { display: flex; flex-direction: column; gap: 10px; }
+.logwrap { flex: 1 0 260px; min-height: 260px; display: flex; flex-direction: column; }
+.logwrap .sec-h { padding: 12px 16px 6px; }
+/* Collapsible sections: the header hides the body (remembered per browser). */
+.sec-h { width: 100%; background: none; border: 0; cursor: pointer; text-align: left; font-family: inherit; }
+.sec-h:hover { color: var(--text-2); }
+.sec-h:focus-visible { outline: 2px solid var(--gold-2); outline-offset: 2px; border-radius: 4px; }
+.sec-badge { margin-left: auto; padding: 2px 7px; border-radius: 6px; background: rgba(230,180,80,.14); color: var(--gold-2); letter-spacing: .6px; display: none; }
+.sec-h .chev { width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg); transition: transform .15s; margin: 0 2px 3px auto; }
+.sec.collapsed .sec-badge + .chev { margin-left: 8px; }
+.sec.collapsed .sec-h .chev { transform: rotate(-45deg); margin-bottom: 0; }
+.sec.collapsed .sec-body { display: none; }
+.sec.collapsed .sec-badge { display: inline-block; }
+.logwrap.collapsed { flex: none; min-height: 0; }
+.logwrap.collapsed .sec-h { padding-bottom: 12px; }
 .log { flex: 1; overflow: auto; padding: 0 12px 14px 16px; font-size: 12.5px; color: var(--text-2);
   scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.12) transparent; }
 .log .ln { padding: 3px 0 3px 10px; border-left: 2px solid transparent; }
@@ -368,7 +388,8 @@ aside { display: flex; flex-direction: column; min-height: 0; background: linear
 .log .end { color: var(--gold-2); font-weight: 700; }
 
 /* ---------- overlays ---------- */
-.preview { position: fixed; z-index: 60; pointer-events: none; display: none; width: 290px; filter: drop-shadow(0 18px 40px rgba(0,0,0,.7)); }
+/* Above the dialogs (.scrim, 80) that open zones, so hovering a card there shows it sharp; below toasts. */
+.preview { position: fixed; z-index: 86; pointer-events: none; display: none; width: 290px; filter: drop-shadow(0 18px 40px rgba(0,0,0,.7)); }
 .preview .big { width: 100%; border-radius: 14px; display: block; }
 .preview .info { margin-top: 8px; background: var(--glass-2); border: 1px solid var(--line-2); border-radius: 12px; padding: 10px 12px; font-size: 12.5px; color: var(--text-2); }
 .preview .info b { color: var(--text); font-size: 14px; display: block; margin-bottom: 2px; }
@@ -376,7 +397,7 @@ aside { display: flex; flex-direction: column; min-height: 0; background: linear
 .preview .info p { margin: 5px 0; color: var(--text); }
 .preview .info .st { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .preview .info .st span { padding: 2px 7px; border-radius: 6px; background: rgba(255,255,255,.08); font-size: 11.5px; color: var(--text); }
-.menu { position: fixed; z-index: 70; display: none; flex-direction: column; gap: 4px; padding: 6px; min-width: 220px; max-width: 330px;
+.menu { position: fixed; z-index: 85; display: none; flex-direction: column; gap: 4px; padding: 6px; min-width: 220px; max-width: 330px;
   background: var(--glass-2); backdrop-filter: blur(10px); border: 1px solid rgba(230,180,80,.5); border-radius: 12px; box-shadow: var(--shadow); }
 .menu .opt { padding: 8px 10px; }
 .scrim { position: fixed; inset: 0; z-index: 80; display: none; align-items: center; justify-content: center; padding: 20px;
@@ -512,18 +533,22 @@ aside { display: flex; flex-direction: column; min-height: 0; background: linear
     </section>
     <aside>
       <div class="decision" id="decision"></div>
-      <div class="flow">
+      <div class="flow sec" id="secFlow">
+        <button class="sec-h panel-h" aria-expanded="true">Priority passing<b class="sec-badge" id="modeBadge"></b><i class="chev"></i></button>
         <div class="row">
           <button class="btn" id="passTurn" title="Pass priority until the end of this turn">Pass turn <span class="kbd">E</span></button>
           <button class="btn" id="passMine" title="Pass priority until your next main phase">To my turn <span class="kbd">T</span></button>
         </div>
         <div class="passing" id="passing"></div>
-        <label class="toggle"><input type="checkbox" id="autoEmpty" checked><span class="sw"></span><span>Auto-pass on an empty stack outside my main phases</span></label>
-        <label class="toggle"><input type="checkbox" id="autoOwn" checked><span class="sw"></span><span>Auto-pass while my own spell or ability is on top of the stack</span></label>
-        <label class="toggle"><input type="checkbox" id="stopMana"><span class="sw"></span><span>Stop when tapping for mana is all I can do (for effects that care about tapping)</span></label>
-        <label class="toggle"><input type="checkbox" id="autoMana"><span class="sw"></span><span>Always auto pay mana costs (artifacts, then lands, then sources to sacrifice)</span></label>
+        <div class="sec-body">
+          <div class="seg passmode" id="passMode" role="group" aria-label="Priority passing">
+            <button data-mode="manual">Manual</button><button data-mode="auto">Auto pass</button><button data-mode="fast">Fast</button>
+          </div>
+          <div class="modehint" id="modeHint"></div>
+          <label class="toggle"><input type="checkbox" id="autoMana"><span class="sw"></span><span>Always auto pay mana costs (artifacts, then lands, then sources to sacrifice)</span></label>
+        </div>
       </div>
-      <div class="logwrap"><div class="panel-h">Game log</div><div class="log" id="log"></div></div>
+      <div class="logwrap sec" id="secLog"><button class="sec-h panel-h" aria-expanded="true">Game log<i class="chev"></i></button><div class="log sec-body" id="log"></div></div>
     </aside>
     <nav class="flowcol" id="flowcol" aria-label="Turn and phase"></nav>
   </main>
@@ -564,6 +589,13 @@ const STEP_HINT = { UNTAP: "Permanents untap.", UPKEEP: "Upkeep triggers.", DRAW
   FIRST_COMBAT_DAMAGE: "First strike deals damage.", COMBAT_DAMAGE: "Combat damage.", END_COMBAT: "Combat ends.",
   POSTCOMBAT_MAIN: "Cast or pass.", END_TURN: "End-step triggers.", CLEANUP: "Damage wears off." };
 const MAIN = new Set(["PRECOMBAT_MAIN", "POSTCOMBAT_MAIN"]);
+// Auto pass stops on an empty stack only at these steps, by whose turn it is (and only with something to do).
+const KEY_STEPS = { you: new Set([...MAIN, "DECLARE_BLOCKERS"]), opponent: new Set(["DECLARE_ATTACKERS", "DECLARE_BLOCKERS", "END_TURN"]) };
+const PASS_MODES = {
+  manual: "Stops at every priority: each spell and ability on the stack resolves only when you pass.",
+  auto: "Passes when you can do nothing. On an empty stack it stops only in your main phases, at blocks and on the opponent's attacks and end step.",
+  fast: "Never stops to respond: passes everything except your main phases with something to play.",
+};
 const KIND = { mana: "Pay mana", color: "Choose a color", search: "Choose a name", triggers: "Order triggers", look: "Look at cards", pass: "Priority", cast: "Priority", activate: "Priority", target: "Choose a target", use: "Choice", mode: "Choose a mode",
   attack: "Attackers", block: "Blockers", attackers: "Attackers", blockers: "Blockers", order: "Order", amount: "Choose a number", mulligan: "Opening hand", choose: "Choice" };
 const ICON = {
@@ -573,6 +605,7 @@ const ICON = {
   exile: '<circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/>',
   poison: '<path d="M12 3c3 4 6 7 6 11a6 6 0 0 1-12 0c0-4 3-7 6-11z"/>',
   shield: '<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>',
+  eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
 };
 function icon(k) {
   const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -695,7 +728,7 @@ async function fetchBatch() {
 // ---------- server ----------
 let view = null, version = null, decks = [];
 const answered = new Set();
-let passUntil = false, passTurn = null, lastTurnKey = null, lastLife = {}, logTail = null, lobbyOpen = false, hovered = null;
+let passMode = "auto", passUntil = false, passTurn = null, lastTurnKey = null, lastLife = {}, logTail = null, lobbyOpen = false, hovered = null;
 let hotkeys = [], primary = null;
 const clientId = Math.random().toString(36).slice(2) + Date.now().toString(36);
 const inControl = () => !view || !view.controller || view.controller === clientId;
@@ -753,14 +786,15 @@ function autoPass() {
     return;
   }
   if (!isPriority(d) || !s || answered.has(d.decision)) return;
-  let pass;
-  if (passUntil || passTurn != null) pass = true;
-  else if (s.stack.length) pass = $("autoOwn").checked && s.stack[0].controller === "you";
-  else pass = $("autoEmpty").checked && !(s.active === "you" && MAIN.has(s.step));
-  // Nothing to do but tap for mana: passed as when there was nothing at all, unless asked to stop.
-  const manaOnly = d.options.slice(1).every((o) => o.mana);
-  if (manaOnly && !$("stopMana").checked) pass = true;
-  const why = manaOnly && !$("stopMana").checked ? "only mana to tap" : passUntil ? "pass until my turn" : passTurn != null ? "pass turn" : s.stack.length ? "own spell on top" : "empty stack";
+  // Something to cast or activate besides passing; tapping for mana alone does not count.
+  const canAct = d.options.slice(1).some((o) => !o.mana);
+  const myMain = s.active === "you" && MAIN.has(s.step) && !s.stack.length;
+  let pass, why;
+  if (passUntil || passTurn != null) [pass, why] = [true, passUntil ? "pass until my turn" : "pass turn"];
+  else if (passMode === "manual") pass = false;
+  else if (!canAct) [pass, why] = [true, "nothing to do"];
+  else if (passMode === "fast") [pass, why] = [!myMain, "fast: no responses"];
+  else [pass, why] = [!s.stack.length && !KEY_STEPS[s.active === "you" ? "you" : "opponent"].has(s.step), "not a key moment"];
   if (pass) setTimeout(() => { if (view.decision && view.decision.decision === d.decision) answer(d.options[0].id, "auto: " + why); }, 90);
 }
 function renderPassing() {
@@ -909,7 +943,7 @@ function seat(p, s) {
   };
   const chips = h("div", { class: "chips" },
     h("div", { class: "chip", title: "Cards in hand", "data-zone": "hand-" + p.side }, icon("hand"), "Hand", h("b", null, p.hand)),
-    h("div", { class: "chip", title: "Cards in library", "data-zone": "library-" + p.side }, icon("library"), "Library", h("b", null, p.library)),
+    libraryChip(p, mine),
     pile("grave", "Graveyard", p.graveyard), pile("exile", "Exile", p.exile));
   if (p.poison) chips.append(h("div", { class: "chip alert" }, icon("poison"), "Poison", h("b", null, p.poison + "/10")));
   if (p.commander_damage) chips.append(h("div", { class: "chip alert", title: "Combat damage taken from the opposing commander (21 loses)" }, icon("shield"), "Cmdr", h("b", null, p.commander_damage + "/21")));
@@ -1385,6 +1419,17 @@ function arc(a, b, color) {
 // or hidden; cards revealed or looked at outside a choice queue up after it.
 let viewerMode = null, viewerHidden = null, seenUpTo = null, seenGame = null, seenShown = null;
 const seenQueue = [];
+// The library: a click shows the cards of it this player may see (the top card with The Reality Chip,
+// Mystic Forge, or one played revealed); the eye marks that there is one.
+function libraryChip(p, mine) {
+  const top = p.library_top || [];
+  const can = optionsFor(top.map((c) => c.id)).length > 0;
+  const whose = mine ? "Your" : "MageZero's";
+  return h("button", { class: "chip" + (can ? " can" : ""), "data-zone": "library-" + p.side,
+    title: top.length ? (can ? "Play the top card from here" : "Look at the top card") : "No card of this library is visible to you",
+    onclick: () => top.length ? zone(`${whose} library: top card`, top) : toast(`No card of ${mine ? "your" : "MageZero's"} library is visible to you.`) },
+    icon("library"), "Library", top.length ? h("span", { class: "eye" }, icon("eye")) : null, h("b", null, p.library));
+}
 function viewer(label, title, cards, buttons, hideable) {
   const pickable = cards.some((c) => optionsFor([c.id]).length);
   $("viewer").replaceChildren(h("div", { class: "vbox" },
@@ -1872,7 +1917,26 @@ $("concede").onclick = () => dialog(h("div", { class: "result loss" }, h("h2", n
     h("button", { class: "btn", onclick: closeDialog }, "Keep playing"))));
 $("passTurn").onclick = () => { if (view && view.state) { passTurn = view.state.turn; passUntil = false; autoPass(); } };
 $("passMine").onclick = () => { passUntil = true; passTurn = null; autoPass(); };
-for (const id of ["autoEmpty", "autoOwn", "autoMana", "stopMana"]) { $(id).checked = load(id, !["autoMana", "stopMana"].includes(id)); $(id).onchange = () => { store(id, $(id).checked); autoPass(); }; }
+$("autoMana").checked = load("autoMana", false); $("autoMana").onchange = () => { store("autoMana", $("autoMana").checked); autoPass(); };
+function setPassMode(mode) {
+  passMode = mode in PASS_MODES ? mode : "auto"; store("passMode", passMode);
+  for (const b of $("passMode").children) { b.classList.toggle("on", b.dataset.mode === passMode); b.setAttribute("aria-pressed", b.dataset.mode === passMode); }
+  $("modeHint").textContent = PASS_MODES[passMode];
+  $("modeBadge").textContent = { manual: "Manual", auto: "Auto pass", fast: "Fast" }[passMode];
+  // The server passes priorities with nothing but "pass" itself, except in manual mode.
+  post("/api/mode", { mode: passMode }).catch((e) => toast(e.message));
+}
+for (const b of $("passMode").children) b.onclick = () => { setPassMode(b.dataset.mode); if (view) autoPass(); };
+setPassMode(load("passMode", "auto"));
+for (const id of ["secFlow", "secLog"]) {
+  const sec = $(id), head = sec.querySelector(".sec-h");
+  const show = (open) => { sec.classList.toggle("collapsed", !open); head.setAttribute("aria-expanded", open); };
+  show(!load(id + "Collapsed", false));
+  head.onclick = () => {
+    const open = sec.classList.contains("collapsed"); show(open); store(id + "Collapsed", !open);
+    if (open && id === "secLog") { const l = $("log"); l.scrollTop = l.scrollHeight; }
+  };
+}
 document.addEventListener("keydown", (ev) => {
   if (["INPUT", "SELECT", "TEXTAREA"].includes(ev.target.tagName)) return;
   if (ev.key === "Escape" && viewerMode) { if (viewerMode === "decision") { viewerHidden = view.decision && view.decision.decision; hideViewer(); viewerMode = null; } else showSeen(); return; }

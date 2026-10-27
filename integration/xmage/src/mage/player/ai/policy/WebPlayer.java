@@ -9,6 +9,9 @@ import mage.abilities.costs.Cost;
 import mage.abilities.costs.SacrificeCost;
 import mage.abilities.costs.mana.ManaCost;
 import mage.abilities.costs.mana.ManaCosts;
+import mage.abilities.effects.ContinuousEffect;
+import mage.abilities.effects.ContinuousEffects;
+import mage.abilities.effects.common.continuous.LookAtTopCardOfLibraryAnyTimeEffect;
 import mage.abilities.mana.ActivatedManaAbilityImpl;
 import mage.cards.Card;
 import mage.cards.Cards;
@@ -138,7 +141,17 @@ public final class WebPlayer extends PolicyPlayer {
     private void watchSeen(Game game) {
         Map<String, Cards> groups = new LinkedHashMap<>();
         for (Map.Entry<String, Cards> entry : game.getState().getRevealed().entrySet()) groups.put("reveal\u0000" + entry.getKey(), entry.getValue());
-        for (Map.Entry<String, Cards> entry : game.getState().getLookedAt(getId()).entrySet()) groups.put("look\u0000" + entry.getKey(), entry.getValue());
+        // An any-time look at the top card (The Reality Chip, Mystic Forge) is renewed at every
+        // effects update; the page shows that card on the library instead (library_top).
+        Card top = null;
+        for (Map.Entry<String, Cards> entry : game.getState().getLookedAt(getId()).entrySet()) {
+            Cards cards = entry.getValue();
+            if (cards != null && cards.size() == 1) {
+                if (top == null) top = visibleTop(this, game);
+                if (top != null && cards.contains(top.getId())) continue;
+            }
+            groups.put("look\u0000" + entry.getKey(), cards);
+        }
         synchronized (seen) {
             Set<String> now = new HashSet<>();
             for (Map.Entry<String, Cards> entry : groups.entrySet()) {
@@ -165,8 +178,10 @@ public final class WebPlayer extends PolicyPlayer {
         String question = prompt[0], asked = askKind[0];
         prompt[0] = null;
         askKind[0] = null;
-        // A choice with one option is not asked, as for the policy.
-        if (actions.size() == 1) return 0;
+        // A choice with one option is not asked, as for the policy. A priority with only
+        // "pass" still goes to the server: in manual mode the person stops there (and sees
+        // each stack object resolve); otherwise the server passes it at once.
+        if (actions.size() == 1 && !"pass".equals(actions.get(0).get("type"))) return 0;
         List<Map<String, Object>> choices = new ArrayList<>();
         for (int i = 0; i < actions.size(); i++) {
             Map<String, Object> action = actions.get(i);
@@ -718,10 +733,12 @@ public final class WebPlayer extends PolicyPlayer {
                 if (watcher != null) commanderDamage = Math.max(commanderDamage, watcher.getDamageToPlayer().getOrDefault(player.getId(), 0));
             }
             mage.players.ManaPool pool = player.getManaPool();
+            Card top = visibleTop(player, game);
             players.add(PolicyEncoder.map("id", player.getId().toString(), "side", side(player.getId()),
                 "name", player.getName(), "life", player.getLife(),
                 "poison", player.getCountersCount(mage.counters.CounterType.POISON),
                 "hand", player.getHand().size(), "library", player.getLibrary().size(),
+                "library_top", top == null ? Collections.emptyList() : Collections.singletonList(card(top, game)),
                 "commander_damage", commanderDamage,
                 "mana", PolicyEncoder.map("W", pool.getWhite(), "U", pool.getBlue(), "B", pool.getBlack(),
                     "R", pool.getRed(), "G", pool.getGreen(), "C", pool.getColorless()),
@@ -828,6 +845,26 @@ public final class WebPlayer extends PolicyPlayer {
         MageObject object = game.getObject(id);
         if (!hidden && object != null) place.put("name", object instanceof Card && ((Card) object).isFaceDown(game) ? "Face-down card" : object.getName());
         return place;
+    }
+
+    /**
+     * The top card of `player`'s library when this player may see it: played revealed
+     * (Courser of Kruphix), or this player's own any-time look (The Reality Chip, Mystic Forge).
+     */
+    private Card visibleTop(Player player, Game game) {
+        Card top = player.getLibrary().getFromTop(game);
+        if (top == null) return null;
+        if (player.isTopCardRevealed()) return top;
+        if (!getId().equals(player.getId())) return null;
+        ContinuousEffects effects = game.getContinuousEffects();
+        for (ContinuousEffect effect : effects.getLayeredEffects(game)) {
+            if (!(effect instanceof LookAtTopCardOfLibraryAnyTimeEffect)) continue;
+            if (!((LookAtTopCardOfLibraryAnyTimeEffect) effect).canLookAtNextTopLibraryCard(game)) continue;
+            for (Ability ability : effects.getLayeredEffectAbilities(effect)) {
+                if (getId().equals(ability.getControllerId())) return top;
+            }
+        }
+        return null;
     }
 
     private Map<String, Object> card(MageObject object, Game game) {
