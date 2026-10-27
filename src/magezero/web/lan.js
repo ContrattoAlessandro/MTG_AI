@@ -94,6 +94,7 @@
   // commander, name and life. A click brings that player's board in view; a glowing square
   // is a player the pending decision can act on.
   let compact = null;  // the column shows names and life only (remembered; read once the page's helpers exist)
+  const SWORDS = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M4 4l11 11M20 4L9 15M13 17l4 4M11 17l-4 4M15 15l3-3M9 15l-3-3"/></svg>';
   function renderSeatMap(v) {
     if (compact === null) compact = load("lanCompact", false);
     let map = $("seatMap");
@@ -133,7 +134,7 @@
       h("div", { class: "qb" },
         s.active_id === p.id ? h("i", { class: "turn", title: "Their turn" }) : null,
         s.priority_id === p.id ? h("i", { class: "prio", title: "Has priority" }) : null,
-        attacking.has(p.id) ? h("i", { class: "atk", title: "Attacking you" }, "⚔") : null,
+        attacking.has(p.id) ? h("i", { class: "atk", title: "Attacking you", html: SWORDS }) : null,
         p.won ? h("span", null, "Won") : p.lost ? h("span", null, "Out") : null));
       artInto(q, commanderOf(p));
       q.dataset.ids = p.id;  // the stack's links point here when the player's board is not in view
@@ -387,9 +388,13 @@
 .sm-toggle { height: 18px; display: grid; place-items: center; border: 0; border-radius: 7px; background: rgba(255,255,255,.06); color: var(--text-2); cursor: pointer; font-size: 10px; line-height: 1; padding: 0; }
 .sm-toggle:hover { background: rgba(255,255,255,.14); color: var(--text); }
 .seat-map.compact { gap: 4px; padding: 4px; }
-.seat-map.compact .q { width: 128px; height: 30px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 9px;
+.seat-map.compact .q { width: 148px; height: 30px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 9px;
   background: var(--glass-2) !important; filter: none; }
-.seat-map.compact .q::after, .seat-map.compact .qb { display: none; }
+.seat-map.compact .q::after, .seat-map.compact .qb i.turn, .seat-map.compact .qb span { display: none; }
+.seat-map.compact .qb { position: static; order: 3; gap: 3px; }
+.seat-map.compact .qb i.prio { width: 7px; height: 7px; }
+.seat-map.compact .qb i.atk { width: 16px; height: 16px; }
+.seat-map.compact .q.out .qn { text-decoration: line-through; }
 .seat-map.compact .qn, .seat-map.compact .ql { position: static; font-size: 12.5px; text-shadow: none; }
 .seat-map.compact .qn { min-width: 0; flex: 1; } .seat-map.compact .ql b { font-size: 15px; text-shadow: none; }
 .seat-map.compact .q.turn { box-shadow: inset 3px 0 0 var(--gold); }
@@ -399,7 +404,8 @@
 .seat-map .qb { position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; align-items: center; }
 .seat-map .qb i { width: 10px; height: 10px; border-radius: 50%; font-style: normal; }
 .seat-map .qb i.turn { background: var(--gold); } .seat-map .qb i.prio { background: #fff; box-shadow: 0 0 6px #fff; }
-.seat-map .qb i.atk { width: auto; height: auto; font-size: 13px; color: var(--bad); text-shadow: 0 0 4px #000; }
+.seat-map .qb i.atk { width: 20px; height: 20px; display: grid; place-items: center; color: #fff; background: var(--bad);
+  box-shadow: 0 0 0 2px rgba(0,0,0,.55), 0 0 10px var(--bad); }
 .seat-map .qb span { font-size: 10px; font-weight: 800; text-transform: uppercase; background: rgba(0,0,0,.6); padding: 2px 5px; border-radius: 5px; }
 #attackTags { position: fixed; inset: 0; z-index: 9; pointer-events: none; }
 .atk-tag { position: fixed; transform: translate(-50%, -100%); pointer-events: none; overflow: hidden;

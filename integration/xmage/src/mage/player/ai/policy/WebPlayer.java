@@ -116,6 +116,40 @@ public final class WebPlayer extends PolicyPlayer {
     public void joinTable(Game game) {
         startWithoutPolicy(game);
         openBridge(game);
+        // At a table the others act between this player's priorities (a stack resolves after
+        // the last pass, a bot casts on its turn): every board update and log line refreshes
+        // this seat too, so all the browsers follow the same moment of the game.
+        UUID me = getId();
+        game.addTableEventListener(event -> {
+            if (game.isSimulation()) return;
+            TableEvent.EventType type = event.getEventType();
+            if (type != TableEvent.EventType.UPDATE && type != TableEvent.EventType.INFO) return;
+            Player player = game.getPlayer(me);
+            if (player instanceof WebPlayer) ((WebPlayer) player).refresh(game);
+        });
+    }
+
+    /**
+     * Refreshes every person's board at a table: a priority changes hands without any table
+     * event, and the page shows who holds it. A bot calls this at each of its priorities.
+     */
+    public static void refreshTable(Game game) { refreshOthers(game, null); }
+
+    /** Refreshes the boards of the people at the table other than `except`. */
+    private static void refreshOthers(Game game, UUID except) {
+        if (game.isSimulation()) return;
+        for (Player player : game.getState().getPlayers().values()) {
+            if (player instanceof WebPlayer && !player.getId().equals(except)) ((WebPlayer) player).refresh(game);
+        }
+    }
+
+    /** Sends the board for another player's move; this player's own replies wait for its next priority. */
+    private void refresh(Game game) {
+        try {
+            post(game);
+        } catch (RuntimeException ignored) {
+            // cosmetic: a failed snapshot or a lost server shows up at the next decision
+        }
     }
 
     private void openBridge(Game game) {
@@ -219,6 +253,8 @@ public final class WebPlayer extends PolicyPlayer {
 
     /** The id of the option the person picked, or null after a concession. */
     private String await(Map<String, Object> request, Game game) {
+        // While this person thinks, the others see the same moment (a new step, a spell being cast).
+        refreshOthers(game, getId());
         while (true) {
             if (Thread.currentThread().isInterrupted()) throw new IllegalStateException("web game interrupted");
             JsonObject reply = bridge.request("POST", "/decide", request);
@@ -346,8 +382,12 @@ public final class WebPlayer extends PolicyPlayer {
         autoPaying[0] = null;
         cancelled[0] = false; // a payment cancelled outside priority (a "pay {1}?" trigger)
         // Each priority of this player, asked or not, refreshes the browser's board,
-        // so the opponent's actions show up while they happen.
-        if (!game.isSimulation()) publish(game);
+        // so the opponent's actions show up while they happen; at a table, the other people's
+        // boards follow (who holds priority).
+        if (!game.isSimulation()) {
+            publish(game);
+            refreshOthers(game, getId());
+        }
         return super.priority(game);
     }
 
@@ -366,18 +406,25 @@ public final class WebPlayer extends PolicyPlayer {
     }
 
     private void publish(Game game) {
-        Map<String, Object> state = snapshot(game, null);
-        String key = String.valueOf(state);
-        if (key.equals(lastState[0])) return;
-        lastState[0] = key;
         JsonObject reply;
         try {
-            reply = bridge.request("POST", "/state", PolicyEncoder.map("state", state));
+            reply = post(game);
         } catch (RuntimeException ignored) {
             return; // the board refresh is cosmetic; decisions report a lost server
         }
+        if (reply == null) return;
         if (reply.has("abort") && reply.get("abort").getAsBoolean()) throw new IllegalStateException("game abandoned in the browser");
         if (reply.has("concede") && reply.get("concede").getAsBoolean()) game.concede(getId());
+    }
+
+    /** Posts this player's board unless it is the one last sent; the server's reply, or null. */
+    private JsonObject post(Game game) {
+        if (bridge == null) return null;
+        Map<String, Object> state = snapshot(game, null);
+        String key = String.valueOf(state);
+        if (key.equals(lastState[0])) return null;
+        lastState[0] = key;
+        return bridge.request("POST", "/state", PolicyEncoder.map("state", state));
     }
 
     /**
@@ -753,11 +800,28 @@ public final class WebPlayer extends PolicyPlayer {
      */
     private List<Player> seating(Game game) {
         List<Player> all = new ArrayList<>(game.getState().getPlayers().values());
+        // The turns follow XMage's PlayerList, which puts each joining player first: the
+        // reverse of the players' map. Checked against the list, which also leaves out
+        // the players out of the game.
+        List<UUID> turns = new ArrayList<>(game.getState().getPlayerList());
+        if (game.isTurnOrderReversed()) Collections.reverse(turns);
+        List<Player> reversed = new ArrayList<>(all);
+        Collections.reverse(reversed);
+        if (follows(reversed, turns) && !follows(all, turns)) all = reversed;
         int me = 0;
         for (int i = 0; i < all.size(); i++) if (all.get(i).getId().equals(getId())) me = i;
         List<Player> seated = new ArrayList<>(all.subList(me, all.size()));
         seated.addAll(all.subList(0, me));
         return seated;
+    }
+
+    /** Whether `players`, without those missing from `turns`, go round in the order of `turns`. */
+    private static boolean follows(List<Player> players, List<UUID> turns) {
+        List<UUID> ids = new ArrayList<>();
+        for (Player player : players) if (turns.contains(player.getId())) ids.add(player.getId());
+        List<UUID> twice = new ArrayList<>(turns);
+        twice.addAll(turns);
+        return ids.size() == turns.size() && Collections.indexOfSubList(twice, ids) >= 0;
     }
 
     /**

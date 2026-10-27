@@ -39,10 +39,24 @@ final class TableSeat {
         });
         // XMage's own AI, which plays games of any size.
         KINDS.put(PolicyGames.XMAGE_AI, (seat, range) -> {
-            XMageAiPlayer player = new XMageAiPlayer(seat.name, range, seat.skill);
+            XMageAiPlayer player = new Bot(seat.name, range, seat.skill);
             if (seat.thinkSeconds > 0) player.setMaxThinkTimeSecs(seat.thinkSeconds);
             return player;
         });
+    }
+
+    /** XMage's AI at a table: the people's boards show when it gets priority (it may think a while). */
+    static final class Bot extends XMageAiPlayer {
+        Bot(String name, RangeOfInfluence range, int skill) { super(name, range, skill); }
+
+        private Bot(Bot other) { super(other); }
+
+        @Override public Bot copy() { return new Bot(this); }
+
+        @Override public boolean priority(Game game) {
+            WebPlayer.refreshTable(game);
+            return super.priority(game);
+        }
     }
 
     final String name, type, deckPath, endpoint;

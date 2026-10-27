@@ -86,11 +86,12 @@ final class TableGame {
         Game game = format.newGame(MulliganType.GAME_DEFAULT.getMulligan(0));
         Match match = format.newMatch(new MatchOptions("mz lan", "table", seats.size() > 2));
         List<Player> players = new ArrayList<>();
-        for (TableSeat seat : seats) {
-            Player player = seat.kind().create(seat, format.range());
-            Deck deck = Deck.load(DeckImporter.importDeckFromFile(seat.deckPath, true), false, false, new HashMap<>());
-            PolicyGames.load(game, match, player, deck);
-            players.add(player);
+        for (TableSeat seat : seats) players.add(seat.kind().create(seat, format.range()));
+        // XMage's turn order puts each joining player first (PlayerList): the players join
+        // last seat first, so the turns go round in the order of the seats.
+        for (int i = seats.size() - 1; i >= 0; i--) {
+            Deck deck = Deck.load(DeckImporter.importDeckFromFile(seats.get(i).deckPath, true), false, false, new HashMap<>());
+            PolicyGames.load(game, match, players.get(i), deck);
         }
         for (int i = 0; i < seats.size(); i++) seats.get(i).kind().ready(players.get(i), game);
         // When every person at the table is out, the bots do not play on alone.
