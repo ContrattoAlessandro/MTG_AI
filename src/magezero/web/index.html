@@ -125,9 +125,11 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) var(--side) var(--fl
 .sp-h small { font: 500 10.5px/1 Inter, sans-serif; color: var(--text-3); letter-spacing: 0; }
 .sp-body { display: flex; align-items: flex-start; padding: 22px 12px 12px; overflow: hidden; }
 .stile { --tw: 124px; position: relative; flex: none; width: var(--tw); border-radius: 9px; background: #141a20; cursor: default;
-  border: 1px solid var(--line-2); box-shadow: -6px 0 14px rgba(0,0,0,.45); transition: transform .15s, box-shadow .15s; }
+  border: 1px solid var(--line-2); box-shadow: -6px 0 14px rgba(0,0,0,.45);
+  /* Hover intent: a tile rises and drops 0.1 s after the pointer, and stays on top until it is down. */
+  transition: transform .15s ease .1s, box-shadow .15s, z-index 0s linear .25s; }
 .stile + .stile { margin-left: calc(var(--ov, 0px) * -1); }
-.stile:hover, .stile.focus { transform: translateY(-6px); z-index: 50 !important; }
+.stile:hover, .stile.focus { transform: translateY(-6px); z-index: 50 !important; transition: transform .15s ease .1s, box-shadow .15s, z-index 0s; }
 .stile::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 0; }
 .stile:hover::after { height: 8px; }
 .stile.you { border-color: rgba(78,168,255,.6); } .stile.opponent { border-color: rgba(255,111,97,.6); }
@@ -264,7 +266,7 @@ button.chip:hover { border-color: var(--line-2); background: rgba(255,255,255,.0
 @keyframes glow { 0%, 100% { box-shadow: 0 0 0 2px var(--gold), 0 0 12px rgba(230,180,80,.45); } 50% { box-shadow: 0 0 0 2px var(--gold-2), 0 0 24px rgba(230,180,80,.8); } }
 .card.can:hover { filter: brightness(1.12); }
 /* The slot, which stays put, takes the hover: a card rising from under the pointer would drop back and rise again. */
-.slot:not(.tapped):hover > .card.can { transform: translateY(-6px); }
+.slot:not(.tapped):hover > .card.can { transform: translateY(-6px); transition: transform .22s ease .1s, box-shadow .15s, filter .2s; }
 /* A source you may tap for mana with nothing to pay: clickable, but quiet until hovered. */
 .card.tap { cursor: pointer; }
 .card.tap:hover { filter: brightness(1.12); box-shadow: 0 0 0 2px rgba(230,180,80,.6), 0 0 12px rgba(230,180,80,.35); }
@@ -291,13 +293,15 @@ button.chip:hover { border-color: var(--line-2); background: rgba(255,255,255,.0
   background: linear-gradient(180deg, transparent, rgba(0,0,0,.5)); }
 .hand { position: absolute; left: 50%; bottom: calc(var(--hh) * -.04); transform: translateX(-50%); display: flex; align-items: flex-end; padding: 0 24px; }
 .hand .hc { position: relative; width: var(--hw); height: var(--hh); flex: none; margin: 0 calc(var(--overlap, 0px) * -1);
-  transition: transform .18s ease; transform-origin: 50% 130%; }
+  transform-origin: 50% 130%; transition: z-index 0s linear .32s; }
 .hand .hc .card { --cw: var(--hw); }
 /* The slot of a hand card (.hc) stays where the fan puts it and takes the pointer; only the card
    inside straightens and rises. A slot that moved would leave the pointer near its edges (the
    top of a tilted card swings most) and drop back under it, over and over. */
-.hand .hc:hover { z-index: 30 !important; }
-.hand .hc > .card { transform-origin: 50% 130%; }
+.hand .hc:hover { z-index: 30 !important; transition: z-index 0s; }
+/* Hover intent: the card rises and drops 0.1 s after the pointer (a sweep over the hand reads as a
+   wave, not a flicker), and its slot stays on top until the card is down. */
+.hand .hc > .card { transform-origin: 50% 130%; transition: transform .2s ease .1s, box-shadow .15s, filter .2s; }
 .hand .hc:hover > .card { transform: translateY(calc(var(--dy) * -1)) rotate(calc(var(--rot) * -1)) translateY(calc(var(--hh) * -.1)) scale(1.08); }
 .hand-label { position: absolute; left: 16px; bottom: 12px; font-size: 10.5px; letter-spacing: 1.3px; text-transform: uppercase; color: var(--text-3); }
 

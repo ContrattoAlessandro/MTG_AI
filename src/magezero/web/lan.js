@@ -518,8 +518,8 @@
 .lan-art { height: 70px; margin: -12px -12px 0; background: #1b2229 center 22%/cover; filter: saturate(.8) brightness(.75); }
 .lan-who { display: flex; flex-direction: column; gap: 6px; flex: 1; } .lan-who b { font-size: 15px; } .lan-who .muted { font-size: 12px; color: var(--text-3); }
 .lan-skill { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-3); }
-.rewind-bar { position: fixed; left: 50%; top: 66px; z-index: 70; transform: translate(-50%, -12px); opacity: 0; pointer-events: none;
-  display: flex; align-items: center; gap: 12px; max-width: calc(100vw - 32px); padding: 10px 12px 10px 14px; border-radius: 14px;
+.rewind-bar { position: fixed; left: calc((100% - var(--side, 0px) - var(--flow, 0px)) / 2); top: 66px; z-index: 70; transform: translate(-50%, -12px); opacity: 0; pointer-events: none;
+  display: flex; align-items: center; gap: 12px; max-width: calc(100vw - var(--side, 0px) - var(--flow, 0px) - 32px); padding: 10px 12px 10px 14px; border-radius: 14px;
   background: rgba(16, 22, 29, .96); border: 1px solid var(--gold); box-shadow: 0 10px 30px rgba(0,0,0,.6); font-size: 14px; color: var(--text);
   transition: opacity .2s, transform .2s; }
 .rewind-bar.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
