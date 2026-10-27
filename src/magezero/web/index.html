@@ -128,6 +128,8 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) var(--side) var(--fl
   border: 1px solid var(--line-2); box-shadow: -6px 0 14px rgba(0,0,0,.45); transition: transform .15s, box-shadow .15s; }
 .stile + .stile { margin-left: calc(var(--ov, 0px) * -1); }
 .stile:hover, .stile.focus { transform: translateY(-6px); z-index: 50 !important; }
+.stile::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 0; }
+.stile:hover::after { height: 8px; }
 .stile.you { border-color: rgba(78,168,255,.6); } .stile.opponent { border-color: rgba(255,111,97,.6); }
 .stile.top { box-shadow: 0 0 0 2px var(--gold), -6px 0 14px rgba(0,0,0,.45); }
 .stile .card { position: relative; --cw: calc(var(--tw) - 2px); border-radius: 8px 8px 0 0; box-shadow: none; }
@@ -261,7 +263,8 @@ button.chip:hover { border-color: var(--line-2); background: rgba(255,255,255,.0
 .card.can { cursor: pointer; animation: glow 2.2s ease-in-out infinite; }
 @keyframes glow { 0%, 100% { box-shadow: 0 0 0 2px var(--gold), 0 0 12px rgba(230,180,80,.45); } 50% { box-shadow: 0 0 0 2px var(--gold-2), 0 0 24px rgba(230,180,80,.8); } }
 .card.can:hover { filter: brightness(1.12); }
-.slot:not(.tapped) > .card.can:hover { transform: translateY(-6px); }
+/* The slot, which stays put, takes the hover: a card rising from under the pointer would drop back and rise again. */
+.slot:not(.tapped):hover > .card.can { transform: translateY(-6px); }
 /* A source you may tap for mana with nothing to pay: clickable, but quiet until hovered. */
 .card.tap { cursor: pointer; }
 .card.tap:hover { filter: brightness(1.12); box-shadow: 0 0 0 2px rgba(230,180,80,.6), 0 0 12px rgba(230,180,80,.35); }
@@ -291,7 +294,10 @@ button.chip:hover { border-color: var(--line-2); background: rgba(255,255,255,.0
   transition: transform .18s ease; transform-origin: 50% 130%; }
 .hand .hc .card { --cw: var(--hw); }
 .hand .hc:hover { transform: translateY(calc(var(--hh) * -.1)) scale(1.08) !important; z-index: 30 !important; }
-.hand .hc .card.can:hover { transform: none; }
+/* A raised card keeps the place it rose from under the pointer (no rise-drop flicker at its lower edge). */
+.hand .hc::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 0; }
+.hand .hc:hover::after { height: calc(var(--hh) * .2); }
+.hand .hc:hover > .card.can { transform: none; }
 .hand-label { position: absolute; left: 16px; bottom: 12px; font-size: 10.5px; letter-spacing: 1.3px; text-transform: uppercase; color: var(--text-3); }
 
 /* ---------- side panel ---------- */
@@ -749,8 +755,23 @@ function toast(msg) { const t = $("toast"); t.textContent = msg; t.style.display
 const mzTable = window.mzTable || {};
 function accept(next) {
   if (version != null && next.version === version) return;
-  cleanDecision(next.decision); view = mzTable.lens ? mzTable.lens(next) : next; version = next.version; render(); autoPass();
+  cleanDecision(next.decision); view = mzTable.lens ? mzTable.lens(next) : next; version = next.version;
+  // A decision the page passes by itself is answered before anything is drawn, so the panel
+  // never flashes "Your move"; the boards in between (priority going round the table, a
+  // spell resolving) are drawn once they settle, while a decision of yours shows at once.
+  autoPass();
+  if (!view.state || ownDecision()) drawNow(); else drawSoon();
 }
+const passing = new Set();  // decisions the page passed by itself (not drawn)
+const ownDecision = () => !!(view.decision && !passing.has(view.decision.decision));
+let drawTimer = null, drawSince = 0;
+function drawSoon() {
+  const now = performance.now();
+  if (!drawTimer) drawSince = now;
+  clearTimeout(drawTimer);
+  drawTimer = setTimeout(drawNow, Math.max(0, Math.min(60, drawSince + 200 - now)));
+}
+function drawNow() { clearTimeout(drawTimer); drawTimer = null; render(); }
 async function poll() {
   if (mzTable.connect) return mzTable.connect(accept);
   for (;;) {
@@ -794,7 +815,10 @@ async function answer(id, why = "click") {
   if (viewerMode === "decision") { hideViewer(); viewerMode = null; }
   $("decision").style.opacity = ".55";
   try { await post("/api/answer", { decision: d.decision, action_id: id, client: clientId }); }
-  catch (e) { answered.delete(d.decision); toast(e.message); $("decision").style.opacity = ""; }
+  catch (e) {
+    answered.delete(d.decision); toast(e.message); $("decision").style.opacity = "";
+    if (passing.delete(d.decision)) drawNow();  // passed by the page: the decision is the player's again
+  }
 }
 
 // ---------- auto-pass ----------
@@ -807,7 +831,7 @@ function autoPass() {
   if (!inControl()) return;
   // A payment auto pay could not finish is left to the player.
   if (d && d.kind === "mana" && $("autoMana").checked && !answered.has(d.decision) && !/^Auto pay could not/.test(d.prompt)) {
-    setTimeout(() => { if (view.decision && view.decision.decision === d.decision) answer("auto", "auto pay"); }, 60);
+    passing.add(d.decision); answer("auto", "auto pay");
     return;
   }
   if (!isPriority(d) || !s || answered.has(d.decision)) return;
@@ -820,7 +844,7 @@ function autoPass() {
   else if (!canAct) [pass, why] = [true, "nothing to do"];
   else if (passMode === "fast") [pass, why] = [!myMain, "fast: no responses"];
   else [pass, why] = [!s.stack.length && !KEY_STEPS[s.active === "you" ? "you" : "opponent"].has(s.step), "not a key moment"];
-  if (pass) setTimeout(() => { if (view.decision && view.decision.decision === d.decision) answer(d.options[0].id, "auto: " + why); }, 90);
+  if (pass) { passing.add(d.decision); answer(d.options[0].id, "auto: " + why); }
 }
 function renderPassing() {
   const p = $("passing"); p.replaceChildren();
@@ -1526,9 +1550,11 @@ function renderFlow(s, started) {
 // ---------- main render ----------
 function setStatus(kind, text) { $("dot").className = "dot " + kind; $("status").textContent = text; }
 function render() {
-  const s = view.state, d = view.decision;
+  // A decision the page passed by itself is not drawn (the server still says "your move").
+  const s = view.state, d = ownDecision() ? view.decision : null;
   const live = view.status === "playing";
-  setStatus(view.status === "error" ? "err" : live ? (d ? "live" : "wait") : view.status === "starting" ? "wait" : "", view.message || view.status);
+  const message = view.decision && !d ? (view.message || "").replace(/your move$/, "passing") : view.message;
+  setStatus(view.status === "error" ? "err" : live ? (d ? "live" : "wait") : view.status === "starting" ? "wait" : "", message || view.status);
   $("decision").style.opacity = "";
   $("newGame").disabled = view.status === "starting";
   $("concede").disabled = !live;

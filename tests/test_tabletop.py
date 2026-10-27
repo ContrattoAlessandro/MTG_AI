@@ -9,7 +9,7 @@ from magezero import webplay
 from magezero.tabletop.app import EXTENSIONS_MARK, create_app
 from magezero.tabletop.feed import ChangeFeed
 from magezero.tabletop.lobby import DeckShelf, Lobby, SeatKind
-from magezero.tabletop.push import SEAT_COOKIE, seat_token
+from magezero.tabletop.push import SEAT_COOKIE, delta, seat_token
 from magezero.tabletop.session import TableSession, game_file, playing_message
 
 
@@ -254,3 +254,41 @@ def test_the_engine_routes_answer_this_computer_only(session):
     remote = client.post("/engine/seat/0/decide", json={}, environ_base={"REMOTE_ADDR": "192.168.1.20"})
     assert remote.status_code == 403
     assert client.post("/engine/seat/0/decide", json={}).status_code == 404  # no game: no seat
+
+
+def patched(base, change):
+    """The browser's side of `delta` (lan.js: patch)."""
+    view = {**base, **change.get("set", {})}
+    if "state" in change:
+        view["state"] = change["state"]
+    elif "patch" in change or "log" in change:
+        state = {**base["state"], **change.get("patch", {})}
+        if "log" in change:
+            state["log"] = base["state"]["log"][change["log"]["drop"] :] + change["log"]["add"]
+        view["state"] = state
+    return view
+
+
+def test_a_push_carries_only_what_changed():
+    lines = [f"line {i}" for i in range(400)]
+    before = {"version": 1, "status": "playing", "lobby": {"seats": []},
+              "state": {"turn": 3, "stack": [], "players": [{"life": 40}], "log": lines}}  # fmt: skip
+    after = {**before, "version": 2,
+             "state": {**before["state"], "stack": [{"id": "s"}], "log": lines[2:] + ["new 1", "new 2"]}}  # fmt: skip
+    change = delta(before, after)
+    assert change == {"set": {"version": 2}, "patch": {"stack": [{"id": "s"}]},
+                      "log": {"drop": 2, "add": ["new 1", "new 2"]}}  # fmt: skip
+    assert patched(before, change) == after
+    # Only the version moved (another seat's change): nothing to send.
+    assert delta(after, {**after, "version": 3}) is None
+
+
+def test_a_push_sends_the_whole_state_when_it_appears_or_goes():
+    lobby_only = {"version": 1, "status": "ready", "state": None, "decision": None}
+    playing = {"version": 2, "status": "playing", "state": {"turn": 1, "log": ["a"]}, "decision": {"id": "d"}}
+    for before, after in ((lobby_only, playing), (playing, lobby_only)):
+        assert patched(before, delta(before, after)) == after
+    # A log that starts over (a new game) is replaced whole.
+    later = {**playing, "version": 3, "state": {"turn": 1, "log": ["x", "y"]}}
+    assert delta(playing, later)["log"] == {"drop": 1, "add": ["x", "y"]}
+    assert patched(playing, delta(playing, later)) == later

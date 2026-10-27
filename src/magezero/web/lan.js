@@ -27,7 +27,13 @@
         port = config.push_port; shareUrl = config.share_url;
       } catch (e) { return retry(); }
       socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.hostname}:${port}/`);
-      socket.onmessage = (e) => { failures = 0; deliver(JSON.parse(e.data)); };
+      let wire = null;  // the view as last received: a new connection starts with a whole view
+      socket.onmessage = (e) => {
+        failures = 0;
+        const message = JSON.parse(e.data);
+        wire = message.delta ? patch(wire, message.delta) : message;
+        deliver(structuredClone(wire));  // the page may change what it is given
+      };
       socket.onclose = (e) => { socket = null; if (e.code !== 4000) retry(); else open(); };
     };
     const retry = () => {
@@ -44,6 +50,18 @@
         since = next.version; deliver(next);
       } catch (e) { setStatus("err", "Lost the connection to the host, retrying…"); await new Promise((r) => setTimeout(r, 1500)); }
     }
+  }
+  // After the first view the server sends only what changed (tabletop/push.py: delta): top-level
+  // keys, the state's changed keys, and the log's sliding window as lines dropped and added.
+  function patch(base, d) {
+    const next = { ...base, ...d.set };
+    if ("state" in d) next.state = d.state;
+    else if (d.patch || d.log) {
+      const state = { ...base.state, ...d.patch };
+      if (d.log) state.log = base.state.log.slice(d.log.drop).concat(d.log.add);
+      next.state = state;
+    }
+    return next;
   }
   // The socket was opened before the seat cookie existed: open it again to receive the seat's view.
   function reconnect() { if (socket) socket.close(4000, "seat changed"); }
@@ -423,6 +441,8 @@
   cursor: pointer; color: var(--text); font-family: inherit; text-align: center; line-height: 1.2; transform-origin: 50% 140%;
   transform: rotate(var(--rot)) translateY(var(--lift)); animation: fanin .22s ease-out backwards; transition: transform .12s, border-color .12s; }
 .fan-card:hover { border-color: var(--bot); transform: rotate(var(--rot)) translateY(calc(var(--lift) - 10px)) scale(1.06); z-index: 2; }
+.fan-card { position: relative; } .fan-card::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 0; }
+.fan-card:hover::after { height: 14px; }
 .fan-card .fa { width: 4.6em; height: 4.6em; border-radius: 50%; border: .22em solid var(--bot); background: #222 center 20%/cover; box-shadow: 0 4px 12px rgba(0,0,0,.5); flex: none; }
 .fan-card.walker .fa { border-color: var(--gold); }
 .fan-card b { font-size: 1.1em; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
