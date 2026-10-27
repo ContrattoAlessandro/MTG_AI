@@ -97,6 +97,8 @@ public final class PolicyGames {
     /** Plays one configured batch; returns {terminal, requested, truncated, errors, timeouts}. */
     private static int[] runBatch(String configPath) throws Exception {
         Map<String, Object> raw = rawConfig(configPath);
+        // A table of any size with people and XMage's AI (`mz lan`), not a policy batch.
+        if (raw.containsKey("seats")) return TableGame.play(raw);
         GameConfig config = new GameConfig(raw);
         String typeA = config.typeA, typeB = config.typeB;
         if (!("policy".equals(typeA) || TEACHER.equals(typeA))
@@ -414,7 +416,7 @@ public final class PolicyGames {
             + " commander damage " + commanderDamage + " library " + player.getLibrary().size();
     }
 
-    private static void load(Game game, Match match, Player player, Deck deck) {
+    static void load(Game game, Match match, Player player, Deck deck) {
         player.setTestMode(true);
         player.setFastFailInTestMode(false); // real-game behaviour: skip impossible AI blocks instead of throwing
         game.loadCards(deck.getCards(), player.getId());

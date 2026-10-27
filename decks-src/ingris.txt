@@ -1,0 +1,93 @@
+1 Light Up the Stage
+1 Agate Instigator
+1 Arena of Glory
+1 Arid Mesa
+1 Battle Hymn
+1 Big Apple, 3 a.m.
+1 Bitterbloom Bearer
+1 Bitterblossom
+1 Blackcleave Cliffs
+1 Blasphemous Act
+1 Blazemire Verge
+1 Blightstep Pathway
+1 Blood Crypt
+1 Bloodsoaked Insight
+1 Bloodstained Mire
+1 Boggart Trawler
+1 Chandra, Acolyte of Flame
+1 Chandra's Incinerator
+1 Chandra's Spitfire
+1 Chthonian Nightmare
+1 Command Tower
+1 Cryptborn Horror
+1 Dark Fortress
+1 Darkstar Augur
+1 Deadly Rollick
+1 Deflecting Swat
+1 Den of the Bugbear
+1 Dragonskull Summit
+1 Elegy Acolyte
+1 Fated Firepower
+1 Fell the Profane
+1 Florian, Voldaren Scion
+1 Francisco, Fowl Marauder
+1 Garna, Bloodfist of Keld
+1 General Kreat, the Boltbringer
+1 Generous Plunderer
+1 Gogo, Mysterious Mime
+1 Graven Cairns
+1 Great Train Heist
+1 Grim Hireling
+1 Haunted Ridge
+1 Hawkeye, Young Avenger
+1 Hope of Ghirapur
+1 Howlsquad Heavy
+1 Hypnotic Specter
+1 Impulsive Pilferer
+1 Krenko, Tin Street Kingpin
+1 Lagomos, Hand of Hatred
+1 Legion Warboss
+1 Lightning Greaves
+1 Loyal Apprentice
+1 Luxury Suite
+1 Malakir Rebirth
+1 Master of Barbs
+6 Mountain
+1 Neheb, the Eternal
+1 Ob Nixilis, Captive Kingpin
+1 Ojer Axonil, Deepest Might
+1 Preacher of the Schism
+1 Professional Face-Breaker
+1 Purphoros, God of the Forge
+1 Raucous Theater
+1 Samut, Hazoret's Champion
+1 Scalding Tarn
+1 Scheming Silvertongue
+1 Searslicer Goblin
+1 Shredder's Technique
+1 Siege-Gang Lieutenant
+1 Sinkhole Surveyor
+1 Skullclamp
+1 Smoldering Marsh
+1 Sokenzan, Crucible of Defiance
+1 Sol Ring
+1 Song of Totentanz
+1 Spiked Corridor // Torture Pit
+1 Springleaf Drum
+1 Sulfurous Springs
+1 Sundering Eruption
+4 Swamp
+1 Tempt with Vengeance
+1 Thor, Guardian of Midgard
+1 Tibalt's Trickery
+1 Tomik, Izzet Sparkmage
+1 Torbran, Thane of Red Fell
+1 Toxic Deluge
+1 Turbulent Crater
+1 Untimely Malfunction
+1 Urborg, Tomb of Yawgmoth
+1 Whip of Erebos
+1 Wildfire Elemental
+1 Ragavan, Nimble Pilferer
+
+1 Ingris Stingerquill

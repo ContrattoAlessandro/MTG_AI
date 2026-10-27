@@ -7,10 +7,12 @@ import mage.abilities.costs.mana.AlternateManaPaymentAbility;
 import mage.cards.Card;
 import mage.cards.Cards;
 import mage.choices.Choice;
+import mage.constants.Zone;
 import mage.game.Game;
 import mage.game.combat.CombatGroup;
 import mage.game.permanent.Permanent;
 import mage.players.Player;
+import mage.players.PlayerImpl;
 import mage.target.Target;
 import mage.util.CardUtil;
 import java.util.*;
@@ -83,12 +85,17 @@ public final class PolicyCandidates<T> {
     }
 
     /**
-     * As above; withMana adds the playable mana abilities last, flagged "mana": true
-     * (a person tapping for mana with nothing to pay, WebPlayer; never the policy).
+     * As above; withMana (a person, WebPlayer; never the policy) offers the abilities of every
+     * permanent, and adds the playable mana abilities last, flagged "mana": true (tapping for
+     * mana with nothing to pay).
      */
     public static PolicyCandidates<ActivatedAbility> priority(Player player, Game game, PolicyClient client, Set<String> rejected,
                                                               boolean withMana) {
-        List<ActivatedAbility> abilities = new ArrayList<>(player.getPlayable(game, true));
+        // XMage lists an ability once when several permanents have the same one ("{T}: Add {G}."
+        // on two different lands). The policy keeps that list; a person clicks a particular
+        // permanent, so every copy is offered.
+        List<ActivatedAbility> abilities = new ArrayList<>(withMana && player instanceof PlayerImpl
+            ? ((PlayerImpl) player).getPlayable(game, true, Zone.ALL, false) : player.getPlayable(game, true));
         abilities.removeIf(ability -> rejected.contains(abilityKey(ability)));
         Comparator<Ability> order = Comparator.comparing((Ability a) -> String.valueOf(a.getSourceId())).thenComparing(Ability::toString);
         List<ActivatedAbility> mana = new ArrayList<>();

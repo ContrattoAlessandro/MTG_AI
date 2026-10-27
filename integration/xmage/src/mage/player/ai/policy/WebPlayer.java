@@ -106,6 +106,19 @@ public final class WebPlayer extends PolicyPlayer {
 
     @Override public void initializeKnownDeck(Game game, UUID opponent) {
         super.initializeKnownDeck(game, opponent);
+        openBridge(game);
+    }
+
+    /**
+     * A seat at a table of any size (`mz lan`), against people and XMage's AI: there is no
+     * policy, so no policy service is needed (policyEndpoint may be null).
+     */
+    public void joinTable(Game game) {
+        startWithoutPolicy(game);
+        openBridge(game);
+    }
+
+    private void openBridge(Game game) {
         // The server holds a decision request for at most about 20 s.
         bridge = new PolicyClient(web, false).readTimeout(120000);
         log = new ArrayList<>();
@@ -124,7 +137,7 @@ public final class WebPlayer extends PolicyPlayer {
                     // XMage's log has no turn headers; the page shows these as separators.
                     turn[0] = game.getTurnNum();
                     Player active = game.getPlayer(game.getActivePlayerId());
-                    lines.add("@turn " + turn[0] + " " + (getId().equals(active.getId()) ? "you" : "opponent"));
+                    lines.add("@turn " + turn[0] + " " + side(active.getId()) + " " + active.getName());
                 }
                 lines.add(event.getMessage());
                 if (lines.size() > LOG_LINES) lines.remove(0);
@@ -283,7 +296,12 @@ public final class WebPlayer extends PolicyPlayer {
             game.getCombat().removeBlocker(blocker, game);
             again = true;
         }
-        List<UUID> attackers = new ArrayList<>(game.getCombat().getAttackers());
+        // Only the attackers coming at this player (or its planeswalkers and battles): at a
+        // table of more than two, the others are attacking someone else.
+        List<UUID> attackers = new ArrayList<>();
+        for (CombatGroup group : game.getCombat().getGroups()) {
+            if (defendingPlayerId.equals(group.getDefendingPlayerId())) attackers.addAll(group.getAttackers());
+        }
         Collections.sort(attackers);
         List<Map<String, Object>> options = new ArrayList<>();
         for (Permanent blocker : PolicyCandidates.blockers(this, game)) {
@@ -335,9 +353,15 @@ public final class WebPlayer extends PolicyPlayer {
 
     @Override public void finish(Game game, boolean terminal, boolean truncated) {
         if (bridge == null) return;
-        Player opponent = game.getPlayer(game.getOpponents(getId()).iterator().next());
-        String result = hasWon() ? "won" : hasLost() && opponent.hasLost() ? "draw" : hasLost() ? "lost"
-            : opponent.hasWon() ? "lost" : opponent.hasLost() ? "won" : truncated ? "turn limit" : "aborted";
+        boolean everyoneLost = true, otherWon = false, othersLost = true;
+        for (Player player : game.getPlayers().values()) {
+            everyoneLost &= player.hasLost();
+            if (player.getId().equals(getId())) continue;
+            otherWon |= player.hasWon();
+            othersLost &= player.hasLost();
+        }
+        String result = hasWon() ? "won" : hasLost() && everyoneLost ? "draw" : hasLost() ? "lost"
+            : otherWon ? "lost" : othersLost ? "won" : truncated ? "turn limit" : "aborted";
         bridge.request("POST", "/finish", PolicyEncoder.map("result", result, "state", snapshot(game, null)));
     }
 
@@ -636,7 +660,7 @@ public final class WebPlayer extends PolicyPlayer {
         switch (type) {
             case "cast": case "activate": case "pass":
                 return game.getActivePlayerId().equals(getId()) ? "Your turn: play a card or pass priority"
-                    : "Opponent's turn: respond or pass priority";
+                    : capitalized(whose(game.getActivePlayerId(), game)) + "turn: respond or pass priority";
             case "mulligan": return "Keep this hand or mulligan?";
             case "attack": return "Attack with " + source + "?";
             case "block": return "Block with " + source + "?";
@@ -701,20 +725,70 @@ public final class WebPlayer extends PolicyPlayer {
         Card card = game.getCard(id);
         Permanent permanent = game.getPermanent(id);
         UUID controller = permanent != null ? permanent.getControllerId() : card != null ? card.getOwnerId() : null;
-        String whose = controller == null ? "" : controller.equals(getId()) ? "your " : "opponent's ";
-        return zone == null ? "" : " (" + whose + zone.toString().toLowerCase(Locale.ROOT) + ")";
+        return zone == null ? "" : " (" + whose(controller, game) + zone.toString().toLowerCase(Locale.ROOT) + ")";
+    }
+
+    /** "your ", "opponent's " in a duel, or the player's name at a larger table ("Ann's "). */
+    private String whose(UUID playerId, Game game) {
+        if (playerId == null) return "";
+        if (playerId.equals(getId())) return "your ";
+        Player player = game.getPlayer(playerId);
+        return player == null || game.getPlayers().size() <= 2 ? "opponent's " : player.getName() + "'s ";
+    }
+
+    private static String capitalized(String text) {
+        return text.isEmpty() ? text : Character.toUpperCase(text.charAt(0)) + text.substring(1);
     }
 
     // ------------------------------------------------------------------- state
 
     private String side(UUID id) { return id == null ? null : id.equals(getId()) ? "you" : "opponent"; }
 
-    /** What this player may see: both boards, public zones, the own hand, hidden counts. */
+    private static String id(UUID id) { return id == null ? null : id.toString(); }
+
+    /**
+     * Every player in turn order, starting with this one (a duel: this player, then the
+     * opponent), including those out of the game: GameState.getPlayerList leaves them out,
+     * and the page still shows them (and the result once the game ends).
+     */
+    private List<Player> seating(Game game) {
+        List<Player> all = new ArrayList<>(game.getState().getPlayers().values());
+        int me = 0;
+        for (int i = 0; i < all.size(); i++) if (all.get(i).getId().equals(getId())) me = i;
+        List<Player> seated = new ArrayList<>(all.subList(me, all.size()));
+        seated.addAll(all.subList(0, me));
+        return seated;
+    }
+
+    /**
+     * Commander damage dealt to `player` by each other player's commanders (the highest per
+     * commander, by the id of the commander's owner); 21 from one commander loses.
+     */
+    private static Map<String, Object> commanderDamageTo(Player player, List<Player> seated, Game game) {
+        Map<String, Object> taken = new LinkedHashMap<>();
+        for (Player other : seated) {
+            if (other == player) continue;
+            int most = 0;
+            for (UUID commander : game.getCommandersIds(other, CommanderCardType.ANY, false)) {
+                mage.watchers.common.CommanderInfoWatcher watcher =
+                    game.getState().getWatcher(mage.watchers.common.CommanderInfoWatcher.class, commander);
+                if (watcher != null) most = Math.max(most, watcher.getDamageToPlayer().getOrDefault(player.getId(), 0));
+            }
+            taken.put(other.getId().toString(), most);
+        }
+        return taken;
+    }
+
+    /**
+     * What this player may see: every board, public zones, the own hand, hidden counts.
+     * Players and objects carry their side ("you" or "opponent", as a duel shows them)
+     * and, for tables of more than two, the id of the player they belong to.
+     */
     private Map<String, Object> snapshot(Game game, Collection<Card> visible) {
         List<Map<String, Object>> players = new ArrayList<>();
         Player me = game.getPlayer(getId());
-        Player enemy = game.getPlayer(game.getOpponents(getId()).iterator().next());
-        for (Player player : Arrays.asList(me, enemy)) {
+        List<Player> seated = seating(game);
+        for (Player player : seated) {
             List<Map<String, Object>> graveyard = new ArrayList<>(), exile = new ArrayList<>(), command = new ArrayList<>();
             for (Card card : player.getGraveyard().getCards(game)) graveyard.add(card(card, game));
             for (ExileZone zone : game.getExile().getExileZones()) {
@@ -725,13 +799,9 @@ public final class WebPlayer extends PolicyPlayer {
             for (UUID commander : game.getCommandersIds(player, CommanderCardType.ANY, false)) {
                 if (game.getState().getZone(commander) == Zone.COMMAND) command.add(card(game.getCard(commander), game));
             }
+            Map<String, Object> commanderDamageBy = commanderDamageTo(player, seated, game);
             int commanderDamage = 0;
-            Player other = player == me ? enemy : me;
-            for (UUID commander : game.getCommandersIds(other, CommanderCardType.ANY, false)) {
-                mage.watchers.common.CommanderInfoWatcher watcher =
-                    game.getState().getWatcher(mage.watchers.common.CommanderInfoWatcher.class, commander);
-                if (watcher != null) commanderDamage = Math.max(commanderDamage, watcher.getDamageToPlayer().getOrDefault(player.getId(), 0));
-            }
+            for (Object taken : commanderDamageBy.values()) commanderDamage = Math.max(commanderDamage, (Integer) taken);
             mage.players.ManaPool pool = player.getManaPool();
             Card top = visibleTop(player, game);
             players.add(PolicyEncoder.map("id", player.getId().toString(), "side", side(player.getId()),
@@ -739,7 +809,7 @@ public final class WebPlayer extends PolicyPlayer {
                 "poison", player.getCountersCount(mage.counters.CounterType.POISON),
                 "hand", player.getHand().size(), "library", player.getLibrary().size(),
                 "library_top", top == null ? Collections.emptyList() : Collections.singletonList(card(top, game)),
-                "commander_damage", commanderDamage,
+                "commander_damage", commanderDamage, "commander_damage_by", commanderDamageBy,
                 "mana", PolicyEncoder.map("W", pool.getWhite(), "U", pool.getBlue(), "B", pool.getBlack(),
                     "R", pool.getRed(), "G", pool.getGreen(), "C", pool.getColorless()),
                 "graveyard", graveyard, "exile", exile, "command", command,
@@ -790,6 +860,7 @@ public final class WebPlayer extends PolicyPlayer {
             links.remove(object.getId().toString());
             entry.put("targets", new ArrayList<>(links.values()));
             entry.put("controller", side(object.getControllerId()));
+            entry.put("controller_id", id(object.getControllerId()));
             stack.add(entry);
         }
         List<Map<String, Object>> combat = new ArrayList<>();
@@ -798,7 +869,7 @@ public final class WebPlayer extends PolicyPlayer {
             for (UUID id : group.getAttackers()) attackers.add(id.toString());
             for (UUID id : group.getBlockers()) blockers.add(id.toString());
             combat.add(PolicyEncoder.map("attackers", attackers, "blockers", blockers,
-                "defender", group.getDefenderId() == null ? null : group.getDefenderId().toString()));
+                "defender", id(group.getDefenderId()), "defending_player", id(group.getDefendingPlayerId())));
         }
         // Cards this choice lets the player look at (a library search, a revealed hand).
         List<Map<String, Object>> revealed = new ArrayList<>();
@@ -810,6 +881,7 @@ public final class WebPlayer extends PolicyPlayer {
         synchronized (seen) { seenGroups = new ArrayList<>(seen); }
         return PolicyEncoder.map("turn", game.getTurnNum(), "step", step == null ? "" : step.name(),
             "active", side(game.getActivePlayerId()), "priority", side(game.getState().getPriorityPlayerId()),
+            "active_id", id(game.getActivePlayerId()), "priority_id", id(game.getState().getPriorityPlayerId()),
             "players", players, "battlefield", battlefield, "hand", hand, "stack", stack, "combat", combat,
             "revealed", revealed, "seen", seenGroups, "log", lines);
     }
@@ -832,6 +904,7 @@ public final class WebPlayer extends PolicyPlayer {
         if (player != null) {
             place.put("zone", "player");
             place.put("owner", side(id));
+            place.put("owner_id", id.toString());
             return place;
         }
         Zone zone = game.getState().getZone(id);
@@ -841,6 +914,7 @@ public final class WebPlayer extends PolicyPlayer {
         StackObject spell = game.getStack().getStackObject(id);
         UUID owner = permanent != null ? permanent.getControllerId() : spell != null ? spell.getControllerId() : card != null ? card.getOwnerId() : null;
         place.put("owner", side(owner));
+        place.put("owner_id", id(owner));
         boolean hidden = zone == Zone.LIBRARY || zone == Zone.HAND && !getId().equals(owner);
         MageObject object = game.getObject(id);
         if (!hidden && object != null) place.put("name", object instanceof Card && ((Card) object).isFaceDown(game) ? "Face-down card" : object.getName());
@@ -893,6 +967,7 @@ public final class WebPlayer extends PolicyPlayer {
         if (object instanceof Permanent) {
             Permanent permanent = (Permanent) object;
             view.put("controller", side(permanent.getControllerId()));
+            view.put("controller_id", id(permanent.getControllerId()));
             view.put("tapped", permanent.isTapped());
             view.put("phased_out", !permanent.isPhasedIn());
             view.put("sick", permanent.isCreature(game) && permanent.hasSummoningSickness());

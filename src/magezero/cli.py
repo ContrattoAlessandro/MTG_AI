@@ -9,6 +9,7 @@
     mz serve           the policy inference service
     mz play            play against a checkpoint in the XMage client
     mz web             play against a checkpoint in the browser
+    mz lan             host a game among friends on the local network
 
 Heavy imports happen inside each command, so `mz --help` stays fast.
 """
@@ -167,6 +168,14 @@ def cmd_web(args: argparse.Namespace) -> None:
 
     run(args.checkpoint, xmage=args.xmage, port=args.port, policy_port=args.policy_port, device=args.device,
         heap=args.heap, torch_threads=args.torch_threads, open_browser=not args.no_browser)  # fmt: skip
+
+
+def cmd_lan(args: argparse.Namespace) -> None:
+    """Host a game among friends on the local network."""
+    from .tabletop.server import run
+
+    run(xmage=args.xmage, host=args.host, port=args.port, seats=args.seats, heap=args.heap,
+        open_browser=not args.no_browser)  # fmt: skip
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -352,6 +361,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--heap", default="4G", help="engine Java heap")
     p.add_argument("--no-browser", action="store_true", help="do not open a browser window")
     p.set_defaults(func=cmd_web)
+
+    p = sub.add_parser("lan", help="host a game among friends on the local network (people and XMage bots)")
+    p.add_argument("--host", default="0.0.0.0", help="address to listen on (127.0.0.1: this computer only)")
+    p.add_argument("--port", type=int, default=8765, help="web server port; updates use the next port")
+    p.add_argument("--seats", type=int, default=4, choices=(2, 3, 4), help="seats at the table")
+    p.add_argument("--xmage", default="xmage", help="XMage distribution built by integration/xmage/build.py")
+    p.add_argument("--heap", default="6G", help="engine Java heap")
+    p.add_argument("--no-browser", action="store_true", help="do not open a browser window")
+    p.set_defaults(func=cmd_lan)
     return parser
 
 

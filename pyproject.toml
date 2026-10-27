@@ -13,6 +13,7 @@ dependencies = [
     "torch>=2.1",
     "flask>=2.3",
     "waitress>=2.1",
+    "websockets>=13",
     "pyyaml>=6.0",
 ]
 classifiers = [

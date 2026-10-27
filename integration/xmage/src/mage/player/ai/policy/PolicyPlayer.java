@@ -108,6 +108,18 @@ public class PolicyPlayer extends ComputerPlayer implements RecordingPlayer {
     }
 
     /**
+     * Starts a game in which a subclass takes every decision itself (WebPlayer at a table
+     * of any size): no policy session, no encoder and no card catalog.
+     */
+    protected void startWithoutPolicy(Game game) {
+        encoder = null;
+        encodedGame = game.getId();
+        labels = new ArrayList<>();
+        rejectedSteps = new ArrayList<>();
+        mulligans = 0;
+    }
+
+    /**
      * Server games never call initializeKnownDeck. GameImpl.init calls beginTurn for
      * every player before shuffling and opening hands, so the announced deck lists are
      * read at the same point as in self-play. A new game of a match re-initializes.
@@ -190,7 +202,7 @@ public class PolicyPlayer extends ComputerPlayer implements RecordingPlayer {
             // choices (the state is rolled back). Like its own AI, treat that as no
             // action, and drop the ability from this priority window's candidates.
             rejected.add(PolicyCandidates.abilityKey(chosen));
-            for (int step = firstStep; step < encoder.decisions(); step++) rejectedSteps.add(step);
+            if (encoder != null) for (int step = firstStep; step < encoder.decisions(); step++) rejectedSteps.add(step);
         }
         return true;
     }

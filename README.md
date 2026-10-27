@@ -18,6 +18,7 @@ This repository is a redesign of [WillWroble/MageZero](https://github.com/WillWr
 | Training runs | Resumable self-play generations with a historical league, a gauntlet piloted by XMage's AI, crash recovery, disk retention and periodic evaluation with best-checkpoint selection. | [Long runs](docs/long-run.md) |
 | Engine adapter | Java classes compiled against official, unmodified XMage releases: the policy player, observation encoder, history watcher, teacher recorder, batch game runner, catalog exporter and the browser player, plus two optional engine fixes. | [XMage integration](docs/xmage-integration.md) |
 | Play | The trained agent in the browser (`mz web`) or in the XMage client (`mz play`). | [Playing the agent](docs/playing-the-agent.md), [Playing in the browser](docs/web-play.md) |
+| Play with friends | Two to four people on the local network, with XMage bots in the empty seats (`mz lan`). | [Playing with friends](docs/lan-play.md) |
 
 ## Repository layout
 
@@ -38,6 +39,7 @@ src/magezero/          Python package (the `mz` command)
   league.py, runner.py   historical opponents and resumable self-play runs
   diagnostics.py         hand-prediction evaluation and decision traces
   webplay.py, web/       `mz web`: play against a checkpoint in the browser
+  tabletop/              `mz lan`: a table among friends on the local network
   cli.py                 command-line interface
 integration/xmage/     Java adapter, optional engine fixes and the build script (see docs/xmage-integration.md)
 configs/               model, training and game configurations (see configs/README.md)
@@ -144,6 +146,7 @@ mz play --checkpoint artifacts/winota-agent.pt --greedy
 | [Long runs](docs/long-run.md) | Unattended training runs: recovery, retention, gauntlet and evaluation |
 | [XMage integration](docs/xmage-integration.md) | Building the engine, engine patches, catalogs, Commander Duel, human play, coverage limits |
 | [Playing in the browser](docs/web-play.md) | `mz web`: starting the app, the table, decisions, keyboard, auto-pass, troubleshooting |
+| [Playing with friends](docs/lan-play.md) | `mz lan`: hosting a table, the lobby, the opponent tiles, how it works |
 | [Earlier pilots](docs/history/README.md) | Reports and raw measurements of the pilots that preceded the Commander run |
 
 ## Scope and limitations

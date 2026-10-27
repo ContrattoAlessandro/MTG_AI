@@ -1,0 +1,99 @@
+1 Adarkar Wastes
+1 Aether Spellbomb
+1 An Offer You Can't Refuse
+1 Ancient Den
+1 Arcane Denial
+1 Arcane Signet
+1 Arid Mesa
+1 Battlefield Forge
+1 Clifftop Retreat
+1 Command Tower
+1 Counterspell
+1 Craterclaw Colossus
+1 Crystal Skull, Isu Spyglass
+1 Cyclonic Rift
+1 Delay
+1 Depthshaker Titan
+1 Dovin's Veto
+1 Emry, Lurker of the Loch
+1 Esper Sentinel
+1 Exotic Orchard
+1 Fabricate
+1 Fateful Discovery
+1 Fellwar Stone
+1 Fierce Guardianship
+1 Flash Photography
+1 Flooded Strand
+1 Flusterstorm
+1 Gemstone Caverns
+1 Glacial Fortress
+1 Goblin Engineer
+1 Great Furnace
+1 Hallowed Fountain
+1 Harmonic Prodigy
+1 Heliod's Intervention
+1 Hidden Strings
+1 Illustrious Wanderglyph
+1 Imposter Mech
+1 Inspiring Vantage
+1 Into the Flood Maw
+2 Island
+1 Izzet Signet
+1 Lotus Petal
+1 Magda, Brazen Outlaw
+1 Mister Fantastic, Reed Richards
+1 Mountain
+1 Otawara, Soaring City
+1 Path to Exile
+2 Plains
+1 Polluted Delta
+1 Portable Hole
+1 Professional Face-Breaker
+1 Ragavan, Nimble Pilferer
+1 Relic of Legends
+1 Repurposing Bay
+1 Reshape
+1 Sacred Foundry
+1 Scalding Tarn
+1 Scour for Scrap
+1 Sea of Clouds
+1 Seachrome Coast
+1 Seat of the Synod
+1 Sensei's Divining Top
+1 Sevinne's Reclamation
+1 Shivan Reef
+1 Shorikai, Genesis Engine
+1 Silence
+1 Sink into Stupor
+1 Skullclamp
+1 Sol Ring
+1 Soul-Guide Lantern
+1 Spectator Seating
+1 Spire of Industry
+1 Spirebluff Canal
+1 Springleaf Drum
+1 Starting Town
+1 Steam Vents
+1 Steelshaper's Gift
+1 Stridehangar Automaton
+1 Sulfur Falls
+1 Swan Song
+1 Swords to Plowshares
+1 Talisman of Conviction
+1 Talisman of Creativity
+1 Talisman of Progress
+1 Tataru Taru
+1 Tezzeret the Seeker
+1 Tezzeret, Cruel Captain
+1 The Mind Stone
+1 The One Ring
+1 The Reality Chip
+1 The Theorist, Jace Beleren
+1 Thraben Charm
+1 Training Center
+1 Urza's Saga
+1 Valley Floodcaller
+1 Whir of Invention
+1 Wizard's Staff
+
+1 Vraska, Soul of Stone

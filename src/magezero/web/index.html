@@ -562,6 +562,7 @@ aside { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; 
 <div class="banner" id="banner"><div id="bannerText"></div></div>
 <div class="toast" id="toast"></div>
 <div class="scrim" id="scrim"><div class="dialog" id="dialog"></div></div>
+<!-- mz:extensions -->
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
@@ -740,15 +741,39 @@ async function post(path, body) {
   return data;
 }
 function toast(msg) { const t = $("toast"); t.textContent = msg; t.style.display = "block"; clearTimeout(toast.t); toast.t = setTimeout(() => (t.style.display = "none"), 3500); }
+// An extension script (`mz lan`: lan.js) may set window.mzTable before this script runs:
+// connect(accept) delivers the views instead of polling, lens(view) adapts each view before
+// it is drawn, afterRender(view) draws its own parts, openLobby() sets up a game,
+// chooseDefender(options, event, choose) asks whom a creature attacks, anchorFor(place) is
+// where the stack's lines point for an object the page does not draw.
+const mzTable = window.mzTable || {};
+function accept(next) {
+  if (version != null && next.version === version) return;
+  cleanDecision(next.decision); view = mzTable.lens ? mzTable.lens(next) : next; version = next.version; render(); autoPass();
+}
 async function poll() {
+  if (mzTable.connect) return mzTable.connect(accept);
   for (;;) {
     try {
       const r = await fetch("/api/state" + (version == null ? "" : "?since=" + version));
-      const next = await r.json();
-      if (version == null || next.version !== version) { cleanDecision(next.decision); view = next; version = next.version; render(); autoPass(); }
+      accept(await r.json());
     } catch (e) { setStatus("err", "Lost the connection to the server, retrying…"); await new Promise((r) => setTimeout(r, 1500)); }
   }
 }
+// Players' names as the engine gives them: "Human" and "MageZero" against the bot. At a larger
+// table the state lists everyone in `everyone`, and "opponent" is the player in view.
+const everyone = (s) => (s && (s.everyone || s.players)) || [];
+const playerById = (s, id) => everyone(s).find((p) => p.id === id);
+const myName = (s) => (everyone(s).find((p) => p.side === "you") || {}).name || "Human";
+const oppName = (s = view && view.state) => ((s && s.players.find((p) => p.side === "opponent")) || {}).name || "MageZero";
+const shortName = (name) => (name === "MageZero" ? "MZ" : name);
+const possessive = (name) => name + "'s";
+// Whose turn it is and who has priority, when it is not you.
+const activeName = (s) => (playerById(s, s.active_id) || {}).name || oppName(s);
+const priorityName = (s) => (playerById(s, s.priority_id) || {}).name || oppName(s);
+// The player the page is waiting for: whoever has priority, else whoever's turn it is (not you).
+const waitingFor = (s) => [playerById(s, s.priority_id), playerById(s, s.active_id), s.players.find((p) => p.side === "opponent")]
+  .find((p) => p && p.side !== "you");
 // XMage writes labels and prompts with its client's markup ("<font …>Ragavan</font> [ab2]",
 // "<i>reminder</i>"); a label's "(source: …)" repeats the prompt's source.
 function cleanDecision(d) {
@@ -809,7 +834,7 @@ function indexState(s) {
   byId = new Map();
   const add = (c) => c && c.id && byId.set(c.id, c);
   s.battlefield.forEach(add); s.hand.forEach(add); s.stack.forEach(add); s.revealed.forEach(add);
-  s.players.forEach((p) => { byId.set(p.id, { id: p.id, name: p.side === "you" ? "You" : "MageZero", player: p.side }); p.graveyard.forEach(add); p.exile.forEach(add); p.command.forEach(add); });
+  everyone(s).forEach((p) => { byId.set(p.id, { id: p.id, name: p.side === "you" ? "You" : p.name || "MageZero", player: p.side }); p.graveyard.forEach(add); p.exile.forEach(add); p.command.forEach(add); });
 }
 function optionsFor(ids) {
   const d = view && view.decision; if (!d || answered.has(d.decision) || isDeclare(d)) return [];
@@ -926,20 +951,20 @@ function fitField(field) {
 function artInto(el, name) { if (name) img(name, (u) => (el.style.backgroundImage = `url("${u.a}")`)); }
 function seat(p, s) {
   const mine = p.side === "you";
-  const deck = view.decks && view.decks[p.side];
+  const deck = (view.decks && view.decks[p.side]) || p.deck;
   const avatar = h("div", { class: "avatar" });
   artInto(avatar, (p.command[0] && p.command[0].name) || (deck && deck.commander));
-  const prev = lastLife[p.side];
+  const prev = lastLife[p.id];
   const life = h("div", { class: "life" + (prev != null && p.life < prev ? " hit" : prev != null && p.life > prev ? " heal" : ""), title: "Life total" }, h("b", null, p.life), h("span", null, "life"));
-  lastLife[p.side] = p.life;
+  lastLife[p.id] = p.life;
   const box = h("div", { class: `seat ${p.side}` + (s.active === p.side ? " active" : "") },
-    h("div", { class: "who" }, avatar, h("div", null, h("div", { class: "name" }, mine ? "You" : "MageZero"),
+    h("div", { class: "who" }, avatar, h("div", null, h("div", { class: "name" }, mine ? "You" : p.name || "MageZero"),
       h("div", { class: "sub" }, deck ? cap(deck.name) : mine ? "Human" : "Policy bot")), life));
   // data-zone lets the stack's links point at a zone when the card itself is not on the table.
   const pile = (key, label, cards) => {
     const can = optionsFor(cards.map((c) => c.id)).length > 0;
     return h("button", { class: "chip" + (can ? " can" : ""), "data-zone": `${key}-${p.side}`, title: can ? "Choose a card from here" : "View the " + label.toLowerCase(),
-      onclick: () => zone(`${mine ? "Your" : "MageZero's"} ${label.toLowerCase()}`, cards) }, icon(key), label, h("b", null, cards.length));
+      onclick: () => zone(`${mine ? "Your" : possessive(p.name || "MageZero")} ${label.toLowerCase()}`, cards) }, icon(key), label, h("b", null, cards.length));
   };
   const chips = h("div", { class: "chips" },
     h("div", { class: "chip", title: "Cards in hand", "data-zone": "hand-" + p.side }, icon("hand"), "Hand", h("b", null, p.hand)),
@@ -1022,10 +1047,11 @@ function confirmOrder() {
   setTimeout(() => answer(ord.placed.join(","), "trigger order"), tiles.length * 170 + 380);
 }
 function placeName(t) {
-  if (t.zone === "player") return t.owner === "you" ? "you" : "MageZero";
+  const owner = (playerById(view.state, t.owner_id) || {}).name || oppName();
+  if (t.zone === "player") return t.owner === "you" ? "you" : owner;
   const name = t.name || "a card";
   if (!t.zone || t.zone === "battlefield" || t.zone === "stack") return name;
-  return `${name} (${t.owner === "you" ? "your" : "MageZero's"} ${t.zone})`;
+  return `${name} (${t.owner === "you" ? "your" : possessive(owner)} ${t.zone})`;
 }
 let stackFocus = null, stackPos = load("stackPos", null);
 function stackTile(o, top, nums) {
@@ -1087,7 +1113,9 @@ for (const type of ["dragover", "drop"]) document.addEventListener(type, (e) => 
 function placeStack() {
   const panel = $("stackpanel"), table = $("table");
   // By default in the top-right corner of the board, where the left-aligned lanes leave room.
-  const x = stackPos ? stackPos.x : table.clientWidth - panel.offsetWidth - 14, y = stackPos ? stackPos.y : 12;
+  // An extension may keep the right edge of that corner (mzTable.cornerWidth: lan.js's seat column).
+  const right = 14 + (mzTable.cornerWidth ? mzTable.cornerWidth() : 0);
+  const x = stackPos ? stackPos.x : table.clientWidth - panel.offsetWidth - right, y = stackPos ? stackPos.y : 12;
   panel.style.left = Math.max(4, Math.min(x, table.clientWidth - 160)) + "px";
   panel.style.top = Math.max(4, Math.min(y, table.clientHeight - 80)) + "px";
 }
@@ -1154,6 +1182,9 @@ function anchorEl(place) {
     const r = el.getBoundingClientRect();
     if (r.width && r.height) return el;
   }
+  // Something of a player whose board is not drawn (lan.js: an opponent out of view).
+  const elsewhere = mzTable.anchorFor && mzTable.anchorFor(place);
+  if (elsewhere) return elsewhere;
   const z = (view && view.state && zoneOf(place.id, view.state)) || place;
   const key = ZONE_KEY[z.zone];
   return key && z.owner ? document.querySelector(`[data-zone="${key}-${z.owner}"]`) : null;
@@ -1350,6 +1381,7 @@ function pickAttacker(id, own, ev) {
   const choose = (o) => { plan.picks.set(id, [o.target]); turning = { id }; render(); };
   if (plan.picks.has(id)) { plan.picks.delete(id); turning = { id }; render(); }
   else if (own.length === 1) choose(own[0]);
+  else if (mzTable.chooseDefender) mzTable.chooseDefender(own, ev, choose);  // a table of several players
   else showMenu(own, ev, choose);  // MageZero or one of its planeswalkers
 }
 function allAttack() {
@@ -1424,10 +1456,10 @@ const seenQueue = [];
 function libraryChip(p, mine) {
   const top = p.library_top || [];
   const can = optionsFor(top.map((c) => c.id)).length > 0;
-  const whose = mine ? "Your" : "MageZero's";
+  const whose = mine ? "Your" : possessive(p.name || "MageZero");
   return h("button", { class: "chip" + (can ? " can" : ""), "data-zone": "library-" + p.side,
     title: top.length ? (can ? "Play the top card from here" : "Look at the top card") : "No card of this library is visible to you",
-    onclick: () => top.length ? zone(`${whose} library: top card`, top) : toast(`No card of ${mine ? "your" : "MageZero's"} library is visible to you.`) },
+    onclick: () => top.length ? zone(`${whose} library: top card`, top) : toast(`No card of ${mine ? "your" : whose} library is visible to you.`) },
     icon("library"), "Library", top.length ? h("span", { class: "eye" }, icon("eye")) : null, h("b", null, p.library));
 }
 function viewer(label, title, cards, buttons, hideable) {
@@ -1476,8 +1508,8 @@ function renderFlow(s, started) {
   const d = view.decision, mine = !!(d && isPriority(d) && !answered.has(d.decision));
   const turn = h("div", { class: "turnbox " + (started ? s.active : ""), title: "Turn number and whose turn it is" },
     h("small", null, !started ? "Pre-game" : s.active === "you" ? "Your turn" : "Opp turn"), h("b", null, started ? "T" + s.turn : "—"),
-    h("i", null, !started ? "Mulligans" : s.active === "you" ? "You" : "MageZero"));
-  const prio = started && s.priority ? h("div", { class: "prio " + (mine ? "mine" : s.priority), title: "Who has priority" }, s.priority === "you" ? "Your priority" : "MZ priority") : null;
+    h("i", null, !started ? "Mulligans" : s.active === "you" ? "You" : activeName(s)));
+  const prio = started && s.priority ? h("div", { class: "prio " + (mine ? "mine" : s.priority), title: "Who has priority" }, s.priority === "you" ? "Your priority" : shortName(priorityName(s)) + " priority") : null;
   const steps = h("div", { class: "steps " + (s.active || "") });
   for (const [group, list] of FLOW) {
     if (group) steps.append(h("div", { class: "grp" }, group));
@@ -1508,6 +1540,7 @@ function render() {
   renderDecision(s, d);
   renderViewer(s, d);
   renderOverlays(s);
+  if (mzTable.afterRender) mzTable.afterRender(view);
   scheduleLinks();
   if (hovered && !byId.has(hovered)) { hovered = null; hidePreview(); }
 }
@@ -1523,7 +1556,7 @@ function renderEmpty() {
 function renderTable(s) {
   indexState(s);
   const me = s.players.find((p) => p.side === "you"), opp = s.players.find((p) => p.side === "opponent");
-  $("oppRail").replaceChildren(seat(opp, s));
+  $("oppRail").replaceChildren(...(opp ? [seat(opp, s)] : []));  // a state without an opponent must not stop the page
   $("myRail").replaceChildren(seat(me, s));
   const opf = s.battlefield.filter((c) => c.controller === "opponent"), myf = s.battlefield.filter((c) => c.controller === "you");
   $("oppField").replaceChildren(...(opf.length ? lanes(opf, true) : [h("div", { class: "empty-field" })]));
@@ -1548,7 +1581,7 @@ function renderTable(s) {
   const key = s.turn + ":" + s.active;
   if (key !== lastTurnKey) turnChangedAt = performance.now();
   if (lastTurnKey !== null && key !== lastTurnKey && s.turn > 0) {
-    const b = $("banner"); b.className = "banner " + s.active; $("bannerText").textContent = s.active === "you" ? "Your turn" : "MageZero's turn";
+    const b = $("banner"); b.className = "banner " + s.active; $("bannerText").textContent = s.active === "you" ? "Your turn" : possessive(activeName(s)) + " turn";
     void b.offsetWidth; b.classList.add("show");
   }
   lastTurnKey = key;
@@ -1557,7 +1590,7 @@ function renderTable(s) {
 let logStick = true;
 $("log").addEventListener("scroll", () => { const l = $("log"); logStick = l.scrollHeight - l.scrollTop - l.clientHeight < 40; });
 function renderLog(s) {
-  const log = $("log"), lines = s.log;
+  const log = $("log"), lines = s.log, names = logNames(s);
   const tail = lines.length + "|" + (lines[lines.length - 1] || "");
   if (tail === logTail) return;
   // New lines are those after the previous last line (the server keeps a sliding window).
@@ -1568,45 +1601,59 @@ function renderLog(s) {
     // XMage logs a land drop twice: "puts X from hand onto the Battlefield", then "plays X".
     const put = /^(\S+) puts? (.+) from hand onto the Battlefield$/.exec(tidy(raw));
     if (put && i + 1 < lines.length && tidy(lines[i + 1]).startsWith(`${put[1]} play`)) return null;
-    const m = /^@turn (\d+) (\w+)/.exec(raw);
-    if (m) return h("div", { class: "tn" }, h("b", null, "Turn " + m[1]), m[2] === "you" ? "You" : "MageZero");
+    const m = /^@turn (\d+) (\w+)(?: (.+))?/.exec(raw);
+    if (m) return h("div", { class: "tn" }, h("b", null, "Turn " + m[1]), m[2] === "you" ? "You" : m[3] || "MageZero");
     const text = tidy(raw);
-    const who = /^Human\b/.test(text) ? "you" : /^MageZero\b/.test(text) ? "opponent" : "";
-    const html = esc(youVoice(text)).replace(/\b(You|Your|you)\b/g, '<span class="pn-you">$1</span>').replace(/\bMageZero\b/g, '<span class="pn-bot">MageZero</span>');
+    const who = names.me.test(text) ? "you" : names.others && names.others.test(text) ? "opponent" : "";
+    let html = esc(youVoice(text, s)).replace(/\b(You|Your|you)\b/g, '<span class="pn-you">$1</span>');
+    if (names.anyOther) html = html.replace(names.anyOther, '<span class="pn-bot">$1</span>');
     const end = /has (won|lost) the game|has conceded/.test(text);
     return h("div", { class: "ln " + who + (logTail && i >= firstNew ? " fresh" : "") + (end ? " end" : ""), html });
   }).filter(Boolean));
   if (logStick || !logTail) log.scrollTop = log.scrollHeight;
-  // Spotlight the spells MageZero casts, one after another.
-  if (logTail) for (const raw of lines.slice(firstNew)) {
-    const cast = /^MageZero casts (.+?)(?: from [a-z]+| targeting .*)?$/.exec(tidy(raw));
-    if (cast) spotlight(cast[1].replace(/ targeting.*$/, ""));
+  // Spotlight the spells the other players cast, one after another.
+  if (logTail && names.casts) for (const raw of lines.slice(firstNew)) {
+    const cast = names.casts.exec(tidy(raw));
+    if (cast) spotlight(cast[2].replace(/ targeting.*$/, ""), cast[1]);
   }
   logTail = tail;
 }
+// Patterns for the players' names in the log: lines that start with them, the other names
+// anywhere, and the spells the others cast.
+const reEscape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function logNames(s) {
+  const others = everyone(s).filter((p) => p.side !== "you").map((p) => reEscape(p.name)).join("|");
+  return {
+    me: new RegExp(`^${reEscape(myName(s))}\\b`),
+    others: others ? new RegExp(`^(?:${others})\\b`) : null,
+    anyOther: others ? new RegExp(`\\b(${others})\\b`, "g") : null,
+    casts: others ? new RegExp(`^(${others}) casts (.+?)(?: from [a-z]+| targeting .*)?$`) : null,
+  };
+}
 // XMage writes the log in the third person ("Human draws a card"); address the player instead.
 const IRREGULAR = { has: "have", is: "are", was: "were", does: "do" };
-function youVoice(text) {
-  return text.replace(/\bHuman's\b/g, "Your").replace(/\bHuman (\w+)\b/g, (m, verb) => {
+function youVoice(text, s) {
+  const me = reEscape(myName(s));
+  return text.replace(new RegExp(`\\b${me}'s\\b`, "g"), "Your").replace(new RegExp(`\\b${me} (\\w+)\\b`, "g"), (m, verb) => {
     const v = IRREGULAR[verb] || (/(ch|sh|ss|x)es$/.test(verb) ? verb.slice(0, -2) : /[^s]s$/.test(verb) ? verb.slice(0, -1) : verb);
     return "You " + v;
-  }).replace(/\bHuman\b/g, "you").replace(/^you\b/, "You");
+  }).replace(new RegExp(`\\b${me}\\b`, "g"), "you").replace(/^you\b/, "You");
 }
 const spotQueue = []; let spotBusy = false;
-function spotlight(name) { if (spotQueue.length < 4) spotQueue.push(name); if (!spotBusy) nextSpot(); }
+function spotlight(name, who) { if (spotQueue.length < 4) spotQueue.push([name, who]); if (!spotBusy) nextSpot(); }
 function nextSpot() {
-  const name = spotQueue.shift();
+  const [name, who] = spotQueue.shift() || [];
   if (!name) { spotBusy = false; return; }
   spotBusy = true;
   const card = cardFace({ name, rules: [] });
-  const el = h("div", { class: "spot" }, card, h("span", null, "MageZero casts"));
+  const el = h("div", { class: "spot" }, card, h("span", null, `${who} casts`));
   $("table").append(el);
   setTimeout(() => { el.remove(); nextSpot(); }, 2200);
 }
 function optThumb(o) {
   const ref = byId.get(o.target) || byId.get(o.source);
   const th = h("div", { class: "thumb" });
-  if (ref && ref.player) { th.textContent = ref.player === "you" ? "You" : "MZ"; th.style.cssText = `font-size:11px;color:${ref.player === "you" ? "var(--you)" : "var(--bot)"}`; }
+  if (ref && ref.player) { th.textContent = ref.player === "you" ? "You" : shortName(ref.name); th.style.cssText = `font-size:11px;color:${ref.player === "you" ? "var(--you)" : "var(--bot)"}`; }
   else if (ref && !isHidden(ref)) (isTokenName(ref) ? tokenImg : img)(ref.name, (u) => (th.style.backgroundImage = `url("${u.a}")`));
   else th.textContent = o.type === "amount" ? "#" : "•";
   return th;
@@ -1657,9 +1704,9 @@ function renderDecision(s, d) {
   if (!d) {
     let body;
     if (view.status === "playing") {
-      const av = h("div", { class: "avatar" });
-      artInto(av, view.decks && view.decks.opponent.commander);
-      body = h("div", { class: "thinking" }, av, h("div", null, h("div", { style: "font-weight:600;color:var(--text)" }, s ? "MageZero is playing" : "Setting up the game"), h("span", { class: "dots" }, h("i"), h("i"), h("i"))));
+      const av = h("div", { class: "avatar" }), them = s && waitingFor(s);
+      artInto(av, view.decks ? view.decks.opponent.commander : them && them.deck && them.deck.commander);
+      body = h("div", { class: "thinking" }, av, h("div", null, h("div", { style: "font-weight:600;color:var(--text)" }, s ? `${(them && them.name) || oppName(s)} is playing` : "Setting up the game"), h("span", { class: "dots" }, h("i"), h("i"), h("i"))));
     } else {
       body = h("div", { class: "prompt", style: "color:var(--text-2);font-weight:500" }, view.status === "over" ? "The game is over." : view.status === "starting" ? "Warming up the engine…" : "No game in progress.");
     }
@@ -1733,7 +1780,7 @@ function renderDecision(s, d) {
     const label = new Map(d.options.map((o) => [o.id, o.label]));
     kids.push(h("div", { class: "hintline" }, picks.length ? picks.map((id) => label.get(id)).join(" · ") : atk ? "No attackers yet." : "No blockers yet."));
     const acts = [h("button", { class: "btn gold", onclick: () => declare("click") }, "Pass priority", h("span", { class: "kbd" }, "Space"))];
-    if (atk) acts.push(h("button", { class: "btn", title: "Every creature that can attack attacks MageZero", onclick: allAttack }, "All attack"));
+    if (atk) acts.push(h("button", { class: "btn", title: `Every creature that can attack attacks ${oppName()}`, onclick: allAttack }, "All attack"));
     if (picks.length) acts.push(h("button", { class: "btn", onclick: () => { plan.picks.clear(); arming = null; render(); } }, atk ? "Clear" : "Clear blocks"));
     kids.push(h("div", { class: "actions" }, acts));
     primary = () => declare("key");
@@ -1849,7 +1896,7 @@ function renderOverlays(s) {
   }
   if (shown === "elsewhere") { shown = null; closeDialog(); }
   if (view.status === "starting") {
-    if (shown !== "starting") { shown = "starting"; dialog(h("div", { class: "splash" }, h("div", { class: "spinner" }), h("h2", null, "Preparing the table"), h("p", null, "Starting the rules engine and loading MageZero…"))); }
+    if (shown !== "starting") { shown = "starting"; dialog(h("div", { class: "splash" }, h("div", { class: "spinner" }), h("h2", null, "Preparing the table"), h("p", null, view.mode === "lan" ? "Starting the rules engine…" : "Starting the rules engine and loading MageZero…"))); }
     return;
   }
   if (shown === "starting") { shown = null; closeDialog(); }
@@ -1860,7 +1907,7 @@ function renderOverlays(s) {
     dialog(h("div", { class: "result " + (win ? "win" : loss ? "loss" : "") },
       h("div", { class: "crest" }, win ? "🏆" : loss ? "⚔️" : "🤝"),
       h("h2", null, win ? "Victory" : loss ? "Defeat" : r === "draw" ? "Draw" : "Game ended"),
-      h("p", null, win ? `You beat MageZero on turn ${s ? s.turn : "?"}.` : loss ? `MageZero won on turn ${s ? s.turn : "?"}.` : "Result: " + r),
+      h("p", null, win ? `You beat ${others(s)} on turn ${s ? s.turn : "?"}.` : loss ? `${winner(s)} won on turn ${s ? s.turn : "?"}.` : "Result: " + r),
       h("div", { class: "row" }, h("button", { class: "btn gold", onclick: openLobby }, "Play again"), h("button", { class: "btn", onclick: closeDialog }, "View the board"))));
   }
   if (view.status === "error" && shown !== "error" + view.game) {
@@ -1869,6 +1916,13 @@ function renderOverlays(s) {
       h("div", { class: "row" }, h("button", { class: "btn gold", onclick: openLobby }, "New game"), h("button", { class: "btn", onclick: closeDialog }, "Close"))));
   }
 }
+
+// The other players, and the one who won (the opponent in a duel).
+function others(s) {
+  const names = s ? everyone(s).filter((p) => p.side !== "you").map((p) => p.name) : [];
+  return names.length > 1 ? names.slice(0, -1).join(", ") + " and " + names[names.length - 1] : names[0] || oppName();
+}
+const winner = (s) => (s && (everyone(s).find((p) => p.won) || {}).name) || oppName(s);
 
 // ---------- lobby ----------
 const choice = { you: load("humanDeck", "kinnan"), opponent: load("botDeck", "winota"), starts: load("starts", "random"), greedy: load("greedy", true) };
@@ -1881,7 +1935,8 @@ function deckTile(dk, side) {
 function seg(options, value, set) {
   return h("div", { class: "seg" }, options.map(([v, label]) => h("button", { class: v === value ? "on" : "", onclick: () => { set(v); openLobby(); } }, label)));
 }
-async function openLobby() {
+function openLobby() { return mzTable.openLobby ? mzTable.openLobby() : openDuelLobby(); }
+async function openDuelLobby() {
   lobbyOpen = true;
   if (!decks.length) { try { decks = (await (await fetch("/api/decks")).json()).decks; } catch (e) { decks = []; } }
   // Warm the image cache for every card of the offered decks (a few batched requests).
@@ -1912,7 +1967,7 @@ async function startGame() {
 
 // ---------- controls ----------
 $("newGame").onclick = openLobby;
-$("concede").onclick = () => dialog(h("div", { class: "result loss" }, h("h2", null, "Concede?"), h("p", null, "MageZero wins this game."),
+$("concede").onclick = () => dialog(h("div", { class: "result loss" }, h("h2", null, "Concede?"), h("p", null, view && view.mode === "lan" ? "You leave the game; the others play on." : "MageZero wins this game."),
   h("div", { class: "row" }, h("button", { class: "btn gold", onclick: async () => { closeDialog(); try { await post("/api/concede"); } catch (e) { toast(e.message); } } }, "Concede"),
     h("button", { class: "btn", onclick: closeDialog }, "Keep playing"))));
 $("passTurn").onclick = () => { if (view && view.state) { passTurn = view.state.turn; passUntil = false; autoPass(); } };
