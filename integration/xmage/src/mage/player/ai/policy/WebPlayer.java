@@ -861,7 +861,9 @@ public final class WebPlayer extends PolicyPlayer {
                 }
             }
             for (UUID commander : game.getCommandersIds(player, CommanderCardType.ANY, false)) {
-                if (game.getState().getZone(commander) == Zone.COMMAND) command.add(card(game.getCard(commander), game));
+                // A player who left a multiplayer game takes their cards along; the zone stays COMMAND.
+                Card card = game.getCard(commander);
+                if (card != null && game.getState().getZone(commander) == Zone.COMMAND) command.add(card(card, game));
             }
             Map<String, Object> commanderDamageBy = commanderDamageTo(player, seated, game);
             int commanderDamage = 0;
