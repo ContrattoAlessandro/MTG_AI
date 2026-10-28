@@ -13,6 +13,8 @@ dist/
 /.mz_cache/
 /xmage/
 /xmage-src/
+/engine/
+/integration/xmage/adapter/target/
 /artifacts/
 
 # Logs and editor state
@@ -20,3 +22,6 @@ dist/
 *.log.*
 /.idea/
 /.vscode/
+
+# Local screenshots
+/examples/
