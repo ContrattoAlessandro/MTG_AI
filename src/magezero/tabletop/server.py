@@ -11,6 +11,7 @@ from ..webplay import compile_adapter, engine_launcher
 from .app import create_app
 from .feed import ChangeFeed
 from .lobby import DeckShelf, Lobby
+from .paste import CardNames, DeckPaster
 from .push import PushServer
 from .session import TableSession
 
@@ -39,9 +40,12 @@ def run(*, xmage="xmage", host="0.0.0.0", port=8765, seats=4, heap="6G", open_br
     launcher = engine_launcher(workdir, xmage, classes, heap)
     engine_log = workdir / "engine.log"
 
+    # The engine writes the card names it knows at start, to check the deck lists people paste.
+    names = workdir / "card-names.txt"
     feed = ChangeFeed()
-    lobby = Lobby(DeckShelf(xmage / "decks"), feed.bump, seats)
-    session = TableSession(lobby, feed, lambda: PersistentEngine(launcher, engine_log), workdir,
+    lobby = Lobby(DeckShelf(xmage / "decks"), feed.bump, seats, DeckPaster(CardNames(names), workdir / "pasted"))
+    engine_env = {"MZ_CARD_NAMES": str(names)}
+    session = TableSession(lobby, feed, lambda: PersistentEngine(launcher, engine_log, env=engine_env), workdir,
                            f"http://127.0.0.1:{port}/engine")  # fmt: skip
     push = PushServer(feed, session.view, host, port + 1)
     try:

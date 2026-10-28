@@ -24,7 +24,7 @@ RESULT_FIELDS = ("terminal", "requested", "truncated", "errors", "timeouts")
 class PersistentEngine:
     """One XMage JVM serving game batches over stdin/stdout."""
 
-    def __init__(self, script, log_path, ready_timeout: float = 600):
+    def __init__(self, script, log_path, ready_timeout: float = 600, env: dict[str, str] | None = None):
         script = Path(script).resolve()
         command = ["cmd", "/c", str(script), "--serve"] if sys.platform == "win32" else [str(script), "--serve"]
         self.log = Path(log_path).open("a", encoding="utf-8")  # noqa: SIM115 (closed by close/kill)
@@ -38,6 +38,7 @@ class PersistentEngine:
             encoding="utf-8",
             errors="replace",
             bufsize=1,
+            env=None if env is None else {**os.environ, **env},
             # A process group lets close() reach the JVM behind the shell launcher.
             **(
                 {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}

@@ -8,7 +8,7 @@ the person's cookie, plus the lobby's. The engine relays each person's decisions
 from flask import Flask, Response, jsonify, request, send_from_directory
 
 from ..webplay import WEB_DIR
-from .push import SEAT_COOKIE
+from .push import seat_cookie
 from .session import SeatTable, TableSession
 
 # The page of `mz web` loads the table's script where it marks extensions.
@@ -18,9 +18,10 @@ EXTENSIONS_MARK = "<!-- mz:extensions -->"
 def create_app(session: TableSession, push_port: int, share_url: str | None = None) -> Flask:
     app = Flask(__name__, static_folder=None)
     lobby = session.lobby
+    cookie = seat_cookie(push_port)
 
     def token() -> str | None:
-        return request.cookies.get(SEAT_COOKIE)
+        return request.cookies.get(cookie)
 
     def body() -> dict:
         return request.get_json(force=True, silent=True) or {}
@@ -86,14 +87,14 @@ def create_app(session: TableSession, push_port: int, share_url: str | None = No
         seat = data.get("seat")
         secret = lobby.join(str(data.get("name", "")), None if seat is None else int(seat), token())
         reply = jsonify(ok=True)
-        reply.set_cookie(SEAT_COOKIE, secret, httponly=True, samesite="Lax", max_age=7 * 24 * 3600)
+        reply.set_cookie(cookie, secret, httponly=True, samesite="Lax", max_age=7 * 24 * 3600)
         return reply
 
     @app.post("/api/lobby/leave")
     def leave():
         lobby.leave(token())
         reply = jsonify(ok=True)
-        reply.delete_cookie(SEAT_COOKIE)
+        reply.delete_cookie(cookie)
         return reply
 
     @app.post("/api/lobby/seat")
@@ -108,6 +109,11 @@ def create_app(session: TableSession, push_port: int, share_url: str | None = No
         data = body()
         lobby.choose_deck(token(), int(data.get("seat", -1)), str(data.get("deck")))
         return ok()
+
+    @app.post("/api/lobby/paste")
+    def paste():
+        deck = lobby.paste_deck(token(), str(body().get("text", "")))
+        return jsonify(ok=True, deck=deck.public())
 
     @app.post("/api/lobby/first")
     def first():
@@ -172,6 +178,12 @@ def create_app(session: TableSession, push_port: int, share_url: str | None = No
     @app.post("/api/rewind/answer")
     def rewind_answer():
         session.answer_rewind(token(), bool(body().get("accept")))
+        return ok()
+
+    @app.post("/api/watch")
+    def watch():
+        # Someone not playing chooses whose board they see.
+        session.watch(token(), int(body().get("seat", -1)))
         return ok()
 
     @app.post("/api/concede")

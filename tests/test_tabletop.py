@@ -9,7 +9,8 @@ from magezero import webplay
 from magezero.tabletop.app import EXTENSIONS_MARK, create_app
 from magezero.tabletop.feed import ChangeFeed
 from magezero.tabletop.lobby import DeckShelf, Lobby, SeatKind
-from magezero.tabletop.push import SEAT_COOKIE, delta, seat_token
+from magezero.tabletop.paste import CardNames, DeckPaster, parse
+from magezero.tabletop.push import delta, seat_cookie, seat_token
 from magezero.tabletop.session import TableSession, game_file, playing_message
 
 
@@ -109,10 +110,12 @@ def test_the_plan_lists_the_players_in_turn_order_from_the_first(lobby, shelf):
     lobby.choose_first(ann, 2)
     plan = lobby.plan()
     assert [seat.name for seat in plan.seats] == ["Bot 3", "Bot 4", "Ann", "Bob"]
-    spec = game_file(plan, shelf, "http://127.0.0.1:8765/engine")
+    spec = game_file(plan, shelf.path, "http://127.0.0.1:8765/engine")
     # Everyone has the first deck of the shelf until they choose: burn, 60 cards.
     assert spec["format"] == "free-for-all" and spec["goes_first"] == 0
-    assert spec["seats"][0] == {"name": "Bot 3", "deckPath": str(shelf.path("burn")), "type": "xmage-ai", "skill": 2}
+    # A bot's board goes to its seat's endpoint too, for whoever watches it.
+    assert spec["seats"][0] == {"name": "Bot 3", "deckPath": str(shelf.path("burn")), "type": "xmage-ai", "skill": 2,
+                                "endpoint": "http://127.0.0.1:8765/engine/seat/2"}  # fmt: skip
     assert spec["seats"][2]["type"] == "web"
     assert spec["seats"][3]["endpoint"] == "http://127.0.0.1:8765/engine/seat/1"
     assert bob
@@ -124,13 +127,23 @@ def test_the_seats_are_locked_during_a_game(lobby):
     with pytest.raises(ValueError, match="in progress"):
         lobby.set_seat(ann, 1, "bot")
     with pytest.raises(ValueError, match="in progress"):
-        lobby.join("Bob")
+        lobby.join("Annie", token=ann)  # no renaming during a game
+    bob = lobby.join("Bob")  # someone arriving watches
+    assert lobby.seat_of(bob) is None and lobby.watching(bob)
+    assert lobby.view(bob)["watcher"] == "Bob" and lobby.view(ann)["watchers"] == ["Bob"]
+    with pytest.raises(ValueError, match="already at the table"):
+        lobby.join("ann")
+    lobby.lock_for_game(False)
+    assert lobby.join("Bob", token=bob) == bob  # and sits down for the next game with the same token
+    assert lobby.seat_of(bob).name == "Bob" and not lobby.watching(bob)
 
 
-def test_seat_token_reads_the_cookie():
-    assert seat_token(f"theme=dark; {SEAT_COOKIE}=abc123") == "abc123"
-    assert seat_token("theme=dark") is None
-    assert seat_token(None) is None
+def test_seat_token_reads_the_cookie_of_its_own_table():
+    assert seat_token(f"theme=dark; {seat_cookie(8766)}=abc123", seat_cookie(8766)) == "abc123"
+    # Another table on the same computer has its own seat cookie.
+    assert seat_token(f"{seat_cookie(8796)}=abc123", seat_cookie(8766)) is None
+    assert seat_token("theme=dark", seat_cookie(8766)) is None
+    assert seat_token(None, seat_cookie(8766)) is None
 
 
 def test_playing_message_names_whose_move_it_is():
@@ -188,8 +201,9 @@ def test_a_game_gives_each_person_their_own_decision_table(session, lobby, engin
     assert session.status == "playing" and lobby.locked
     assert set(session.tables) == {0, 1}
     assert session.table_of(ann) is session.engine_table(0) and session.table_of(bob) is session.engine_table(1)
+    assert session.engine_table(2) is session.eyes[2]  # a bot's seat only receives its board
     with pytest.raises(KeyError):
-        session.engine_table(2)  # a bot's seat has no table
+        session.engine_table(1 + 2 + 1 + 1)
     state = {"turn": 1, "log": [], "players": []}
     options = [{"id": "p", "type": "pass", "label": "Pass"}, {"id": "c", "type": "cast", "label": "Cast"}]
     decision = {"decision": "d1", "kind": "cast", "prompt": "Your turn", "state": state, "options": options}
@@ -234,11 +248,23 @@ def test_the_page_loads_the_table_script(session, monkeypatch, tmp_path):
     assert '<script src="/lan.js"></script>' in page
 
 
+def test_moving_to_another_seat_keeps_the_cookie_and_the_deck(session, lobby):
+    client = client_for(session)
+    client.post("/api/lobby/join", json={"name": "Ann", "seat": 0})
+    token = client.get_cookie(seat_cookie(8766)).value
+    deck = list(lobby.decks())[-1]
+    client.post("/api/lobby/deck", json={"seat": 0, "deck": deck})
+    assert client.post("/api/lobby/join", json={"name": "Ann", "seat": 1}).status_code == 200
+    assert client.get_cookie(seat_cookie(8766)).value == token
+    view = client.get("/api/state").get_json()["lobby"]
+    assert view["you"] == 1 and view["seats"][0]["kind"] == "open" and view["seats"][1]["deck"] == deck
+
+
 def test_joining_sets_the_seat_cookie_and_the_view_follows_it(session):
     client = client_for(session)
     assert client.get("/api/config").get_json() == {"mode": "lan", "push_port": 8766, "share_url": None}
     reply = client.post("/api/lobby/join", json={"name": "Ann"})
-    assert reply.status_code == 200 and SEAT_COOKIE in reply.headers["Set-Cookie"]
+    assert reply.status_code == 200 and seat_cookie(8766) in reply.headers["Set-Cookie"]
     view = client.get("/api/state").get_json()
     assert view["mode"] == "lan" and view["lobby"]["you"] == 0
     assert client.post("/api/lobby/seat", json={"seat": 1, "kind": "bot", "skill": 2}).status_code == 200
@@ -292,6 +318,17 @@ def test_a_push_sends_the_whole_state_when_it_appears_or_goes():
     later = {**playing, "version": 3, "state": {"turn": 1, "log": ["x", "y"]}}
     assert delta(playing, later)["log"] == {"drop": 1, "add": ["x", "y"]}
     assert patched(playing, delta(playing, later)) == later
+
+
+def test_a_state_that_loses_a_key_goes_whole_with_its_version():
+    # Declaring attackers: the state offers can_attack, then an attack trigger goes on the stack.
+    declaring = {"version": 7, "decision": {"decision": "a"},
+                 "state": {"turn": 3, "stack": [], "can_attack": ["x"], "log": ["a"]}}  # fmt: skip
+    triggered = {"version": 9, "decision": {"decision": "t"},
+                 "state": {"turn": 3, "stack": [{"id": "s"}], "log": ["a"]}}  # fmt: skip
+    change = delta(declaring, triggered)
+    assert change["set"]["version"] == 9  # without it the page takes the view for one it has and drops it
+    assert patched(declaring, change) == triggered
 
 
 def priority(name, turn=5):
@@ -353,3 +390,108 @@ def test_alone_with_bots_going_back_needs_no_vote(session, lobby, engine):
     assert session.view(ann)["rewind"]["status"] == "approved"
     assert session._take_rewind({**priority("t"), "options": [{"id": "t", "type": "target"}]}) is None
     assert session._take_rewind(priority("p")) == {"rollback": 0}
+
+
+def board(me, turn=3, lost=()):
+    """A board as the engine sends it to seat `me`: players by name, a hand."""
+    names = ["Ann", "Bob", "Bot 3", "Bot 4"]
+    players = [{"id": n, "name": n, "side": "you" if n == me else "opponent", "lost": n in lost} for n in names]
+    hand = [{"name": f"{me}'s card"}]
+    return {"state": {"turn": turn, "log": [], "players": players, "priority_id": "Bob", "hand": hand}}
+
+
+def test_someone_arriving_during_a_game_watches_a_player_of_their_choice(session, lobby, engine):
+    ann, bob = seated(lobby)
+    lobby.choose_first(ann, 0)
+    session.start(ann)
+    for index, name in enumerate(["Ann", "Bob", "Bot 3", "Bot 4"]):
+        session.engine_table(index).publish(board(name))
+    cid = lobby.join("Cid")
+    view = session.view(cid)
+    # The first person still playing, as they see the game, without their decisions.
+    assert view["watching"]["seat"] == 0 and view["state"]["hand"] == [{"name": "Ann's card"}]
+    assert view["decision"] is None and view["controller"] is None
+    assert view["message"] == "Watching Ann · Turn 3: Bob is playing"
+    assert [p["name"] for p in view["watching"]["players"]] == ["Ann", "Bob", "Bot 3", "Bot 4"]
+    session.watch(cid, 2)  # a bot, hand included
+    assert session.view(cid)["state"]["hand"] == [{"name": "Bot 3's card"}]
+    with pytest.raises(ValueError, match="Nobody plays"):
+        session.watch(cid, 7)
+    with pytest.raises(ValueError, match="You are playing"):
+        session.watch(ann, 1)
+    assert session.view(ann)["watching"] is None
+    with pytest.raises(ValueError, match="not playing"):
+        session.ask_rewind(cid, 0)
+
+
+def test_a_player_out_of_the_game_watches_the_others(session, lobby, engine):
+    ann, bob = seated(lobby)
+    session.start(ann)
+    session.engine_table(0).publish(board("Ann", lost=["Ann"]))
+    session.engine_table(1).publish(board("Bob", turn=4, lost=["Ann"]))
+    view = session.view(ann)
+    assert view["watching"] == {**view["watching"], "seat": 0, "out": True}  # their last board first
+    session.watch(ann, 1)
+    assert session.view(ann)["state"]["turn"] == 4 and session.view(ann)["state"]["hand"] == [{"name": "Bob's card"}]
+    session.watch(ann, 0)  # a player out of the game shows their last board
+    assert session.view(ann)["state"]["turn"] == 3
+    assert session.view(bob)["watching"] is None
+
+
+MOXFIELD = "\n".join(["1 Sol Ring", "1 Lim-Dûl's Vault (ALL) 23 *F*", "1 Fire // Ice", "1 Valakut Awakening",
+                      *["95 Forest"], "", "1 Winota, Joiner of Forces"])  # fmt: skip
+
+
+@pytest.fixture
+def paster(tmp_path):
+    names = tmp_path / "card-names.txt"
+    known = ["Sol Ring", "Lim-Dûl's Vault", "Fire", "Ice", "Valakut Awakening", "Valakut Stoneforge", "Forest",
+             "Winota, Joiner of Forces", "Kinnan, Bonder Prodigy", "Mountain"]  # fmt: skip
+    names.write_text("\n".join(known) + "\n", encoding="utf-8")
+    return DeckPaster(CardNames(names), tmp_path / "pasted")
+
+
+def test_a_pasted_moxfield_list_has_its_commander_after_the_blank_line(paster):
+    main, commanders, sideboard, unknown = parse(MOXFIELD)
+    assert commanders == [(1, "Winota, Joiner of Forces")] and sideboard == [] and unknown == []
+    assert (1, "Lim-Dûl's Vault") in main  # set code and foil mark dropped
+    pasted = paster.paste(MOXFIELD.replace("Sol Ring", "sol ring"), "Ann (pasted)", "seat-0")
+    assert pasted.deck.cards == 99 and pasted.deck.commander == "Winota, Joiner of Forces"
+    lines = pasted.path.read_text(encoding="utf-8").splitlines()
+    assert lines[0] == "1 Sol Ring" and "1 Fire // Ice" in lines  # the engine's spelling
+    assert lines[-1] == "SB: 1 Winota, Joiner of Forces"
+
+
+def test_arena_headers_and_a_sideboard_are_understood():
+    text = "Commander\n1 Kinnan, Bonder Prodigy\n\nDeck\n99 Forest\n"
+    assert parse(text)[:2] == ([(99, "Forest")], [(1, "Kinnan, Bonder Prodigy")])
+    sixty = "20 Mountain\n40 Forest\n\n2 Sol Ring\n"
+    main, commanders, sideboard, _ = parse(sixty)
+    assert commanders == [] and sideboard == [(2, "Sol Ring")] and sum(n for n, _ in main) == 60
+
+
+def test_a_pasted_list_with_unknown_cards_or_a_wrong_size_is_refused(paster):
+    with pytest.raises(ValueError, match="Not in XMage's card database: Black Lotus"):
+        paster.paste(MOXFIELD.replace("Sol Ring", "Black Lotus"), "x", "k")
+    with pytest.raises(ValueError, match="100 cards with its commander; this one has 101"):
+        paster.paste(MOXFIELD.replace("95 Forest", "96 Forest"), "x", "k")
+    with pytest.raises(ValueError, match="Not a card line"):
+        paster.paste("Sol Ring and friends", "x", "k")
+    with pytest.raises(ValueError, match="only 10 cards"):
+        paster.paste("10 Forest", "x", "k")
+
+
+def test_a_pasted_deck_is_its_owners_for_the_session(shelf, feed, paster):
+    lobby = Lobby(shelf, feed.bump, paster=paster)
+    ann, bob = lobby.join("Ann"), lobby.join("Bob")
+    deck = lobby.paste_deck(ann, MOXFIELD)
+    assert lobby.seat_of(ann).deck == deck.name == "Ann (pasted)"
+    assert lobby.deck_path(deck.name).suffix == ".txt" and lobby.view(bob)["pasted"][0]["commander"] == deck.commander
+    with pytest.raises(ValueError, match="whoever pasted it"):
+        lobby.choose_deck(bob, 1, deck.name)
+    lobby.set_seat(ann, 2, "closed")
+    lobby.set_seat(ann, 3, "closed")
+    lobby.choose_deck(bob, 1, "kinnan")
+    assert lobby.problems() == [] and lobby._format() == "commander-duel"
+    lobby.leave(ann)
+    assert lobby.view(bob)["pasted"] == []  # gone with its owner

@@ -6,7 +6,9 @@
 //   A column of the opponents sits in the top-right corner; a click on one brings them in view;
 // - afterRender: draws the seat column and the attack labels, and keeps the lobby up to date;
 // - chooseDefender: fans out the players (and planeswalkers) a creature can attack;
-// - openLobby: seats, names, decks and bots instead of the duel's deck picker.
+// - openLobby: seats, names, decks (or a pasted list) and bots instead of the duel's deck picker;
+// - watching: whoever is not playing (arrived during the game, or out of it) sees the game as
+//   the player they choose sees it; a bar at the top switches between the players.
 // Commands go over HTTP; the server knows each browser's seat by its cookie.
 "use strict";
 (() => {
@@ -101,9 +103,11 @@
     const battlefield = s.battlefield.filter((c) => onTable.has(c.id) || (c.attached_to && onTable.has(c.attached_to)));
     return { ...next, state: { ...s, players: [me, shown], everyone: players, battlefield } };
   }
+  // The shelf's decks and those pasted at the table.
+  const allDecks = (L) => decks.concat((L && L.pasted) || []);
   function deckOf(next, name) {
     const seat = next.lobby && next.lobby.seats.find((x) => x.name === name);
-    const known = seat && decks.find((d) => d.name === seat.deck);
+    const known = seat && allDecks(next.lobby).find((d) => d.name === seat.deck);
     return known || (seat && seat.deck ? { name: seat.deck } : null);
   }
 
@@ -291,7 +295,7 @@
   // ---------- the lobby ----------
   // The lobby follows the table while it is open. Opened between games, it gives way to the next
   // game when someone starts it; opened during a game (New game), it stays.
-  let lobbyBox = null, lobbyGame = null;
+  let lobbyBox = null, lobbyGame = null, joinLabel = null, pasteBox = null;
   async function openLobby() {
     lobbyOpen = true;
     lobbyGame = view ? view.game : null;
@@ -299,36 +303,64 @@
     const name = h("input", { class: "lan-name", maxlength: 24, placeholder: "Your name", value: load("lanName", ""), "aria-label": "Your name" });
     const join = async (seat) => {
       store("lanName", name.value.trim());
-      try { await post("/api/lobby/join", { name: name.value, seat }); reconnect(); } catch (e) { toast(e.message); }
+      // During a game, someone without a seat watches it: the board takes the place of the lobby.
+      const watching = !!(view && view.lobby && view.lobby.locked && view.lobby.you == null);
+      try {
+        await post("/api/lobby/join", { name: name.value, seat }); reconnect();
+        if (watching) { lobbyBox = null; closeDialog(); }
+      } catch (e) { toast(e.message); }
     };
     name.addEventListener("keydown", (e) => { if (e.key === "Enter") join(null); });
     lobbyBox = h("div", { class: "lan-seats" });
     lobbyBox.join = join;
+    joinLabel = h("button", { class: "btn gold", onclick: () => join(null) }, "Take a seat");
+    pasteBox = pasteSection();
     dialog(h("div", { class: "lobby lan-lobby" },
       h("div", { class: "dh" }, h("div", null, h("h2", null, "A table among friends"),
         h("p", { class: "tag" }, `Friends on this network open ${shareUrl || location.origin + "/"} in their browser. Empty seats can go to XMage's AI.`)),
         h("button", { class: "btn ghost icon", onclick: () => { lobbyBox = null; closeDialog(); }, title: "Close" }, "✕")),
       h("div", { class: "db" },
-        h("div", { class: "sect lan-join" }, h("h3", null, "Your name"), h("div", { class: "row" }, name,
-          h("button", { class: "btn gold", onclick: () => join(null) }, "Take a seat"))),
-        lobbyBox)));
+        h("div", { class: "sect lan-join" }, h("h3", null, "Your name"), h("div", { class: "row" }, name, joinLabel),
+          h("p", { class: "lan-note" })),
+        lobbyBox, pasteBox)));
     refreshLobby(view);
+  }
+  // A deck list pasted from Moxfield (or MTGO, Arena): checked by the host and played for
+  // this session only. It sits outside the seats, which are drawn again at every change.
+  function pasteSection() {
+    const text = h("textarea", { class: "lan-paste", rows: 7, spellcheck: false, "aria-label": "Deck list",
+      placeholder: "1 Sol Ring\n1 Arcane Signet\n…\n\n1 Winota, Joiner of Forces" });
+    const note = h("p", { class: "lan-note" }, "Moxfield: Export → Copy as plain text. A Commander deck ends with its commander, after a blank line. The deck is not saved.");
+    const use = h("button", { class: "btn", onclick: async () => {
+      use.disabled = true;
+      note.classList.remove("bad");
+      try {
+        const reply = await post("/api/lobby/paste", { text: text.value });
+        const d = reply.deck;
+        note.textContent = `Playing ${d.commander ? d.commander + " · Commander" : d.cards + " cards"}, as pasted.`;
+        text.value = "";
+      } catch (e) { note.textContent = e.message; note.classList.add("bad"); }
+      use.disabled = false;
+    } }, "Play this list");
+    return h("div", { class: "sect lan-paste-box" }, h("h3", null, "Your deck from a list"), text, h("div", { class: "row" }, use, note));
   }
   function refreshLobby(v) {
     if (!lobbyBox || !lobbyBox.isConnected || !v || !v.lobby) return;
     const L = v.lobby, mine = L.you, seated = mine != null;
     const act = (path, body) => post(path, body).catch((e) => toast(e.message));
+    // Your own pasted deck is yours to choose; nobody else's.
     const deckPicker = (seat) => {
+      const own = (L.pasted || []).filter((d) => d.seat === seat.index && seat.index === mine);
       const select = h("select", { class: "lan-deck", "aria-label": `Deck for ${seat.name}`, disabled: L.locked,
         onchange: (e) => act("/api/lobby/deck", { seat: seat.index, deck: e.target.value }) },
-      decks.map((d) => h("option", { value: d.name, selected: d.name === seat.deck }, `${cap(d.name)} · ${d.commander || d.cards + " cards"}`)));
+      own.concat(decks).map((d) => h("option", { value: d.name, selected: d.name === seat.deck }, `${cap(d.name)} · ${d.commander || d.cards + " cards"}`)));
       return select;
     };
     const cards = L.seats.map((seat) => {
       const you = seat.index === mine;
       const body = [];
       const art = h("div", { class: "lan-art" });
-      const deck = decks.find((d) => d.name === seat.deck);
+      const deck = allDecks(L).find((d) => d.name === seat.deck);
       artInto(art, deck && deck.commander);
       if (seat.kind === "person") {
         body.push(h("b", null, seat.name + (you ? " (you)" : "")));
@@ -364,8 +396,18 @@
         seated ? h("button", { class: "btn danger", onclick: () => act("/api/abandon") }, "Abandon the game") : null)
       : h("div", { class: "foot" }, h("p", null, L.problems.length ? L.problems.join(" ") : `${format || "Game"} for ${playing.length} players. Anyone at the table can start.`),
         h("button", { class: "btn gold", disabled: !seated || L.problems.length > 0 || v.status === "starting", onclick: start }, "Start the game"));
-    document.querySelector(".lan-join").style.display = seated ? "none" : "";
-    lobbyBox.replaceChildren(h("div", { class: "sect" }, h("h3", null, "Seats"), h("div", { class: "lan-grid" }, cards)),
+    // Without a seat: take one, or watch the game in progress.
+    const joinBox = document.querySelector(".lan-join");
+    joinBox.style.display = seated || (L.watcher && L.locked) ? "none" : "";
+    joinLabel.textContent = L.locked ? "Watch the game" : "Take a seat";
+    joinBox.querySelector(".lan-note").textContent = L.locked
+      ? "A game has started: you watch it, as any player you choose sees it, and take a seat for the next one."
+      : L.watcher ? `You watched the last game as ${L.watcher}.` : "";
+    pasteBox.style.display = seated && !L.locked && L.can_paste ? "" : "none";
+    const watchers = L.watchers && L.watchers.length
+      ? h("p", { class: "lan-note" }, "Watching: " + L.watchers.join(", ") + (L.watcher && L.locked ? " (you)" : ""))
+      : null;
+    lobbyBox.replaceChildren(h("div", { class: "sect" }, h("h3", null, "Seats"), h("div", { class: "lan-grid" }, cards), watchers),
       h("div", { class: "sect opts-row" }, first), foot);
   }
   async function start() {
@@ -387,7 +429,7 @@
       $("concede").before(button);
     }
     const s = raw && raw.state, me = s && s.players.find((p) => p.side === "you"), r = v.rewind;
-    const playing = v.status === "playing" && !!s && s.turn > 0 && me && !me.lost && !v.result;
+    const playing = v.status === "playing" && !!s && s.turn > 0 && me && !me.lost && !v.result && !v.watching;
     button.hidden = !playing;
     button.disabled = !!(r && (r.status === "asking" || r.status === "approved"));
     let bar = $("rewindBar");
@@ -428,10 +470,49 @@
         s.turn > 1 ? choice(1, `Start of the previous turn (${s.turn - 1})`, "From its untap step") : null)));
   }
 
+  // ---------- watching ----------
+  // Whoever is not playing sees the game as the player they choose sees it, hand included,
+  // without answering for them: that player is "you" on the board, the others go to the seat
+  // column as usual. A bar at the top switches between the players; a player out of the game
+  // shows their last board.
+  const EYE_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+  let watchedSeat = null;
+  function renderWatching(v) {
+    const w = v.watching;
+    $("concede").hidden = !!w;
+    if (w && w.seat !== watchedSeat) { focus.manual = null; plan = null; closeFan(); }
+    watchedSeat = w ? w.seat : null;
+    let bar = $("watchBar");
+    if (!bar) { bar = h("div", { id: "watchBar", class: "watch-bar", role: "toolbar", "aria-label": "Whose game you watch" }); document.body.append(bar); }
+    if (!w) { bar.classList.remove("show"); return; }
+    const pick = (seat) => post("/api/watch", { seat }).catch((e) => toast(e.message));
+    bar.replaceChildren(h("span", { class: "wi", html: EYE_ICON }),
+      h("span", { class: "wl" }, w.out ? "You are out of the game · watching" : "Watching"),
+      ...w.players.map((p) => h("button", {
+        class: "wp" + (p.seat === w.seat ? " on" : "") + (p.playing ? "" : " out") + (p.person ? "" : " bot"),
+        "aria-pressed": p.seat === w.seat,
+        title: (p.playing ? "" : "Out of the game: their last board · ") + (p.seat === w.seat ? `You see ${possessive(p.name)} game` : `See the game as ${p.name} does`),
+        onclick: () => { if (p.seat !== w.seat) pick(p.seat); },
+      }, p.name)));
+    bar.classList.add("show");
+  }
+  // Someone arriving during a game finds the lobby (to watch it), and a watcher finds it when
+  // the game ends (to take a seat for the next one).
+  let invited = null;
+  function inviteToLobby(v) {
+    const L = v.lobby;
+    if (!L || L.you != null || lobbyOpen) return;
+    const key = !L.watcher && v.status === "playing" && !v.state ? "arrive" + v.game
+      : L.watcher && v.status === "over" ? "over" + v.game : null;
+    if (key && invited !== key) { invited = key; openLobby(); }
+  }
+
   function afterRender(v) {
     renderSeatMap(v);
+    renderWatching(v);
     renderRewind(v);
     renderAttackTags(v);
+    inviteToLobby(v);
     if (fan && !(v.decision && v.decision.kind === "attackers")) closeFan();
     if (v.lobby) {
       const L = v.lobby, n = L.seats.filter((x) => x.kind === "person" || x.kind === "bot").length;
@@ -530,7 +611,26 @@
   border: 1px solid var(--line-2); background: var(--glass); color: var(--text); font: inherit; text-align: left; }
 .rw-choice:hover { border-color: var(--gold); background: var(--glass-3); }
 .rw-choice b { font-size: 15px; } .rw-choice span { font-size: 12.5px; color: var(--text-3); }
-@media (max-width: 760px) { .seat-map { --sq: 72px; } #rewind span:last-child { display: none; } }
+/* .btn sets a display, which would show a button marked hidden (Rewind, Concede while watching). */
+.btn[hidden] { display: none; }
+.watch-bar { position: fixed; left: calc((100% - var(--side, 0px) - var(--flow, 0px)) / 2); top: 66px; z-index: 69; transform: translate(-50%, -12px); opacity: 0; pointer-events: none;
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: center; max-width: calc(100vw - var(--side, 0px) - var(--flow, 0px) - 32px);
+  padding: 6px 8px 6px 12px; border-radius: 14px; background: rgba(16, 22, 29, .94); border: 1px solid var(--line-2); box-shadow: 0 10px 30px rgba(0,0,0,.55);
+  font-size: 13px; color: var(--text-2); transition: opacity .2s, transform .2s; }
+.watch-bar.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+.watch-bar .wi { color: var(--you); display: grid; place-items: center; }
+.watch-bar .wl { margin-right: 4px; }
+.watch-bar .wp { border: 1px solid var(--line-2); background: var(--glass); color: var(--text); border-radius: 999px; padding: 5px 12px; font: inherit; font-weight: 600; cursor: pointer; }
+.watch-bar .wp:hover { border-color: var(--you); }
+.watch-bar .wp.on { background: rgba(78,168,255,.18); border-color: var(--you); cursor: default; }
+.watch-bar .wp.bot { font-style: italic; }
+.watch-bar .wp.out { color: var(--text-3); text-decoration: line-through; }
+.lan-note { font-size: 12.5px; color: var(--text-3); margin: 8px 0 0; } .lan-note:empty { display: none; }
+.lan-note.bad { color: #ffb0a8; }
+.lan-paste-box .row { margin-top: 10px; align-items: flex-start; flex-wrap: nowrap; } .lan-paste-box .row .lan-note { margin: 0; flex: 1; }
+.lan-paste { width: 100%; box-sizing: border-box; resize: vertical; background: rgba(0,0,0,.35); color: var(--text); border: 1px solid var(--line-2); border-radius: 10px;
+  padding: 9px 12px; font: 12.5px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
+@media (max-width: 760px) { .seat-map { --sq: 72px; } #rewind span:last-child { display: none; } .watch-bar .wl { display: none; } }
 `;
   document.head.append(style);
 

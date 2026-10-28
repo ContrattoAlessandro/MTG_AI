@@ -72,6 +72,13 @@ public final class WebPlayer extends PolicyPlayer {
     private UUID[] manaSource = {null};
     // The kind of the next decision when it is not the candidates' own (a mana colour).
     private String[] askKind = {null};
+    // At a table, an eye: a player that never plays and shows `watched`'s view (a bot's) to
+    // whoever watches that seat. Null: this player's own view. Whether `watched` was out at the
+    // last board sent (an eye stops following a player out of the game).
+    private UUID watched;
+    private boolean[] watchedOut = {false};
+    // The eyes of each game at a table, refreshed with the people's boards.
+    private static final Map<UUID, List<WebPlayer>> EYES = new java.util.concurrent.ConcurrentHashMap<>();
 
     /**
      * policyEndpoint: the opponent policy's service, read for its card catalog only.
@@ -100,6 +107,8 @@ public final class WebPlayer extends PolicyPlayer {
         this.cancelled = other.cancelled;
         this.manaSource = other.manaSource;
         this.askKind = other.askKind;
+        this.watched = other.watched;
+        this.watchedOut = other.watchedOut;
     }
 
     @Override public WebPlayer copy() { return new WebPlayer(this); }
@@ -130,6 +139,25 @@ public final class WebPlayer extends PolicyPlayer {
     }
 
     /**
+     * An eye on `player` (XMage's AI) at a table: its board, hand included, goes to `endpoint`
+     * after every board update and log line, as a person's does, for whoever watches that seat.
+     */
+    public static void watchTable(Game game, Player player, String endpoint) {
+        WebPlayer eye = new WebPlayer(player.getName(), RangeOfInfluence.ALL, null, endpoint);
+        eye.watched = player.getId();
+        eye.openBridge(game);
+        EYES.computeIfAbsent(game.getId(), id -> new java.util.concurrent.CopyOnWriteArrayList<>()).add(eye);
+        game.addTableEventListener(event -> {
+            if (game.isSimulation()) return;
+            TableEvent.EventType type = event.getEventType();
+            if (type == TableEvent.EventType.UPDATE || type == TableEvent.EventType.INFO) eye.refresh(game);
+        });
+    }
+
+    /** The game at the table is over: its eyes stop. */
+    public static void leaveTable(Game game) { EYES.remove(game.getId()); }
+
+    /**
      * Refreshes every person's board at a table: a priority changes hands without any table
      * event, and the page shows who holds it. A bot calls this at each of its priorities.
      */
@@ -141,10 +169,18 @@ public final class WebPlayer extends PolicyPlayer {
         for (Player player : game.getState().getPlayers().values()) {
             if (player instanceof WebPlayer && !player.getId().equals(except)) ((WebPlayer) player).refresh(game);
         }
+        for (WebPlayer eye : EYES.getOrDefault(game.getId(), Collections.emptyList())) eye.refresh(game);
     }
 
     /** Sends the board for another player's move; this player's own replies wait for its next priority. */
     private void refresh(Game game) {
+        if (watched != null) {
+            // The last board of a player out of the game stays, as a person's does.
+            Player player = game.getPlayer(watched);
+            boolean out = player == null || player.hasLost();
+            if (out && watchedOut[0]) return;
+            watchedOut[0] = out;
+        }
         try {
             post(game);
         } catch (RuntimeException ignored) {
@@ -191,10 +227,10 @@ public final class WebPlayer extends PolicyPlayer {
         // An any-time look at the top card (The Reality Chip, Mystic Forge) is renewed at every
         // effects update; the page shows that card on the library instead (library_top).
         Card top = null;
-        for (Map.Entry<String, Cards> entry : game.getState().getLookedAt(getId()).entrySet()) {
+        for (Map.Entry<String, Cards> entry : game.getState().getLookedAt(viewer()).entrySet()) {
             Cards cards = entry.getValue();
             if (cards != null && cards.size() == 1) {
-                if (top == null) top = visibleTop(this, game);
+                if (top == null) top = visibleTop(game.getPlayer(viewer()), game);
                 if (top != null && cards.contains(top.getId())) continue;
             }
             groups.put("look\u0000" + entry.getKey(), cards);
@@ -712,6 +748,20 @@ public final class WebPlayer extends PolicyPlayer {
         return super.chooseAmount(min, max, game, source);
     }
 
+    /**
+     * X in a mana cost. The policy taps its mana before announcing X, so PolicyCandidates.announceMax caps X by the
+     * pool; a person announces X first and pays after, usually with an empty pool, and was offered X = 0 only. The
+     * largest X is the mana the person could make (pool and untapped sources) beyond the rest of the cost.
+     */
+    @Override public int announceX(int min, int max, String message, Game game, Ability source, boolean isManaPay) {
+        int cap = PolicyCandidates.announceMax(this, max, source, game, isManaPay);
+        if (isManaPay && cap < max) {
+            int available = getManaAvailable(game).stream().mapToInt(Mana::count).max().orElse(0);
+            cap = Math.min(max, Math.max(cap, available - source.getManaCostsToPay().getUnpaid().manaValue()));
+        }
+        return chooseAmount(min, cap, game, source);
+    }
+
     @Override public Mode chooseMode(Modes modes, Ability source, Game game) {
         prompt[0] = "Choose a mode" + from(source, game);
         return super.chooseMode(modes, source, game);
@@ -810,7 +860,10 @@ public final class WebPlayer extends PolicyPlayer {
 
     // ------------------------------------------------------------------- state
 
-    private String side(UUID id) { return id == null ? null : id.equals(getId()) ? "you" : "opponent"; }
+    /** The player whose view this is: this one, or the one an eye watches. */
+    private UUID viewer() { return watched != null ? watched : getId(); }
+
+    private String side(UUID id) { return id == null ? null : id.equals(viewer()) ? "you" : "opponent"; }
 
     private static String id(UUID id) { return id == null ? null : id.toString(); }
 
@@ -830,7 +883,7 @@ public final class WebPlayer extends PolicyPlayer {
         Collections.reverse(reversed);
         if (follows(reversed, turns) && !follows(all, turns)) all = reversed;
         int me = 0;
-        for (int i = 0; i < all.size(); i++) if (all.get(i).getId().equals(getId())) me = i;
+        for (int i = 0; i < all.size(); i++) if (all.get(i).getId().equals(viewer())) me = i;
         List<Player> seated = new ArrayList<>(all.subList(me, all.size()));
         seated.addAll(all.subList(0, me));
         return seated;
@@ -871,7 +924,7 @@ public final class WebPlayer extends PolicyPlayer {
      */
     private Map<String, Object> snapshot(Game game, Collection<Card> visible) {
         List<Map<String, Object>> players = new ArrayList<>();
-        Player me = game.getPlayer(getId());
+        Player me = game.getPlayer(viewer());
         List<Player> seated = seating(game);
         for (Player player : seated) {
             List<Map<String, Object>> graveyard = new ArrayList<>(), exile = new ArrayList<>(), command = new ArrayList<>();
@@ -1002,7 +1055,7 @@ public final class WebPlayer extends PolicyPlayer {
         UUID owner = permanent != null ? permanent.getControllerId() : spell != null ? spell.getControllerId() : card != null ? card.getOwnerId() : null;
         place.put("owner", side(owner));
         place.put("owner_id", id(owner));
-        boolean hidden = zone == Zone.LIBRARY || zone == Zone.HAND && !getId().equals(owner);
+        boolean hidden = zone == Zone.LIBRARY || zone == Zone.HAND && !viewer().equals(owner);
         MageObject object = game.getObject(id);
         if (!hidden && object != null) place.put("name", object instanceof Card && ((Card) object).isFaceDown(game) ? "Face-down card" : object.getName());
         return place;
@@ -1016,13 +1069,13 @@ public final class WebPlayer extends PolicyPlayer {
         Card top = player.getLibrary().getFromTop(game);
         if (top == null) return null;
         if (player.isTopCardRevealed()) return top;
-        if (!getId().equals(player.getId())) return null;
+        if (!viewer().equals(player.getId())) return null;
         ContinuousEffects effects = game.getContinuousEffects();
         for (ContinuousEffect effect : effects.getLayeredEffects(game)) {
             if (!(effect instanceof LookAtTopCardOfLibraryAnyTimeEffect)) continue;
             if (!((LookAtTopCardOfLibraryAnyTimeEffect) effect).canLookAtNextTopLibraryCard(game)) continue;
             for (Ability ability : effects.getLayeredEffectAbilities(effect)) {
-                if (getId().equals(ability.getControllerId())) return top;
+                if (viewer().equals(ability.getControllerId())) return top;
             }
         }
         return null;
@@ -1032,7 +1085,7 @@ public final class WebPlayer extends PolicyPlayer {
         boolean faceDown = object instanceof Card && ((Card) object).isFaceDown(game);
         Map<String, Object> view = PolicyEncoder.map("id", object.getId().toString());
         // A face-down permanent is shown as such, except to its controller.
-        boolean concealed = faceDown && !(object instanceof Permanent && getId().equals(((Permanent) object).getControllerId()));
+        boolean concealed = faceDown && !(object instanceof Permanent && viewer().equals(((Permanent) object).getControllerId()));
         view.put("name", concealed ? "Face-down card" : object.getName());
         view.put("face_down", faceDown);
         view.put("token", object instanceof PermanentToken);

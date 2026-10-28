@@ -74,6 +74,9 @@ public final class PolicyGames {
 
     private static void serve() throws IOException {
         bootstrap();
+        // Every card name the engine knows, for a web server that checks pasted deck lists (`mz lan`).
+        String names = System.getenv("MZ_CARD_NAMES");
+        if (names != null) Files.write(Paths.get(names), CardRepository.instance.getNames(), StandardCharsets.UTF_8);
         BufferedReader commands = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
         reply("READY");
         String line;

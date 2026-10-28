@@ -13,7 +13,9 @@ import java.util.Map;
  * One seat of a table game file: who sits there and with which deck.
  *
  *   {"name": "Ann", "type": "web", "deckPath": "decks/winota.dck", "endpoint": "http://127.0.0.1:8765/engine/seat/1"}
- *   {"name": "Bot", "type": "xmage-ai", "deckPath": "decks/kinnan.dck", "skill": 4}
+ *   {"name": "Bot", "type": "xmage-ai", "deckPath": "decks/kinnan.dck", "skill": 4, "endpoint": "http://127.0.0.1:8765/engine/seat/2"}
+ *
+ * A bot's endpoint is optional: the web server there receives the bot's board, for the people watching it.
  *
  * Each seat type is a {@link Kind}: it makes the player and readies it once the game exists.
  */
@@ -23,7 +25,7 @@ final class TableSeat {
         Player create(TableSeat seat, RangeOfInfluence range);
 
         /** Called after every player has joined the game, before it starts. */
-        default void ready(Player player, Game game) {}
+        default void ready(TableSeat seat, Player player, Game game) {}
     }
 
     private static final Map<String, Kind> KINDS = new LinkedHashMap<>();
@@ -35,13 +37,19 @@ final class TableSeat {
                 return new WebPlayer(seat.name, range, null, seat.endpoint);
             }
 
-            @Override public void ready(Player player, Game game) { ((WebPlayer) player).joinTable(game); }
+            @Override public void ready(TableSeat seat, Player player, Game game) { ((WebPlayer) player).joinTable(game); }
         });
         // XMage's own AI, which plays games of any size.
-        KINDS.put(PolicyGames.XMAGE_AI, (seat, range) -> {
-            XMageAiPlayer player = new Bot(seat.name, range, seat.skill);
-            if (seat.thinkSeconds > 0) player.setMaxThinkTimeSecs(seat.thinkSeconds);
-            return player;
+        KINDS.put(PolicyGames.XMAGE_AI, new Kind() {
+            @Override public Player create(TableSeat seat, RangeOfInfluence range) {
+                XMageAiPlayer player = new Bot(seat.name, range, seat.skill);
+                if (seat.thinkSeconds > 0) player.setMaxThinkTimeSecs(seat.thinkSeconds);
+                return player;
+            }
+
+            @Override public void ready(TableSeat seat, Player player, Game game) {
+                if (seat.endpoint != null) WebPlayer.watchTable(game, player, seat.endpoint);
+            }
         });
     }
 

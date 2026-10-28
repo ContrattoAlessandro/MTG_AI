@@ -21,7 +21,13 @@ from websockets.sync.server import ServerConnection, serve
 
 from .feed import ChangeFeed
 
-SEAT_COOKIE = "mz_seat"
+
+def seat_cookie(push_port: int) -> str:
+    """The seat cookie's name. A browser sends a host's cookies to all its ports, so each
+    table names its own: two tables on one computer (or an old one left running) keep their seats."""
+    return f"mz_seat_{push_port}"
+
+
 # A view is sent at least this often, so a dead connection is noticed.
 HEARTBEAT_SECONDS = 15.0
 # A burst of changes is sent once nothing changed for QUIET seconds, at most HOLD after it began.
@@ -29,12 +35,12 @@ QUIET_SECONDS = 0.08
 HOLD_SECONDS = 0.3
 
 
-def seat_token(cookie_header: str | None) -> str | None:
+def seat_token(cookie_header: str | None, name: str) -> str | None:
     if not cookie_header:
         return None
     cookie = SimpleCookie()
     cookie.load(cookie_header)
-    return cookie[SEAT_COOKIE].value if SEAT_COOKIE in cookie else None
+    return cookie[name].value if name in cookie else None
 
 
 def delta(old: dict, new: dict) -> dict | None:
@@ -42,7 +48,8 @@ def delta(old: dict, new: dict) -> dict | None:
 
     {"set": top-level keys that changed, "patch": state keys that changed, "log": {"drop": n,
     "add": lines}} (the log is a sliding window: drop n lines from its start, append the
-    new ones), or {"set": ..., "state": whole state} when a state appears or goes.
+    new ones), or {"set": ..., "state": whole state} when a state appears or goes, or loses a key.
+    The new version is always set: the page skips a view whose version it already has.
     """
     changes = {k: v for k, v in new.items() if k not in ("state", "version") and old.get(k) != v}
     out: dict = {"set": changes} if changes else {}
@@ -53,14 +60,15 @@ def delta(old: dict, new: dict) -> dict | None:
     elif before != after:
         patch = {k: v for k, v in after.items() if k != "log" and before.get(k) != v}
         if before.keys() - after.keys():
+            # A key went (can_attack once attackers are declared): a patch cannot remove it.
             out["state"] = after
-            return out
-        if patch:
-            out["patch"] = patch
-        old_log, new_log = before.get("log", []), after.get("log", [])
-        if old_log != new_log:
-            drop = next(d for d in range(len(old_log) + 1) if new_log[: len(old_log) - d] == old_log[d:])
-            out["log"] = {"drop": drop, "add": new_log[len(old_log) - drop :]}
+        else:
+            if patch:
+                out["patch"] = patch
+            old_log, new_log = before.get("log", []), after.get("log", [])
+            if old_log != new_log:
+                drop = next(d for d in range(len(old_log) + 1) if new_log[: len(old_log) - d] == old_log[d:])
+                out["log"] = {"drop": drop, "add": new_log[len(old_log) - drop :]}
     if not out:
         return None
     out["set"] = {**out.get("set", {}), "version": new.get("version")}
@@ -73,6 +81,7 @@ class PushServer:
     def __init__(self, feed: ChangeFeed, view_for: Callable[[str | None], dict], host: str, port: int):
         self.feed = feed
         self.view_for = view_for
+        self.cookie = seat_cookie(port)
         self.server = serve(self._serve, host, port)
         self.thread = threading.Thread(target=self.server.serve_forever, name="lan-push", daemon=True)
 
@@ -97,7 +106,7 @@ class PushServer:
         return seen, view
 
     def _serve(self, connection: ServerConnection) -> None:
-        token = seat_token(connection.request.headers.get("Cookie"))
+        token = seat_token(connection.request.headers.get("Cookie"), self.cookie)
         seen, sent = None, None
         try:
             while True:

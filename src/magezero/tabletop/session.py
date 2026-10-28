@@ -1,4 +1,9 @@
-"""The game in progress: the engine plays it, and each person at the table has a decision table."""
+"""The game in progress: the engine plays it, and each person at the table has a decision table.
+
+Each bot has a table too, which only receives its board (the engine's eye on it). Whoever is
+not playing (someone who came to watch, a player out of the game) sees the board of a player
+of their choice, hand included, as that player sees it, without the decisions.
+"""
 
 import threading
 from collections.abc import Callable
@@ -8,7 +13,7 @@ from typing import Protocol
 from ..engine import write_game_file
 from ..webplay import Table
 from .feed import ChangeFeed
-from .lobby import DeckShelf, Lobby, SeatKind, TablePlan
+from .lobby import Lobby, SeatKind, TablePlan
 
 MAX_TURNS = 500
 MAX_MINUTES = 12 * 60
@@ -72,13 +77,18 @@ class Rewind:
         }
 
 
-def game_file(plan: TablePlan, shelf: DeckShelf, engine_url: str) -> dict:
-    """The engine's table game file (TableGame.java): people relay through `engine_url`/seat/<index>."""
+def game_file(plan: TablePlan, deck_path: Callable[[str], Path], engine_url: str) -> dict:
+    """The engine's table game file (TableGame.java): people relay through `engine_url`/seat/<index>,
+    where the bots' boards arrive as well."""
     seats = []
     for seat in plan.seats:
-        entry = {"name": seat.name, "deckPath": str(shelf.path(seat.deck))}
+        entry = {
+            "name": seat.name,
+            "deckPath": str(deck_path(seat.deck)),
+            "endpoint": f"{engine_url}/seat/{seat.index}",
+        }
         if seat.kind == SeatKind.PERSON:
-            entry |= {"type": "web", "endpoint": f"{engine_url}/seat/{seat.index}"}
+            entry |= {"type": "web"}
         else:
             entry |= {"type": "xmage-ai", "skill": seat.skill}
         seats.append(entry)
@@ -99,6 +109,9 @@ class TableSession:
         self.engine: Engine | None = None
         self.runner: threading.Thread | None = None
         self.tables: dict[int, SeatTable] = {}  # by seat index, the people of the current game
+        self.eyes: dict[int, SeatTable] = {}  # by seat index, the bots' boards
+        self.order: list[int] = []  # the seats of the current game in turn order
+        self.watching: dict[str, int] = {}  # by token: the seat someone not playing watches
         self.game = 0
         self.rewind: Rewind | None = None  # a request to go back to the start of a turn
         self.status = "starting"  # starting | ready | playing | over | error
@@ -130,8 +143,11 @@ class TableSession:
                 self.rewind = None
                 self.tables = {seat.index: SeatTable(self.feed, self._take_rewind) for seat in plan.seats
                                if seat.kind == SeatKind.PERSON}  # fmt: skip
+                self.eyes = {seat.index: SeatTable(self.feed) for seat in plan.seats if seat.kind != SeatKind.PERSON}
+                self.order = [seat.index for seat in plan.seats]
+                self.watching = {}
             self.lobby.lock_for_game(True)
-            spec = game_file(plan, self.lobby.shelf, self.engine_url)
+            spec = game_file(plan, self.lobby.deck_path, self.engine_url)
             path = write_game_file(self.workdir / f"lan-game-{game}.json", spec)
             self._set("playing", "Shuffling up…")
             self.runner = threading.Thread(target=self._play, args=(path, game), name="lan-game", daemon=True)
@@ -146,7 +162,7 @@ class TableSession:
                 raise ValueError("No game in progress.")
             self._stop_current()
             with self.state_lock:
-                self.tables = {}  # every browser goes back to the lobby
+                self.tables, self.eyes, self.order = {}, {}, []  # every browser goes back to the lobby
                 self.rewind = None
             self._set("ready", "Game abandoned.")
 
@@ -242,7 +258,7 @@ class TableSession:
         """Abandon the running game; restart the engine if it does not stop in time."""
         if self.runner is None or not self.runner.is_alive():
             return
-        for table in self.tables.values():
+        for table in [*self.tables.values(), *self.eyes.values()]:
             with table.cond:
                 table.abort = True
                 table.changed()
@@ -268,27 +284,86 @@ class TableSession:
 
     def engine_table(self, index: int) -> SeatTable:
         with self.state_lock:
-            table = self.tables.get(index)
+            table = self.tables.get(index) or self.eyes.get(index)
         if table is None:
             raise KeyError(index)
         return table
 
+    # --- watching
+
+    def watch(self, token: str | None, index: int) -> None:
+        """Someone not playing chooses whose board they see."""
+        if self._watched(token) is None:
+            raise ValueError("You are playing: your own board is the one you see.")
+        with self.state_lock:
+            if index not in self.order:
+                raise ValueError("Nobody plays in that seat.")
+            self.watching[token] = index
+        self.feed.bump()
+
+    def _watched(self, token: str | None) -> int | None:
+        """The seat whose board `token` sees instead of their own, or None (playing, or no game)."""
+        seat = self.lobby.seat_of(token)
+        with self.state_lock:
+            order, status = list(self.order), self.status
+            tables = {**self.eyes, **self.tables}
+            own = None if seat is None else self.tables.get(seat.index)
+            chosen = self.watching.get(token) if token else None
+        if not order:
+            return None
+        if own is None and not self.lobby.watching(token):
+            return None  # seated after the game ended: the lobby
+        if own is not None and (status != "playing" or own.playing()):
+            return None
+        if chosen in tables:
+            return chosen
+        if own is not None:
+            return seat.index  # out of the game: their last board until they choose another
+        # The first person still playing, else whoever is.
+        alive = [i for i in order if tables[i].playing()]
+        return next((i for i in alive if i in self.tables), alive[0] if alive else order[0])
+
+    def _watchable(self) -> list[dict]:
+        """The players of the game in turn order, for choosing whose board to see."""
+        with self.lobby.lock:
+            names = {seat.index: seat.name for seat in self.lobby.seats}
+        with self.state_lock:
+            order = list(self.order)
+            tables = {**self.eyes, **self.tables}
+            people = set(self.tables)
+        return [
+            {"seat": i, "name": names.get(i, "?"), "person": i in people, "playing": tables[i].playing()} for i in order
+        ]
+
     def view(self, token: str | None) -> dict:
-        """Everything one browser may see: its own seat's game, and the lobby."""
+        """Everything one browser may see: its own seat's game (or the one it watches), and the lobby."""
         table = self.table_of(token)
-        base = table.view() if table else {"state": None, "decision": None, "result": None, "controller": None}
+        watched = self._watched(token)
+        if watched is not None:
+            # As the watched player sees it, without their decisions (nobody here may answer them).
+            base = {**self.engine_table(watched).view(), "decision": None, "result": None, "controller": None}
+        else:
+            base = table.view() if table else {"state": None, "decision": None, "result": None, "controller": None}
         with self.state_lock:
             status, message, game = self.status, self.message, self.game
+        watching = None
+        if watched is not None:
+            watchable = self._watchable()
+            name = next(p["name"] for p in watchable if p["seat"] == watched)
+            watching = {"seat": watched, "name": name, "out": table is not None, "players": watchable}
+        if status == "playing" and base["state"]:
+            message = playing_message(base) if watching is None else watching_message(base["state"], name)
         return {
             **base,
             "mode": "lan",
             "status": status,
-            "message": playing_message(base) if status == "playing" and base["state"] else message,
+            "message": message,
             "game": game,
             "version": self.feed.version,
             "decks": None,
             "lobby": self.lobby.view(token),
             "rewind": self._rewind_view(token),
+            "watching": watching,
         }
 
     def _rewind_view(self, token: str | None) -> dict | None:
@@ -310,3 +385,10 @@ def playing_message(view: dict) -> str:
         return f"Turn {state.get('turn')}"
     doing = "passing" if waiting.get("side") == "you" else f"{waiting['name']} is playing"
     return f"Turn {state.get('turn')}: {doing}"
+
+
+def watching_message(state: dict, name: str) -> str:
+    """The status line of someone watching `name`'s board: whose move it is."""
+    holder = next((p for p in state.get("players", []) if p.get("id") == state.get("priority_id")), None)
+    turn = f"Turn {state.get('turn')}" + (f": {holder['name']} is playing" if holder else "")
+    return f"Watching {name} · {turn}"

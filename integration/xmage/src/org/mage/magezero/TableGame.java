@@ -9,6 +9,7 @@ import mage.game.match.Match;
 import mage.game.match.MatchOptions;
 import mage.game.mulligan.MulliganType;
 import mage.player.ai.policy.RecordingPlayer;
+import mage.player.ai.policy.WebPlayer;
 import mage.players.Player;
 import mage.util.RandomUtil;
 import mage.util.ThreadUtils;
@@ -93,7 +94,7 @@ final class TableGame {
             Deck deck = Deck.load(DeckImporter.importDeckFromFile(seats.get(i).deckPath, true), false, false, new HashMap<>());
             PolicyGames.load(game, match, players.get(i), deck);
         }
-        for (int i = 0; i < seats.size(); i++) seats.get(i).kind().ready(players.get(i), game);
+        for (int i = 0; i < seats.size(); i++) seats.get(i).kind().ready(seats.get(i), players.get(i), game);
         // When every person at the table is out, the bots do not play on alone.
         List<UUID> people = new ArrayList<>();
         for (int i = 0; i < seats.size(); i++) if (PolicyGames.WEB.equals(seats.get(i).type)) people.add(players.get(i).getId());
@@ -123,6 +124,8 @@ final class TableGame {
         } catch (Throwable error) {
             System.err.println("table game failed:");
             error.printStackTrace();
+        } finally {
+            WebPlayer.leaveTable(game);
         }
         Thread.interrupted();
         StringBuilder summary = new StringBuilder("table game " + outcome + ": turn " + game.getTurnNum());

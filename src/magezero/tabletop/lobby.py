@@ -1,4 +1,7 @@
-"""The seats of the table before a game: who sits where, with which deck, and what is played."""
+"""The seats of the table before a game: who sits where, with which deck, and what is played.
+
+Someone who arrives once a game has started watches it (a watcher) and takes a seat for the next one.
+"""
 
 import random
 import secrets
@@ -7,6 +10,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+from typing import Protocol
 
 from ..webplay import read_deck
 
@@ -52,6 +56,12 @@ class DeckShelf:
         return (self.folder / f"{name}.dck").resolve()
 
 
+class Paster(Protocol):
+    """Checks a pasted deck list and writes it for the engine (paste.DeckPaster)."""
+
+    def paste(self, text: str, name: str, key: str): ...
+
+
 @dataclass
 class Seat:
     index: int
@@ -80,10 +90,14 @@ class TablePlan:
 class Lobby:
     """The seats, changed by the people at the table. `on_change` runs after every change."""
 
-    def __init__(self, shelf: DeckShelf, on_change: Callable[[], None], size: int = MAX_SEATS):
+    def __init__(self, shelf: DeckShelf, on_change: Callable[[], None], size: int = MAX_SEATS,
+                 paster: Paster | None = None):  # fmt: skip
         if not 2 <= size <= MAX_SEATS:
             raise ValueError(f"a table has 2 to {MAX_SEATS} seats")
         self.shelf = shelf
+        self.paster = paster
+        self.pasted: dict[str, object] = {}  # by token: each person's pasted deck (paste.Pasted), for this session
+        self.watchers: dict[str, str] = {}  # by token: the names of the people watching the game
         self.on_change = on_change
         self.lock = threading.RLock()
         self.seats = [Seat(i) for i in range(size)]
@@ -98,12 +112,31 @@ class Lobby:
         with self.lock:
             return next((seat for seat in self.seats if token and seat.token == token), None)
 
+    def watching(self, token: str | None) -> bool:
+        """Whether `token` is someone who came to watch (not seated)."""
+        with self.lock:
+            return bool(token) and token in self.watchers
+
+    def decks(self) -> dict[str, Deck]:
+        """The shelf's decks and the decks pasted at the table."""
+        with self.lock:
+            return self.shelf.decks() | {p.deck.name: p.deck for p in self.pasted.values()}
+
+    def deck_path(self, name: str) -> Path:
+        with self.lock:
+            pasted = next((p for p in self.pasted.values() if p.deck.name == name), None)
+        return pasted.path if pasted else self.shelf.path(name)
+
     def view(self, token: str | None) -> dict:
         with self.lock:
             mine = self.seat_of(token)
             return {
                 "seats": [seat.public() for seat in self.seats],
                 "you": None if mine is None else mine.index,
+                "watcher": self.watchers.get(token) if token else None,
+                "watchers": sorted(self.watchers.values(), key=str.casefold),
+                "pasted": [p.deck.public() | {"seat": self.seat_of(t).index} for t, p in self.pasted.items()],
+                "can_paste": self.paster is not None,
                 "first": self.first,
                 "locked": self.locked,
                 "format": self._format(),
@@ -121,7 +154,7 @@ class Lobby:
                 found.append("Nobody has taken a seat yet.")
             if any(seat.kind == SeatKind.OPEN for seat in self.seats):
                 found.append("Close the open seats, give them to a bot, or wait for your friends.")
-            decks = self.shelf.decks()
+            decks = self.decks()
             missing = [seat.name for seat in playing if seat.deck not in decks]
             if missing:
                 found.append("Choose a deck for " + ", ".join(missing) + ".")
@@ -146,7 +179,7 @@ class Lobby:
 
     def _format(self) -> str | None:
         """Commander when every deck has a commander, constructed when none has; free-for-all above two."""
-        decks = self.shelf.decks()
+        decks = self.decks()
         chosen = [decks[seat.deck] for seat in self.seats if seat.plays and seat.deck in decks]
         if not chosen:
             return None
@@ -160,13 +193,18 @@ class Lobby:
     # --- changing
 
     def join(self, name: str, index: int | None = None, token: str | None = None) -> str:
-        """Seat a person (in the first open seat unless `index` is given); returns their token."""
+        """Seat a person (in the first open seat unless `index` is given); returns their token.
+
+        During a game, someone without a seat watches it instead.
+        """
         name = " ".join(str(name).split())[:MAX_NAME]
         with self.lock:
+            current = self.seat_of(token)
+            if self.locked and current is None:
+                return self._watch(name, token)
             self._unlocked()
             if not name:
                 raise ValueError("Choose a name.")
-            current = self.seat_of(token)
             if any(seat.name.casefold() == name.casefold() and seat is not current for seat in self.seats):
                 raise ValueError(f"{name} is already at the table.")
             if index is None:
@@ -177,10 +215,15 @@ class Lobby:
             seat = self._seat(index)
             if seat is not current and seat.kind == SeatKind.PERSON:
                 raise ValueError(f"{seat.name} sits there.")
+            # Someone moving keeps their token (vacating the old seat forgets it); so does a
+            # watcher, who sits down for the next game.
+            known = token if current or token in self.watchers else None
+            # Sitting in a bot's seat takes its deck; an open seat gets the deck the person had.
+            deck = seat.deck if seat.kind == SeatKind.BOT or seat is current else current and current.deck
             if current is not None and current is not seat:
                 self._vacate(current)
-            deck = seat.deck if seat.kind == SeatKind.BOT or seat is current else None
-            seat.token = current.token if current else secrets.token_urlsafe(18)
+            self.watchers.pop(token, None)
+            seat.token = known or secrets.token_urlsafe(18)
             seat.kind, seat.name = SeatKind.PERSON, name
             seat.deck = deck or self._default_deck()
             self.on_change()
@@ -188,9 +231,13 @@ class Lobby:
 
     def leave(self, token: str) -> None:
         with self.lock:
+            if self.watchers.pop(token, None) is not None:
+                self.on_change()
+                return
             self._unlocked()
             seat = self._own(token)
             self._vacate(seat)
+            self.pasted.pop(token, None)
             self.on_change()
 
     def set_seat(self, token: str, index: int, kind: str, skill: int | None = None) -> None:
@@ -223,10 +270,29 @@ class Lobby:
             seat = self._seat(index)
             if seat is not mine and seat.kind != SeatKind.BOT:
                 raise ValueError("Choose a deck for your seat or for a bot.")
-            if deck not in self.shelf.decks():
+            if deck not in self.decks():
                 raise ValueError("Unknown deck.")
+            owner = next((t for t, p in self.pasted.items() if p.deck.name == deck), None)
+            if owner is not None and owner != seat.token:
+                raise ValueError("A pasted deck is played by whoever pasted it.")
             seat.deck = deck
             self.on_change()
+
+    def paste_deck(self, token: str | None, text: str) -> Deck:
+        """A seated person plays a deck list they paste (kept for this session only)."""
+        if self.paster is None:
+            raise ValueError("Pasting a deck is not available here.")
+        with self.lock:
+            self._unlocked()
+            seat = self._own(token)
+            key = f"seat-{seat.index}-{secrets.token_hex(4)}"
+            pasted = self.paster.paste(str(text), f"{seat.name} (pasted)", key)
+            if pasted.deck.name in self.shelf.decks():
+                raise ValueError("A deck of the shelf has that name.")
+            self.pasted[token] = pasted
+            seat.deck = pasted.deck.name
+            self.on_change()
+            return pasted.deck
 
     def choose_first(self, token: str, index: int | None) -> None:
         with self.lock:
@@ -257,12 +323,26 @@ class Lobby:
         if self.locked:
             raise ValueError("A game is in progress: the seats change when it ends.")
 
+    def _watch(self, name: str, token: str | None) -> str:
+        """Someone watches the game in progress; returns their token."""
+        if not name:
+            raise ValueError("Choose a name.")
+        taken = [seat.name for seat in self.seats if seat.plays]
+        taken += [n for t, n in self.watchers.items() if t != token]
+        if any(other.casefold() == name.casefold() for other in taken):
+            raise ValueError(f"{name} is already at the table.")
+        token = token if token in self.watchers else secrets.token_urlsafe(18)
+        self.watchers[token] = name
+        self.on_change()
+        return token
+
     def _vacate(self, seat: Seat) -> None:
         seat.kind, seat.name, seat.deck, seat.token = SeatKind.OPEN, "", None, None
         if self.first == seat.index:
             self.first = None
 
     def _default_deck(self) -> str | None:
+        # The shelf's first deck (never someone's pasted one).
         return next(iter(self.shelf.decks()), None)
 
     @staticmethod
